@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  /* extra breakpoint so 21:9 ultrawide monitors (3440x1440) get denser grids */
+  --breakpoint-3xl: 120rem; /* 1920px */
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Data-viz roles (validated reference palette; light/dark selected per surface) */
+:root {
+  --viz-series-1: #2a78d6; /* blue */
+  --viz-series-2: #1baf7a; /* aqua */
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-tooltip-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-series-1: #3987e5;
+    --viz-series-2: #199e70;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-tooltip-bg: #1a1a19;
+  }
+}
