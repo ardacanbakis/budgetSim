@@ -14,6 +14,9 @@ export const KEYS = {
   victvsPayouts: ["victvs-payouts"] as const,
   loans: ["loans"] as const,
   purchases: ["purchases"] as const,
+  budgets: ["budgets"] as const,
+  goals: ["goals"] as const,
+  userSettings: ["user-settings"] as const,
   rates: ["rates"] as const,
 };
 
@@ -55,6 +58,21 @@ export function useLoans() {
 export function usePurchases() {
   const repo = useRepo();
   return useQuery({ queryKey: KEYS.purchases, queryFn: () => repo.listPurchases() });
+}
+
+export function useBudgets() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.budgets, queryFn: () => repo.listBudgets() });
+}
+
+export function useGoals() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.goals, queryFn: () => repo.listGoals() });
+}
+
+export function useUserSettings() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.userSettings, queryFn: () => repo.getUserSettings() });
 }
 
 /** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */

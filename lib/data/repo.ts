@@ -3,8 +3,10 @@ import { FxSnapshot } from "@/lib/domain/fx";
 import {
   Account,
   AccountKind,
+  Budget,
   Category,
   Frequency,
+  Goal,
   Loan,
   LoanKind,
   Purchase,
@@ -12,6 +14,7 @@ import {
   Transaction,
   TxDirection,
   TxStatus,
+  UserSettings,
   VictvsSession,
   VictvsPayout,
 } from "./types";
@@ -162,6 +165,18 @@ export interface Repo {
   markVictvsPaid(input: MarkPaidInput): Promise<void>;
   /** undo a payout: sessions back to unpaid, aggregated transaction removed */
   unmarkVictvsPayout(payoutId: string): Promise<void>;
+
+  listBudgets(): Promise<Budget[]>;
+  /** upserts the category's budget; monthlyLimit null removes it */
+  setBudget(categoryId: string, monthlyLimit: number | null, currency: Currency): Promise<void>;
+
+  listGoals(): Promise<Goal[]>;
+  createGoal(input: { name: string; accountId: string; targetAmount: number; targetDate: string | null }): Promise<Goal>;
+  updateGoal(id: string, patch: Partial<{ name: string; targetAmount: number; targetDate: string | null }>): Promise<void>;
+  deleteGoal(id: string): Promise<void>;
+
+  getUserSettings(): Promise<UserSettings>;
+  saveUserSettings(patch: Partial<UserSettings>): Promise<void>;
 
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */

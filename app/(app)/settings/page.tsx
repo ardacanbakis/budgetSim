@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAppMutation, useCategories } from "@/lib/data/queries";
+import { KEYS, useAppMutation, useBudgets, useCategories } from "@/lib/data/queries";
 import { TxDirection } from "@/lib/data/types";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { Locale, useI18n } from "@/lib/i18n";
@@ -107,6 +107,8 @@ export default function SettingsPage() {
         </div>
       </Card>
 
+      <BudgetsEditor />
+
       <Card>
         <CardHeader title={t("settings.account")} />
         <div className="space-y-3 p-4 text-sm">
@@ -146,5 +148,61 @@ export default function SettingsPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function BudgetsEditor() {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const categories = useCategories();
+  const budgets = useBudgets();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  const setBudget = useAppMutation(
+    (v: { categoryId: string; limit: number | null; currency: Currency }) =>
+      repo.setBudget(v.categoryId, v.limit, v.currency),
+    [KEYS.budgets]
+  );
+
+  const expense = (categories.data ?? []).filter((c) => c.direction === "expense");
+  const budgetByCategory = new Map((budgets.data ?? []).map((b) => [b.categoryId, b]));
+
+  return (
+    <Card>
+      <CardHeader title={t("budgets.title")} />
+      <div className="space-y-2 p-4">
+        {expense.map((c) => {
+          const budget = budgetByCategory.get(c.id);
+          const draft = drafts[c.id] ?? (budget ? String(budget.monthlyLimit) : "");
+          return (
+            <div key={c.id} className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+                <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
+                <span className="truncate">{c.name}</span>
+              </span>
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                inputMode="decimal"
+                placeholder={t("budgets.limit")}
+                className="!w-32 text-right"
+                value={draft}
+                onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                onBlur={() => {
+                  const value = Number(draft);
+                  const limit = draft.trim() === "" || !(value > 0) ? null : value;
+                  const current = budget?.monthlyLimit ?? null;
+                  if (limit !== current) {
+                    setBudget.mutate({ categoryId: c.id, limit, currency: budget?.currency ?? "TRY" });
+                  }
+                }}
+              />
+              <span className="w-9 text-xs text-zinc-400">{budget?.currency ?? "TRY"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

@@ -4,11 +4,14 @@ import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { FALLBACK_USD_PER } from "@/lib/rates/fallback";
 import {
   Account,
+  Budget,
   Category,
+  Goal,
   Loan,
   Purchase,
   RecurringTemplate,
   Transaction,
+  UserSettings,
   VictvsPayout,
   VictvsSession,
 } from "./types";
@@ -22,6 +25,9 @@ export interface DemoStore {
   victvsPayouts: VictvsPayout[];
   loans: Loan[];
   purchases: Purchase[];
+  budgets: Budget[];
+  goals: Goal[];
+  settings: UserSettings;
 }
 
 const uuid = () =>
@@ -229,6 +235,14 @@ export function buildDemoSeed(): DemoStore {
     { id: uuid(), date: addMonthsClamped(`${lastMonth.slice(0, 7)}-28`, -1), sessionType: "IELTS Session", amount: 85, status: "paid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
   ];
 
+  const budgets: Budget[] = [
+    { id: uuid(), categoryId: cat("Groceries"), monthlyLimit: 15000, currency: "TRY" },
+    { id: uuid(), categoryId: cat("Entertainment"), monthlyLimit: 5000, currency: "TRY" },
+  ];
+  const goals: Goal[] = [
+    { id: uuid(), name: "Emergency fund", accountId: usdAcc.id, targetAmount: 10000, targetDate: addMonthsClamped(today, 6), createdAt: nowIso },
+  ];
+
   return {
     accounts,
     categories,
@@ -238,5 +252,8 @@ export function buildDemoSeed(): DemoStore {
     victvsPayouts: [] as VictvsPayout[],
     loans,
     purchases,
+    budgets,
+    goals,
+    settings: { dashboardLayout: null, theme: "system", compact: false },
   };
 }

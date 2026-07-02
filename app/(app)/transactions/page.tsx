@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { TransferModal } from "@/components/transferModal";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { NewTransaction } from "@/lib/data/repo";
 import { Transaction, TxDirection, TxStatus } from "@/lib/data/types";
+import { budgetStatuses, budgetWarningFor } from "@/lib/domain/budgets";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -189,9 +190,11 @@ function TransactionModal({
   onSave: (input: NewTransaction) => Promise<void>;
   hasRates: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const accounts = useAccounts();
   const categories = useCategories();
+  const budgets = useBudgets();
+  const transactions = useTransactions();
   const rates = useRates();
   const [direction, setDirection] = useState<TxDirection>("expense");
   const [accountId, setAccountId] = useState("");
@@ -204,6 +207,27 @@ function TransactionModal({
   const activeAccounts = (accounts.data ?? []).filter((a) => !a.archived);
   const effectiveAccount = accountId || activeAccounts[0]?.id || "";
   const dirCategories = (categories.data ?? []).filter((c) => c.direction === direction);
+
+  // live budget check while entering an expense
+  const account = activeAccounts.find((a) => a.id === effectiveAccount);
+  const budgetWarning =
+    direction === "expense" && account && budgets.data && transactions.data && accounts.data && rates.data
+      ? budgetWarningFor({
+          budgets: budgets.data,
+          statuses: budgetStatuses({
+            budgets: budgets.data,
+            transactions: transactions.data,
+            accounts: accounts.data,
+            usdPer: rates.data.usdPer,
+            month: todayISO().slice(0, 7),
+          }),
+          categoryId: categoryId || null,
+          amount: Number(amount),
+          currency: account.currency,
+          usdPer: rates.data.usdPer,
+        })
+      : null;
+  const warnCategory = (categories.data ?? []).find((c) => c.id === categoryId);
 
   return (
     <Modal open={open} onClose={onClose} title={t("tx.newTransaction")}>
@@ -263,6 +287,20 @@ function TransactionModal({
             ))}
           </Select>
         </Field>
+        {budgetWarning ? (
+          <p className={`rounded-lg px-3 py-2 text-xs ${budgetWarning.level === "over" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"}`}>
+            {budgetWarning.level === "over"
+              ? t("budgets.entryOver", {
+                  category: warnCategory?.name ?? "",
+                  limit: formatAmount(budgetWarning.limit, budgetWarning.currency, locale),
+                })
+              : t("budgets.entryWarn", {
+                  category: warnCategory?.name ?? "",
+                  spent: formatAmount(budgetWarning.spent, budgetWarning.currency, locale),
+                  limit: formatAmount(budgetWarning.limit, budgetWarning.currency, locale),
+                })}
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <Field label={t("tx.dueDate")}>
             <Input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} />

@@ -18,18 +18,22 @@ import { buildDemoSeed, DemoStore } from "./demoSeed";
 import { amortizationSchedule } from "@/lib/domain/loan";
 import {
   Account,
+  Budget,
   Category,
+  Goal,
   Loan,
   Purchase,
   RecurringTemplate,
   Transaction,
   TxDirection,
+  UserSettings,
   VictvsPayout,
   VictvsSession,
 } from "./types";
+import { Currency } from "@/lib/domain/currencies";
 
 // bump the suffix whenever the DemoStore shape changes — old sandboxes reseed
-const STORAGE_KEY = "renovator-demo-v2";
+const STORAGE_KEY = "renovator-demo-v3";
 
 const uuid = () => crypto.randomUUID();
 
@@ -394,6 +398,49 @@ export class DemoRepo implements Repo {
       }
     }
     this.store.victvsPayouts = this.store.victvsPayouts.filter((p) => p.id !== payoutId);
+    this.save();
+  }
+
+  async listBudgets(): Promise<Budget[]> {
+    return [...this.store.budgets];
+  }
+
+  async setBudget(categoryId: string, monthlyLimit: number | null, currency: Currency): Promise<void> {
+    this.store.budgets = this.store.budgets.filter((b) => b.categoryId !== categoryId);
+    if (monthlyLimit != null && monthlyLimit > 0) {
+      this.store.budgets.push({ id: uuid(), categoryId, monthlyLimit, currency });
+    }
+    this.save();
+  }
+
+  async listGoals(): Promise<Goal[]> {
+    return [...this.store.goals];
+  }
+
+  async createGoal(input: { name: string; accountId: string; targetAmount: number; targetDate: string | null }): Promise<Goal> {
+    const goal: Goal = { id: uuid(), createdAt: new Date().toISOString(), ...input };
+    this.store.goals.push(goal);
+    this.save();
+    return goal;
+  }
+
+  async updateGoal(id: string, patch: Partial<{ name: string; targetAmount: number; targetDate: string | null }>): Promise<void> {
+    const goal = this.store.goals.find((g) => g.id === id);
+    if (goal) Object.assign(goal, patch);
+    this.save();
+  }
+
+  async deleteGoal(id: string): Promise<void> {
+    this.store.goals = this.store.goals.filter((g) => g.id !== id);
+    this.save();
+  }
+
+  async getUserSettings(): Promise<UserSettings> {
+    return { ...this.store.settings };
+  }
+
+  async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
+    this.store.settings = { ...this.store.settings, ...patch };
     this.save();
   }
 

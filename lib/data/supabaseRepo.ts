@@ -15,15 +15,19 @@ import {
 } from "./repo";
 import {
   Account,
+  Budget,
   Category,
+  Goal,
   Loan,
   Purchase,
   RecurringTemplate,
   Transaction,
   TxDirection,
+  UserSettings,
   VictvsPayout,
   VictvsSession,
 } from "./types";
+import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
 
@@ -535,6 +539,98 @@ export class SupabaseRepo implements Repo {
     throwIf(deleteError);
   }
 
+  async listBudgets(): Promise<Budget[]> {
+    const { data, error } = await this.db.from("budgets").select("*");
+    throwIf(error);
+    return (data ?? []).map((r: Row) => ({
+      id: r.id,
+      categoryId: r.category_id,
+      monthlyLimit: Number(r.monthly_limit),
+      currency: r.currency,
+    }));
+  }
+
+  async setBudget(categoryId: string, monthlyLimit: number | null, currency: Currency): Promise<void> {
+    if (monthlyLimit == null || monthlyLimit <= 0) {
+      const { error } = await this.db.from("budgets").delete().eq("category_id", categoryId);
+      throwIf(error);
+      return;
+    }
+    const { error } = await this.db
+      .from("budgets")
+      .upsert(
+        { user_id: this.userId, category_id: categoryId, monthly_limit: monthlyLimit, currency },
+        { onConflict: "user_id,category_id" }
+      );
+    throwIf(error);
+  }
+
+  async listGoals(): Promise<Goal[]> {
+    const { data, error } = await this.db.from("goals").select("*").order("created_at");
+    throwIf(error);
+    return (data ?? []).map((r: Row) => ({
+      id: r.id,
+      name: r.name,
+      accountId: r.account_id,
+      targetAmount: Number(r.target_amount),
+      targetDate: r.target_date,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async createGoal(input: { name: string; accountId: string; targetAmount: number; targetDate: string | null }): Promise<Goal> {
+    const { data, error } = await this.db
+      .from("goals")
+      .insert({
+        user_id: this.userId,
+        name: input.name,
+        account_id: input.accountId,
+        target_amount: input.targetAmount,
+        target_date: input.targetDate,
+      })
+      .select()
+      .single();
+    throwIf(error);
+    return {
+      id: data!.id,
+      name: data!.name,
+      accountId: data!.account_id,
+      targetAmount: Number(data!.target_amount),
+      targetDate: data!.target_date,
+      createdAt: data!.created_at,
+    };
+  }
+
+  async updateGoal(id: string, patch: Partial<{ name: string; targetAmount: number; targetDate: string | null }>): Promise<void> {
+    const row: Row = {};
+    if (patch.name != null) row.name = patch.name;
+    if (patch.targetAmount != null) row.target_amount = patch.targetAmount;
+    if (patch.targetDate !== undefined) row.target_date = patch.targetDate;
+    const { error } = await this.db.from("goals").update(row).eq("id", id);
+    throwIf(error);
+  }
+
+  async deleteGoal(id: string): Promise<void> {
+    const { error } = await this.db.from("goals").delete().eq("id", id);
+    throwIf(error);
+  }
+
+  async getUserSettings(): Promise<UserSettings> {
+    const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
+    throwIf(error);
+    if (!data) return { dashboardLayout: null, theme: "system", compact: false };
+    return { dashboardLayout: data.dashboard_layout, theme: data.theme, compact: data.compact };
+  }
+
+  async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
+    const row: Row = { user_id: this.userId, updated_at: new Date().toISOString() };
+    if (patch.dashboardLayout !== undefined) row.dashboard_layout = patch.dashboardLayout;
+    if (patch.theme != null) row.theme = patch.theme;
+    if (patch.compact != null) row.compact = patch.compact;
+    const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
+    throwIf(error);
+  }
+
   async listPurchases(): Promise<Purchase[]> {
     const { data, error } = await this.db.from("purchases").select("*").order("purchase_date", { ascending: false });
     throwIf(error);
@@ -680,7 +776,7 @@ export class SupabaseRepo implements Repo {
 
   async deleteAllData(): Promise<void> {
     // FK cascades wipe dependents when accounts go; clear the rest explicitly.
-    for (const table of ["transactions", "purchases", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories"]) {
+    for (const table of ["transactions", "purchases", "budgets", "goals", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories", "user_settings"]) {
       const { error } = await this.db.from(table).delete().eq("user_id", this.userId);
       throwIf(error);
     }

@@ -124,7 +124,29 @@ export interface Loan {
   createdAt: string;
 }
 
-export interface Settings {
-  displayCurrency: Currency;
-  locale: "en" | "tr";
+export interface Budget {
+  id: string;
+  categoryId: string;
+  monthlyLimit: number;
+  currency: Currency;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  accountId: string;
+  targetAmount: number; // in the account's currency
+  targetDate: string | null;
+  createdAt: string;
+}
+
+export interface DashboardLayout {
+  order: string[];
+  hidden: string[];
+}
+
+export interface UserSettings {
+  dashboardLayout: DashboardLayout | null;
+  theme: "system" | "light" | "dark";
+  compact: boolean;
 }
