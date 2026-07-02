@@ -54,6 +54,24 @@ test("purchases: create installment purchase on the card", async ({ page }) => {
   await expect(page.getByText("MacBook Air (1/12)")).toBeVisible();
 });
 
+test("scenario overlay and quick-add shortcut", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  // TRY devaluation overlay adds a dashed line + legend
+  await page.goto("/projections");
+  await page.getByText(/TRY devaluation|TL devalüasyonu/).click();
+  await page.waitForTimeout(600);
+  await expect(page.getByText(/TRY −25%/)).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/projections-scenario.png" });
+
+  // keyboard shortcut opens the shared quick-add modal (blur the checkbox first)
+  await page.locator("h1").click();
+  await page.keyboard.press("n");
+  await expect(page.getByRole("heading", { name: /new transaction|yeni işlem/i })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
 test("demo flows: complete planned, transfer, victvs paste preview", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

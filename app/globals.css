@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* dark mode is class-driven (html.dark), set by the theme setting (system/light/dark) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -23,15 +26,27 @@ body {
   --viz-muted: #898781;
   --viz-tooltip-bg: #ffffff;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --viz-series-1: #3987e5;
-    --viz-series-2: #199e70;
-    --viz-series-3: #c98500;
-    --viz-series-4: #008300;
-    --viz-series-5: #9085e9;
-    --viz-grid: #2c2c2a;
-    --viz-axis: #383835;
-    --viz-tooltip-bg: #1a1a19;
+.dark {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #199e70;
+  --viz-series-3: #c98500;
+  --viz-series-4: #008300;
+  --viz-series-5: #9085e9;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-tooltip-bg: #1a1a19;
+}
+
+/* compact mode: everything is rem-based, so shrinking the root shrinks density */
+html[data-compact="true"] {
+  font-size: 14px;
+}
+
+@media print {
+  aside,
+  nav,
+  header,
+  .no-print {
+    display: none !important;
   }
 }

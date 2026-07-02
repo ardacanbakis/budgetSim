@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -13,11 +13,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button, Card, CardHeader, Spinner } from "@/components/ui";
+import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
-import { useAccounts, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
+import { useAccounts, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { formatAmount } from "@/lib/domain/currencies";
 import { projectCashflow } from "@/lib/domain/projector";
+import { projectWithScenario, ProjectionInputs } from "@/lib/domain/scenarios";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
@@ -35,30 +36,80 @@ export default function ProjectionsPage() {
   const transactions = useTransactions();
   const templates = useTemplates();
   const rates = useRates();
+  const categories = useCategories();
   const [months, setMonths] = useState<12 | 24>(12);
 
-  const projection = useMemo(() => {
-    if (!accounts.data || !transactions.data || !templates.data || !rates.data) return null;
-    return projectCashflow({
-      accounts: accounts.data,
-      transactions: transactions.data,
-      templates: templates.data,
-      usdPer: rates.data.usdPer,
-      display: displayCurrency,
-      fromDate: todayISO(),
-      months,
-    });
-  }, [accounts.data, transactions.data, templates.data, rates.data, displayCurrency, months]);
+  // scenario controls (session-only; no persistence needed)
+  const [loseIncomeOn, setLoseIncomeOn] = useState(false);
+  const [loseIncomeCategory, setLoseIncomeCategory] = useState("");
+  const [devalOn, setDevalOn] = useState(false);
+  const [devalPct, setDevalPct] = useState("25");
+  const [oneOffOn, setOneOffOn] = useState(false);
+  const [oneOffAmount, setOneOffAmount] = useState("");
+  const [oneOffMonth, setOneOffMonth] = useState("2");
 
-  if (!projection) return <Spinner />;
+  const inputs: ProjectionInputs | null =
+    accounts.data && transactions.data && templates.data && rates.data
+      ? {
+          accounts: accounts.data,
+          transactions: transactions.data,
+          templates: templates.data,
+          usdPer: rates.data.usdPer,
+          display: displayCurrency,
+          fromDate: todayISO(),
+          months,
+        }
+      : null;
+
+  // recomputed per render (React compiler memoizes); pure + fast at this scale
+  const projection = inputs ? projectCashflow(inputs) : null;
+
+  if (!projection || !inputs) return <Spinner />;
+
+  const incomeCategories = (categories.data ?? []).filter((c) => c.direction === "income");
+  const effectiveLoseCategory = loseIncomeCategory || incomeCategories[0]?.id || "";
+
+  const overlays: { key: string; name: string; color: string; months: typeof projection.months }[] = [];
+  if (loseIncomeOn && effectiveLoseCategory) {
+    overlays.push({
+      key: "loseIncome",
+      name: `${t("scenarios.loseIncome")}: ${incomeCategories.find((c) => c.id === effectiveLoseCategory)?.name ?? ""}`,
+      color: "var(--viz-series-3)",
+      months: projectWithScenario(inputs, { type: "loseIncome", categoryId: effectiveLoseCategory }).months,
+    });
+  }
+  if (devalOn && Number(devalPct) > 0) {
+    overlays.push({
+      key: "deval",
+      name: `TRY −${devalPct}%`,
+      color: "var(--viz-series-5)",
+      months: projectWithScenario(inputs, { type: "tryDevaluation", pct: Number(devalPct) }).months,
+    });
+  }
+  if (oneOffOn && Number(oneOffAmount) > 0) {
+    overlays.push({
+      key: "oneOff",
+      name: `${t("scenarios.oneOff")} ${formatAmount(Number(oneOffAmount), displayCurrency, locale)}`,
+      color: "var(--viz-series-2)",
+      months: projectWithScenario(inputs, {
+        type: "oneOffExpense",
+        amount: Number(oneOffAmount),
+        monthOffset: Math.max(0, Math.min(months - 1, Math.floor(Number(oneOffMonth) || 0))),
+      }).months,
+    });
+  }
 
   const fmt = (v: number) => formatAmount(v, displayCurrency, locale);
-  const chartData = projection.months.map((m) => ({
-    month: m.month,
-    [t("dashboard.income")]: Math.round(m.income * 100) / 100,
-    [t("dashboard.expense")]: Math.round(m.expense * 100) / 100,
-    endNetWorth: Math.round(m.endNetWorth * 100) / 100,
-  }));
+  const chartData = projection.months.map((m, i) => {
+    const row: Record<string, number | string> = {
+      month: m.month,
+      [t("dashboard.income")]: Math.round(m.income * 100) / 100,
+      [t("dashboard.expense")]: Math.round(m.expense * 100) / 100,
+      endNetWorth: Math.round(m.endNetWorth * 100) / 100,
+    };
+    for (const overlay of overlays) row[overlay.key] = Math.round(overlay.months[i].endNetWorth * 100) / 100;
+    return row;
+  });
   const end = projection.months[projection.months.length - 1];
 
   return (
@@ -91,6 +142,62 @@ export default function ProjectionsPage() {
         </Card>
       </div>
 
+      {/* what-if scenarios */}
+      <Card>
+        <CardHeader title={t("scenarios.title")} />
+        <div className="grid gap-3 p-4 sm:grid-cols-3">
+          <label className="flex cursor-pointer flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={loseIncomeOn} onChange={(e) => setLoseIncomeOn(e.target.checked)} />
+              {t("scenarios.loseIncome")}
+            </span>
+            {loseIncomeOn ? (
+              <Select value={effectiveLoseCategory} onChange={(e) => setLoseIncomeCategory(e.target.value)}>
+                {incomeCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <span className="text-xs text-zinc-400">{t("scenarios.loseIncomeHint")}</span>
+            )}
+          </label>
+          <label className="flex cursor-pointer flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={devalOn} onChange={(e) => setDevalOn(e.target.checked)} />
+              {t("scenarios.deval")}
+            </span>
+            {devalOn ? (
+              <div className="flex items-center gap-2">
+                <input type="range" min="5" max="60" step="5" value={devalPct} onChange={(e) => setDevalPct(e.target.value)} className="flex-1 accent-teal-600" />
+                <span className="w-12 text-right text-sm font-semibold tabular-nums">−{devalPct}%</span>
+              </div>
+            ) : (
+              <span className="text-xs text-zinc-400">{t("scenarios.devalHint")}</span>
+            )}
+          </label>
+          <label className="flex cursor-pointer flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={oneOffOn} onChange={(e) => setOneOffOn(e.target.checked)} />
+              {t("scenarios.oneOff")}
+            </span>
+            {oneOffOn ? (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label={`${t("common.amount")} (${displayCurrency})`}>
+                  <Input type="number" step="any" min="0" value={oneOffAmount} onChange={(e) => setOneOffAmount(e.target.value)} />
+                </Field>
+                <Field label={t("scenarios.inMonths")}>
+                  <Input type="number" step="1" min="0" max={months - 1} value={oneOffMonth} onChange={(e) => setOneOffMonth(e.target.value)} />
+                </Field>
+              </div>
+            ) : (
+              <span className="text-xs text-zinc-400">{t("scenarios.oneOffHint")}</span>
+            )}
+          </label>
+        </div>
+      </Card>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader title={`${t("projections.endOfMonth")} (${displayCurrency})`} />
@@ -102,7 +209,22 @@ export default function ProjectionsPage() {
                 <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
                   tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-                <Line type="monotone" dataKey="endNetWorth" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                {overlays.length > 0 ? <Legend wrapperStyle={{ fontSize: 12 }} /> : null}
+                <Line type="monotone" dataKey="endNetWorth" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 4 }} />
+                {overlays.map((overlay) => (
+                  <Line
+                    key={overlay.key}
+                    type="monotone"
+                    dataKey={overlay.key}
+                    name={overlay.name}
+                    stroke={overlay.color}
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    dot={false}
+                    isAnimationActive={false}
+                    activeDot={{ r: 4 }}
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>

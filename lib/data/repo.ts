@@ -198,4 +198,37 @@ export interface Repo {
 
   /** wipe all data for this user/sandbox (demo reset & "delete my data") */
   deleteAllData(): Promise<void>;
+
+  /** full backup of every table, camelCase, version-tagged */
+  exportAll(): Promise<BackupFile>;
+  /** replaces ALL data with the backup's contents */
+  importAll(backup: BackupFile): Promise<void>;
+}
+
+export interface BackupFile {
+  app: "renovator";
+  version: 1;
+  exportedAt: string;
+  accounts: Account[];
+  categories: Category[];
+  transactions: Transaction[];
+  templates: RecurringTemplate[];
+  victvsSessions: VictvsSession[];
+  victvsPayouts: VictvsPayout[];
+  loans: Loan[];
+  purchases: Purchase[];
+  budgets: Budget[];
+  goals: Goal[];
+  snapshots: NetWorthSnapshot[];
+}
+
+export function isBackupFile(data: unknown): data is BackupFile {
+  const d = data as BackupFile;
+  return (
+    d != null &&
+    d.app === "renovator" &&
+    d.version === 1 &&
+    Array.isArray(d.accounts) &&
+    Array.isArray(d.transactions)
+  );
 }

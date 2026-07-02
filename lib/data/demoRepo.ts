@@ -2,6 +2,7 @@ import { FxSnapshot } from "@/lib/domain/fx";
 import { computeMissingOccurrences, findAutoCompletable } from "@/lib/domain/materialize";
 import { sumAmounts } from "@/lib/domain/money";
 import {
+  BackupFile,
   MarkPaidInput,
   NewAccount,
   NewLoan,
@@ -574,6 +575,43 @@ export class DemoRepo implements Repo {
   async deleteAllData(): Promise<void> {
     if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
     this.store = load();
+  }
+
+  async exportAll(): Promise<BackupFile> {
+    return {
+      app: "renovator",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      accounts: this.store.accounts,
+      categories: this.store.categories,
+      transactions: this.store.transactions,
+      templates: this.store.templates,
+      victvsSessions: this.store.victvsSessions,
+      victvsPayouts: this.store.victvsPayouts,
+      loans: this.store.loans,
+      purchases: this.store.purchases,
+      budgets: this.store.budgets,
+      goals: this.store.goals,
+      snapshots: this.store.snapshots,
+    };
+  }
+
+  async importAll(backup: BackupFile): Promise<void> {
+    this.store = {
+      accounts: backup.accounts ?? [],
+      categories: backup.categories ?? [],
+      transactions: backup.transactions ?? [],
+      templates: backup.templates ?? [],
+      victvsSessions: backup.victvsSessions ?? [],
+      victvsPayouts: backup.victvsPayouts ?? [],
+      loans: backup.loans ?? [],
+      purchases: backup.purchases ?? [],
+      budgets: backup.budgets ?? [],
+      goals: backup.goals ?? [],
+      snapshots: backup.snapshots ?? [],
+      settings: this.store.settings,
+    };
+    this.save();
   }
 }
 

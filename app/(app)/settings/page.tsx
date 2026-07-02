@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
-import { useApp, useRepo } from "@/lib/data/provider";
+import { Theme, useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAppMutation, useBudgets, useCategories } from "@/lib/data/queries";
+import { isBackupFile } from "@/lib/data/repo";
 import { TxDirection } from "@/lib/data/types";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { Locale, useI18n } from "@/lib/i18n";
@@ -109,6 +111,10 @@ export default function SettingsPage() {
 
       <BudgetsEditor />
 
+      <AppearanceCard />
+
+      <ExportsCard />
+
       <Card>
         <CardHeader title={t("settings.account")} />
         <div className="space-y-3 p-4 text-sm">
@@ -202,6 +208,137 @@ function BudgetsEditor() {
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+function AppearanceCard() {
+  const { t } = useI18n();
+  const { theme, setTheme, compact, setCompact } = useApp();
+  return (
+    <Card>
+      <CardHeader title={t("theme.title")} />
+      <div className="space-y-3 p-4">
+        <Field label={t("theme.theme")}>
+          <Select value={theme} onChange={(e) => setTheme(e.target.value as Theme)}>
+            <option value="system">{t("theme.system")}</option>
+            <option value="light">{t("theme.light")}</option>
+            <option value="dark">{t("theme.dark")}</option>
+          </Select>
+        </Field>
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-teal-600"
+            checked={compact}
+            onChange={(e) => setCompact(e.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium">{t("theme.compact")}</span>
+            <span className="block text-xs text-zinc-500">{t("theme.compactHint")}</span>
+          </span>
+        </label>
+      </div>
+    </Card>
+  );
+}
+
+function downloadFile(name: string, content: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: Record<string, unknown>[]): string {
+  if (!rows.length) return "";
+  const headers = Object.keys(rows[0]);
+  const escape = (v: unknown) => {
+    const s = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  return [headers.join(","), ...rows.map((r) => headers.map((h) => escape(r[h])).join(","))].join("\n");
+}
+
+function ExportsCard() {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  async function exportJson() {
+    const backup = await repo.exportAll();
+    downloadFile(`renovator-backup-${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
+  }
+
+  async function exportCsv(table: "transactions" | "accounts" | "purchases" | "victvsSessions") {
+    const backup = await repo.exportAll();
+    downloadFile(`renovator-${table}-${stamp}.csv`, toCsv(backup[table] as unknown as Record<string, unknown>[]), "text/csv");
+  }
+
+  async function restore(file: File) {
+    setMessage(null);
+    try {
+      const data = JSON.parse(await file.text());
+      if (!isBackupFile(data)) {
+        setMessage(t("exports.invalidFile"));
+        return;
+      }
+      await repo.importAll(data);
+      queryClient.clear();
+      setMessage(t("exports.restored"));
+      setRestoreConfirm("");
+    } catch {
+      setMessage(t("exports.invalidFile"));
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title={t("exports.title")} />
+      <div className="space-y-4 p-4">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={exportJson}>
+            ⬇ {t("exports.downloadJson")}
+          </Button>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium text-zinc-500">{t("exports.csv")}</p>
+          <div className="flex flex-wrap gap-2">
+            {(["transactions", "accounts", "purchases", "victvsSessions"] as const).map((table) => (
+              <Button key={table} onClick={() => exportCsv(table)}>
+                {table}.csv
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+          <p className="text-xs text-amber-800 dark:text-amber-200">{t("exports.restoreWarning")}</p>
+          <div className="flex flex-wrap gap-2">
+            <Input className="max-w-40" value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} placeholder="RESTORE" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) restore(file);
+                e.target.value = "";
+              }}
+            />
+            <Button disabled={restoreConfirm !== "RESTORE"} onClick={() => fileRef.current?.click()}>
+              ⬆ {t("exports.restoreJson")}
+            </Button>
+          </div>
+          {message ? <p className="text-xs font-medium">{message}</p> : null}
+        </div>
       </div>
     </Card>
   );

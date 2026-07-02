@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -28,6 +29,7 @@ import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeFxInsights } from "@/lib/domain/fxInsights";
+import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
@@ -63,6 +65,8 @@ export default function ReportsPage() {
   const categories = useCategories();
   const snapshots = useSnapshots();
   const rates = useRates();
+
+  const [realTry, setRealTry] = useState(false);
 
   const takeSnapshot = useAppMutation(async () => {
     if (!accounts.data || !transactions.data || !rates.data) return;
@@ -142,6 +146,18 @@ export default function ReportsPage() {
     }
   }
 
+  // inflation-adjusted view: deflate each month's TRY figure into today's lira
+  const deflating = realTry && displayCurrency === "TRY";
+  if (deflating) {
+    for (const row of totals) {
+      row.income = deflateTryToLatest(row.income, row.month);
+      row.expense = deflateTryToLatest(row.expense, row.month);
+    }
+    for (const [, series] of byCategory) {
+      for (let i = 0; i < series.length; i++) series[i] = deflateTryToLatest(series[i], months[i]);
+    }
+  }
+
   const topCategories = [...byCategory.entries()]
     .map(([id, series]) => ({ id, total: series.reduce((s, v) => s + v, 0), series }))
     .sort((a, b) => b.total - a.total)
@@ -167,7 +183,16 @@ export default function ReportsPage() {
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("reports.title")}</h1>
-        <div className="flex items-center gap-3 text-sm text-zinc-500">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+          {displayCurrency === "TRY" ? (
+            <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs">
+              <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={realTry} onChange={(e) => setRealTry(e.target.checked)} />
+              {t("reports.realTry")}
+            </label>
+          ) : null}
+          <Button variant="ghost" className="no-print" onClick={() => window.print()}>
+            🖶 {t("exports.printReport")}
+          </Button>
           <span>
             {t("reports.thisYear")}: <span className="font-semibold text-emerald-600">{fmt(yearIncome)}</span> /{" "}
             <span className="font-semibold">{fmt(yearExpense)}</span> ·{" "}
@@ -200,7 +225,7 @@ export default function ReportsPage() {
                   <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
                     tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-                  <Line type="monotone" dataKey="total" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="total" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -272,6 +297,7 @@ export default function ReportsPage() {
                     stroke={TREND_SLOTS[i]}
                     strokeWidth={2}
                     dot={false}
+                    isAnimationActive={false}
                     activeDot={{ r: 4 }}
                   />
                 ))}

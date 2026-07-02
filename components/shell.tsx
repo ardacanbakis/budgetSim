@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Select, Spinner } from "@/components/ui";
+import { TransactionModal } from "@/components/transactionModal";
+import { TransferModal } from "@/components/transferModal";
 import { useApp } from "@/lib/data/provider";
 import { KEYS, useRates } from "@/lib/data/queries";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
@@ -88,10 +90,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const rates = useRates();
+  const [quickTx, setQuickTx] = useState(false);
+  const [quickTransfer, setQuickTransfer] = useState(false);
 
   useEffect(() => {
     if (session.status === "signedOut") router.replace("/login");
   }, [session.status, router]);
+
+  // desktop shortcuts: n = new transaction, t = transfer (unless typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (e.key === "n") {
+        e.preventDefault();
+        setQuickTx(true);
+      } else if (e.key === "t") {
+        e.preventDefault();
+        setQuickTransfer(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (session.status !== "ready") {
     return (
@@ -187,6 +209,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="px-4 py-4 pb-24 md:px-6 md:pb-8">{children}</main>
         </div>
       </div>
+
+      <button
+        onClick={() => setQuickTx(true)}
+        aria-label={t("tx.newTransaction")}
+        title={`${t("tx.newTransaction")} (n)`}
+        className="no-print fixed right-4 bottom-20 z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
+      >
+        +
+      </button>
+      <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
+      <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
 
       {/* bottom nav — mobile */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-zinc-200 bg-white/95 backdrop-blur md:hidden dark:border-zinc-800 dark:bg-zinc-900/95">

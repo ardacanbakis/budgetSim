@@ -10,6 +10,19 @@ import { SupabaseRepo } from "./supabaseRepo";
 
 const MODE_KEY = "renovator-mode";
 const DISPLAY_KEY = "renovator-display-currency";
+const THEME_KEY = "renovator-theme";
+const COMPACT_KEY = "renovator-compact";
+
+export type Theme = "system" | "light" | "dark";
+
+function applyTheme(theme: Theme): void {
+  const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
+}
+
+function applyCompact(compact: boolean): void {
+  document.documentElement.dataset.compact = compact ? "true" : "false";
+}
 
 export type Session =
   | { status: "loading" }
@@ -23,6 +36,10 @@ interface AppContextValue {
   resetDemo: () => Promise<void>;
   displayCurrency: Currency;
   setDisplayCurrency: (c: Currency) => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  compact: boolean;
+  setCompact: (c: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -30,6 +47,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session>({ status: "loading" });
   const [displayCurrency, setDisplayCurrencyState] = useState<Currency>("USD");
+  const [theme, setThemeState] = useState<Theme>("system");
+  const [compact, setCompactState] = useState(false);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -37,6 +56,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     queueMicrotask(() => {
       const saved = window.localStorage.getItem(DISPLAY_KEY);
       if (saved && isCurrency(saved)) setDisplayCurrencyState(saved);
+      const savedTheme = window.localStorage.getItem(THEME_KEY) as Theme | null;
+      if (savedTheme === "light" || savedTheme === "dark" || savedTheme === "system") setThemeState(savedTheme);
+      applyTheme(savedTheme ?? "system");
+      const savedCompact = window.localStorage.getItem(COMPACT_KEY) === "true";
+      setCompactState(savedCompact);
+      applyCompact(savedCompact);
     });
 
     if (window.localStorage.getItem(MODE_KEY) === "demo") {
@@ -91,9 +116,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem(DISPLAY_KEY, c);
   }, []);
 
+  // theme follows the OS while set to "system"
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyTheme("system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
+
+  const setTheme = useCallback(
+    (t: Theme) => {
+      setThemeState(t);
+      window.localStorage.setItem(THEME_KEY, t);
+      applyTheme(t);
+      if (session.status === "ready") session.repo.saveUserSettings({ theme: t }).catch(() => undefined);
+    },
+    [session]
+  );
+
+  const setCompact = useCallback(
+    (c: boolean) => {
+      setCompactState(c);
+      window.localStorage.setItem(COMPACT_KEY, String(c));
+      applyCompact(c);
+      if (session.status === "ready") session.repo.saveUserSettings({ compact: c }).catch(() => undefined);
+    },
+    [session]
+  );
+
   const value = useMemo(
-    () => ({ session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency }),
-    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency]
+    () => ({ session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact }),
+    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact]
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
