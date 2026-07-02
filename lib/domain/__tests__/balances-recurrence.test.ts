@@ -12,6 +12,7 @@ function account(id: string, currency: Account["currency"], opening = 0): Accoun
     kind: currency === "BTC" ? "crypto" : currency === "XAU_G" ? "gold" : "fiat",
     openingBalance: opening,
     archived: false,
+    paymentAccountId: null,
     createdAt: "2026-01-01",
   };
 }
@@ -30,6 +31,7 @@ function tx(partial: Partial<Transaction> & Pick<Transaction, "accountId" | "dir
     recurringTemplateId: null,
     loanId: null,
     victvsPayoutId: null,
+    purchaseId: null,
     createdAt: "2026-06-01",
     ...partial,
   };

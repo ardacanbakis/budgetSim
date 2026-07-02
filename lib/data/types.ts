@@ -4,13 +4,18 @@ import { FxSnapshot } from "@/lib/domain/fx";
 export type TxDirection = "income" | "expense";
 export type TxStatus = "planned" | "completed";
 
+/** Currency-derived kinds plus credit cards (fiat-currency debt accounts). */
+export type AccountKind = CurrencyKind | "credit_card";
+
 export interface Account {
   id: string;
   name: string;
   currency: Currency;
-  kind: CurrencyKind;
+  kind: AccountKind;
   openingBalance: number;
   archived: boolean;
+  /** credit cards: default account the bill is paid from */
+  paymentAccountId: string | null;
   createdAt: string;
 }
 
@@ -41,6 +46,22 @@ export interface Transaction {
   recurringTemplateId: string | null;
   loanId: string | null;
   victvsPayoutId: string | null;
+  purchaseId: string | null;
+  createdAt: string;
+}
+
+/** Big-purchase log entry; installmentCount 1 = one-shot. */
+export interface Purchase {
+  id: string;
+  name: string;
+  accountId: string | null;
+  amount: number;
+  purchaseDate: string;
+  installmentCount: number;
+  firstDue: string;
+  details: string;
+  reflected: boolean;
+  categoryId: string | null;
   createdAt: string;
 }
 

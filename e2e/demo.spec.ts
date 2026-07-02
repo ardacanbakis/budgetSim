@@ -25,13 +25,34 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1200); // charts settle
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "loans", "projections"] as const) {
+    for (const route of ["victvs", "transactions", "purchases", "loans", "projections"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(800);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
     }
   });
 }
+
+test("purchases: create installment purchase on the card", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  await page.goto("/purchases");
+
+  await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
+  await page.getByPlaceholder("iPhone 17").fill("MacBook Air");
+  await page.getByLabel(/amount/i).first().fill("120000");
+  await page.getByLabel(/number of installments|taksit sayısı/i).fill("12");
+  await page.getByRole("button", { name: /^save$|^kaydet$/i }).click();
+
+  // appears under the card with an installment badge and progress line
+  await expect(page.getByText("MacBook Air")).toBeVisible();
+  await expect(page.getByText(/12×/)).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/purchase-created.png" });
+
+  // its planned installments exist in transactions
+  await page.goto("/transactions");
+  await expect(page.getByText("MacBook Air (1/12)")).toBeVisible();
+});
 
 test("demo flows: complete planned, transfer, victvs paste preview", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });

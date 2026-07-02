@@ -1,11 +1,13 @@
-import { Currency, CurrencyKind } from "@/lib/domain/currencies";
+import { Currency } from "@/lib/domain/currencies";
 import { FxSnapshot } from "@/lib/domain/fx";
 import {
   Account,
+  AccountKind,
   Category,
   Frequency,
   Loan,
   LoanKind,
+  Purchase,
   RecurringTemplate,
   Transaction,
   TxDirection,
@@ -17,8 +19,22 @@ import {
 export interface NewAccount {
   name: string;
   currency: Currency;
-  kind: CurrencyKind;
+  kind: AccountKind;
   openingBalance: number;
+  paymentAccountId?: string | null;
+}
+
+export interface NewPurchase {
+  name: string;
+  accountId: string | null;
+  amount: number;
+  purchaseDate: string;
+  /** 1 = one-shot */
+  installmentCount: number;
+  firstDue: string;
+  details: string;
+  reflected: boolean;
+  categoryId: string | null;
 }
 
 export interface NewTransaction {
@@ -146,6 +162,14 @@ export interface Repo {
   markVictvsPaid(input: MarkPaidInput): Promise<void>;
   /** undo a payout: sessions back to unpaid, aggregated transaction removed */
   unmarkVictvsPayout(payoutId: string): Promise<void>;
+
+  listPurchases(): Promise<Purchase[]>;
+  /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */
+  createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase>;
+  updatePurchase(id: string, patch: Partial<Pick<Purchase, "name" | "details" | "categoryId">>): Promise<void>;
+  /** reflect ON recreates the purchase's transactions; OFF deletes them all */
+  setPurchaseReflected(id: string, reflected: boolean, fxSnapshot: FxSnapshot | null): Promise<void>;
+  deletePurchase(id: string, deleteTransactions: boolean): Promise<void>;
 
   listLoans(): Promise<Loan[]>;
   /** creates the loan + a linked auto recurring template for installments */

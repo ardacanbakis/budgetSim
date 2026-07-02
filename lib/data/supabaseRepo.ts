@@ -6,6 +6,7 @@ import {
   MarkPaidInput,
   NewAccount,
   NewLoan,
+  NewPurchase,
   NewTemplate,
   NewTransaction,
   NewTransfer,
@@ -16,12 +17,15 @@ import {
   Account,
   Category,
   Loan,
+  Purchase,
   RecurringTemplate,
   Transaction,
   TxDirection,
   VictvsPayout,
   VictvsSession,
 } from "./types";
+import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
+import { todayISO } from "@/lib/domain/recurrence";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -33,6 +37,21 @@ const accountFromRow = (r: Row): Account => ({
   kind: r.kind,
   openingBalance: Number(r.opening_balance),
   archived: r.archived,
+  paymentAccountId: r.payment_account_id ?? null,
+  createdAt: r.created_at,
+});
+
+const purchaseFromRow = (r: Row): Purchase => ({
+  id: r.id,
+  name: r.name,
+  accountId: r.account_id,
+  amount: Number(r.amount),
+  purchaseDate: r.purchase_date,
+  installmentCount: r.installment_count,
+  firstDue: r.first_due,
+  details: r.details,
+  reflected: r.reflected,
+  categoryId: r.category_id,
   createdAt: r.created_at,
 });
 
@@ -59,6 +78,7 @@ const txFromRow = (r: Row): Transaction => ({
   recurringTemplateId: r.recurring_template_id,
   loanId: r.loan_id,
   victvsPayoutId: r.victvs_payout_id,
+  purchaseId: r.purchase_id ?? null,
   createdAt: r.created_at,
 });
 
@@ -145,6 +165,7 @@ export class SupabaseRepo implements Repo {
         currency: input.currency,
         kind: input.kind,
         opening_balance: input.openingBalance,
+        payment_account_id: input.paymentAccountId ?? null,
       })
       .select()
       .single();
@@ -159,6 +180,7 @@ export class SupabaseRepo implements Repo {
     if (patch.kind != null) row.kind = patch.kind;
     if (patch.openingBalance != null) row.opening_balance = patch.openingBalance;
     if (patch.archived != null) row.archived = patch.archived;
+    if (patch.paymentAccountId !== undefined) row.payment_account_id = patch.paymentAccountId;
     const { error } = await this.db.from("accounts").update(row).eq("id", id);
     throwIf(error);
   }
@@ -513,6 +535,92 @@ export class SupabaseRepo implements Repo {
     throwIf(deleteError);
   }
 
+  async listPurchases(): Promise<Purchase[]> {
+    const { data, error } = await this.db.from("purchases").select("*").order("purchase_date", { ascending: false });
+    throwIf(error);
+    return (data ?? []).map(purchaseFromRow);
+  }
+
+  private async insertPurchaseTransactions(purchase: Purchase, fxSnapshot: FxSnapshot | null): Promise<void> {
+    if (!purchase.accountId) return;
+    const { data: accountRow, error } = await this.db
+      .from("accounts")
+      .select("currency")
+      .eq("id", purchase.accountId)
+      .single();
+    throwIf(error);
+    const now = new Date().toISOString();
+    const rows = buildPurchaseTransactionSpecs(purchase, accountRow!.currency, todayISO()).map((spec) => ({
+      user_id: this.userId,
+      account_id: purchase.accountId,
+      direction: "expense",
+      category_id: purchase.categoryId,
+      amount: spec.amount,
+      status: spec.status,
+      due_date: spec.dueDate,
+      completed_at: spec.status === "completed" ? now : null,
+      description: spec.description,
+      fx_snapshot: spec.status === "completed" ? fxSnapshot : null,
+      purchase_id: purchase.id,
+    }));
+    const { error: insertError } = await this.db.from("transactions").insert(rows);
+    throwIf(insertError);
+  }
+
+  async createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase> {
+    const { data, error } = await this.db
+      .from("purchases")
+      .insert({
+        user_id: this.userId,
+        name: input.name,
+        account_id: input.accountId,
+        amount: input.amount,
+        purchase_date: input.purchaseDate,
+        installment_count: input.installmentCount,
+        first_due: input.firstDue,
+        details: input.details,
+        reflected: input.reflected,
+        category_id: input.categoryId,
+      })
+      .select()
+      .single();
+    throwIf(error);
+    const purchase = purchaseFromRow(data!);
+    if (purchase.reflected) await this.insertPurchaseTransactions(purchase, fxSnapshot);
+    return purchase;
+  }
+
+  async updatePurchase(id: string, patch: Partial<Pick<Purchase, "name" | "details" | "categoryId">>): Promise<void> {
+    const row: Row = {};
+    if (patch.name != null) row.name = patch.name;
+    if (patch.details != null) row.details = patch.details;
+    if (patch.categoryId !== undefined) row.category_id = patch.categoryId;
+    const { error } = await this.db.from("purchases").update(row).eq("id", id);
+    throwIf(error);
+  }
+
+  async setPurchaseReflected(id: string, reflected: boolean, fxSnapshot: FxSnapshot | null): Promise<void> {
+    const { data, error } = await this.db.from("purchases").select("*").eq("id", id).single();
+    throwIf(error);
+    const purchase = purchaseFromRow(data!);
+    if (purchase.reflected === reflected) return;
+    const { error: deleteError } = await this.db.from("transactions").delete().eq("purchase_id", id);
+    throwIf(deleteError);
+    const { error: updateError } = await this.db.from("purchases").update({ reflected }).eq("id", id);
+    throwIf(updateError);
+    if (reflected) await this.insertPurchaseTransactions({ ...purchase, reflected }, fxSnapshot);
+  }
+
+  async deletePurchase(id: string, deleteTransactions: boolean): Promise<void> {
+    if (!deleteTransactions) {
+      const { error } = await this.db.from("transactions").update({ purchase_id: null }).eq("purchase_id", id);
+      throwIf(error);
+    }
+    // FK is on delete cascade — remaining linked transactions go with the purchase
+    const { error } = await this.db.from("purchases").delete().eq("id", id);
+    throwIf(error);
+  }
+
   async listLoans(): Promise<Loan[]> {
     const { data, error } = await this.db.from("loans").select("*").order("created_at");
     throwIf(error);
@@ -572,7 +680,7 @@ export class SupabaseRepo implements Repo {
 
   async deleteAllData(): Promise<void> {
     // FK cascades wipe dependents when accounts go; clear the rest explicitly.
-    for (const table of ["transactions", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories"]) {
+    for (const table of ["transactions", "purchases", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories"]) {
       const { error } = await this.db.from(table).delete().eq("user_id", this.userId);
       throwIf(error);
     }

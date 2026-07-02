@@ -84,6 +84,7 @@ describe("projectCashflow", () => {
       kind: "fiat",
       openingBalance: 1000,
       archived: false,
+      paymentAccountId: null,
       createdAt: "2026-01-01",
     },
   ];
@@ -122,6 +123,7 @@ describe("projectCashflow", () => {
         recurringTemplateId: "tpl1",
         loanId: null,
         victvsPayoutId: null,
+        purchaseId: null,
         createdAt: "2026-06-20",
       },
     ];
@@ -160,6 +162,7 @@ describe("projectCashflow", () => {
         recurringTemplateId: null,
         loanId: null,
         victvsPayoutId: null,
+        purchaseId: null,
         createdAt: "2026-06-20",
       },
     ];

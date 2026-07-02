@@ -13,6 +13,7 @@ export const KEYS = {
   victvsSessions: ["victvs-sessions"] as const,
   victvsPayouts: ["victvs-payouts"] as const,
   loans: ["loans"] as const,
+  purchases: ["purchases"] as const,
   rates: ["rates"] as const,
 };
 
@@ -49,6 +50,11 @@ export function useVictvsPayouts() {
 export function useLoans() {
   const repo = useRepo();
   return useQuery({ queryKey: KEYS.loans, queryFn: () => repo.listLoans() });
+}
+
+export function usePurchases() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.purchases, queryFn: () => repo.listPurchases() });
 }
 
 /** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */

@@ -42,18 +42,24 @@ export default function AccountsPage() {
   function renderAccount(account: Account) {
     const balance = balances.get(account.id) ?? 0;
     const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
+    const isCard = account.kind === "credit_card";
     return (
       <Card key={account.id} className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold">{account.name}</span>
-              <Badge tone={account.kind === "crypto" ? "sky" : account.kind === "gold" ? "amber" : "zinc"}>
-                {t(`currency.${account.currency}`)}
+              <span className="font-semibold">
+                {isCard ? "💳 " : ""}
+                {account.name}
+              </span>
+              <Badge tone={isCard ? "red" : account.kind === "crypto" ? "sky" : account.kind === "gold" ? "amber" : "zinc"}>
+                {isCard ? t("accounts.creditCard") : t(`currency.${account.currency}`)}
               </Badge>
               {account.archived ? <Badge tone="red">{t("accounts.archived")}</Badge> : null}
             </div>
-            <div className="mt-2 text-2xl font-bold tabular-nums">{formatAmount(balance, account.currency, locale)}</div>
+            <div className={`mt-2 text-2xl font-bold tabular-nums ${isCard && balance < 0 ? "text-red-600" : ""}`}>
+              {formatAmount(balance, account.currency, locale)}
+            </div>
             {account.currency !== displayCurrency ? (
               <div className="text-sm text-zinc-500">
                 {converted != null ? `≈ ${formatAmount(converted, displayCurrency, locale)}` : t("common.rateUnavailable")}
@@ -142,9 +148,12 @@ function AccountModal({
   onDelete?: () => Promise<void>;
 }) {
   const { t } = useI18n();
+  const accounts = useAccounts();
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState<Currency>("TRY");
   const [opening, setOpening] = useState("0");
+  const [isCard, setIsCard] = useState(false);
+  const [paymentAccountId, setPaymentAccountId] = useState("");
   const [initialized, setInitialized] = useState<string | null>(null);
 
   // re-init form when target changes
@@ -154,7 +163,14 @@ function AccountModal({
     setName(initial?.name ?? "");
     setCurrency(initial?.currency ?? "TRY");
     setOpening(String(initial?.openingBalance ?? 0));
+    setIsCard(initial?.kind === "credit_card");
+    setPaymentAccountId(initial?.paymentAccountId ?? "");
   }
+
+  const fiat = CURRENCY_META[currency].kind === "fiat";
+  const paymentCandidates = (accounts.data ?? []).filter(
+    (a) => !a.archived && a.kind === "fiat" && a.id !== initial?.id
+  );
 
   return (
     <Modal open={open} onClose={onClose} title={initial ? t("common.edit") : t("accounts.newAccount")}>
@@ -162,11 +178,13 @@ function AccountModal({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
+          const card = fiat && isCard;
           await onSave({
             name,
             currency,
-            kind: CURRENCY_META[currency].kind,
+            kind: card ? "credit_card" : CURRENCY_META[currency].kind,
             openingBalance: Number(opening) || 0,
+            paymentAccountId: card ? paymentAccountId || null : null,
           });
         }}
       >
@@ -182,7 +200,31 @@ function AccountModal({
             ))}
           </Select>
         </Field>
-        <Field label={t("accounts.openingBalance")}>
+        {fiat ? (
+          <Field label={t("accounts.kind")}>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant={!isCard ? "primary" : "secondary"} onClick={() => setIsCard(false)}>
+                {t("accounts.bankOrCash")}
+              </Button>
+              <Button type="button" variant={isCard ? "primary" : "secondary"} onClick={() => setIsCard(true)}>
+                💳 {t("accounts.creditCard")}
+              </Button>
+            </div>
+          </Field>
+        ) : null}
+        {fiat && isCard ? (
+          <Field label={t("accounts.paymentAccount")} hint={t("accounts.paymentAccountHint")}>
+            <Select value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
+              <option value="">{t("common.none")}</option>
+              {paymentCandidates.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+        <Field label={fiat && isCard ? `${t("accounts.openingBalance")} (0 = ${t("common.none")})` : t("accounts.openingBalance")}>
           <Input
             type="number"
             step="any"

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -17,8 +16,11 @@ import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
+import { computePurchaseLiability, findDueCardPayments } from "@/lib/domain/purchases";
 import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
+import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { AvgSpendCard } from "@/components/avgSpendCard";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -43,10 +45,25 @@ export default function DashboardPage() {
 
   const today = todayISO();
 
-  const derived = useMemo(() => {
+  // computed per render (cheap at personal scale); the React compiler memoizes
+  const derived = (() => {
     if (!accounts.data || !transactions.data || !rates.data) return null;
     const balances = computeBalances(accounts.data, transactions.data);
-    const netWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
+    const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
+    // remaining reflected installments count as debt now (current stat only —
+    // the projector spreads them month by month, so it stays unadjusted)
+    const liability = computePurchaseLiability(transactions.data, accounts.data, rates.data.usdPer, displayCurrency);
+    const netWorth = { ...rawNetWorth, total: rawNetWorth.total - liability };
+    let ccPostedDebt = 0;
+    for (const a of accounts.data) {
+      if (a.kind !== "credit_card" || a.archived) continue;
+      const balance = balances.get(a.id) ?? 0;
+      if (balance < 0) {
+        const converted = convert(-balance, a.currency, displayCurrency, rates.data.usdPer);
+        if (converted != null) ccPostedDebt += converted;
+      }
+    }
+    const duePayments = findDueCardPayments(accounts.data, balances, transactions.data, today);
 
     const upcoming = transactions.data
       .filter((tx) => tx.status === "planned" && tx.dueDate <= addDays(today, 30))
@@ -73,16 +90,16 @@ export default function DashboardPage() {
     }
     const flow = [...byMonth.entries()].map(([month, v]) => ({
       month,
-      [t("dashboard.income")]: Math.round(v.income * 100) / 100,
-      [t("dashboard.expense")]: Math.round(v.expense * 100) / 100,
+      income: Math.round(v.income * 100) / 100,
+      expense: Math.round(v.expense * 100) / 100,
     }));
 
-    return { balances, netWorth, upcoming, flow };
-  }, [accounts.data, transactions.data, rates.data, displayCurrency, today, t]);
+    return { balances, netWorth, liability, ccPostedDebt, duePayments, upcoming, flow };
+  })();
 
-  const unpaidVictvs = useMemo(
-    () => sumAmounts("USD", (victvs.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount)),
-    [victvs.data]
+  const unpaidVictvs = sumAmounts(
+    "USD",
+    (victvs.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount)
   );
 
   if (!derived || accounts.isLoading || transactions.isLoading) return <Spinner />;
@@ -92,16 +109,39 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
+      {derived.duePayments.length > 0 ? <CardPaymentReminder duePayments={derived.duePayments} /> : null}
+
       {/* stat tiles */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
           <div className="text-xs text-zinc-500">
             {t("dashboard.netWorth")} ({displayCurrency})
           </div>
           <div className="mt-1 text-3xl font-bold">{formatAmount(derived.netWorth.total, displayCurrency, locale)}</div>
+          {derived.liability > 0 ? (
+            <div className="mt-1 text-xs text-zinc-400">
+              −{formatAmount(derived.liability, displayCurrency, locale)} {t("purchases.inclInstallments")}
+            </div>
+          ) : null}
           {derived.netWorth.skippedAccountIds.length > 0 ? (
             <div className="mt-1 text-xs text-amber-600">{t("dashboard.skippedAccounts")}</div>
           ) : null}
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs text-zinc-500">
+            {t("purchases.ccDebtTile")} ({displayCurrency})
+          </div>
+          <div className={`mt-1 text-3xl font-bold ${derived.ccPostedDebt > 0 ? "text-red-600" : ""}`}>
+            {formatAmount(derived.ccPostedDebt, displayCurrency, locale)}
+          </div>
+          {derived.liability > 0 ? (
+            <div className="mt-1 text-xs text-zinc-400">
+              +{formatAmount(derived.liability, displayCurrency, locale)} {t("purchases.upcomingInstallments").toLowerCase()}
+            </div>
+          ) : null}
+          <Link href="/purchases" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
+            {t("dashboard.seeAll")} →
+          </Link>
         </Card>
         <Card className="p-4">
           <div className="text-xs text-zinc-500">{t("dashboard.unpaidVictvs")}</div>
@@ -128,7 +168,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2 3xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-2 3xl:grid-cols-4">
         {/* upcoming planned */}
         <Card className="3xl:col-span-1">
           <CardHeader
@@ -183,12 +223,14 @@ export default function DashboardPage() {
                   tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatAmount(Number(v), displayCurrency, locale)} cursor={{ fill: "var(--viz-grid)", opacity: 0.4 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey={t("dashboard.income")} fill="var(--viz-series-1)" radius={[4, 4, 0, 0]} maxBarSize={18} />
-                <Bar dataKey={t("dashboard.expense")} fill="var(--viz-series-2)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                <Bar dataKey="income" name={t("dashboard.income")} fill="var(--viz-series-1)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                <Bar dataKey="expense" name={t("dashboard.expense")} fill="var(--viz-series-2)" radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
+
+        <AvgSpendCard className="xl:col-span-2 3xl:col-span-1" />
       </div>
     </div>
   );

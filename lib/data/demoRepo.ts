@@ -5,18 +5,22 @@ import {
   MarkPaidInput,
   NewAccount,
   NewLoan,
+  NewPurchase,
   NewTemplate,
   NewTransaction,
   NewTransfer,
   NewVictvsSession,
   Repo,
 } from "./repo";
+import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
+import { todayISO } from "@/lib/domain/recurrence";
 import { buildDemoSeed, DemoStore } from "./demoSeed";
 import { amortizationSchedule } from "@/lib/domain/loan";
 import {
   Account,
   Category,
   Loan,
+  Purchase,
   RecurringTemplate,
   Transaction,
   TxDirection,
@@ -24,7 +28,8 @@ import {
   VictvsSession,
 } from "./types";
 
-const STORAGE_KEY = "renovator-demo-v1";
+// bump the suffix whenever the DemoStore shape changes — old sandboxes reseed
+const STORAGE_KEY = "renovator-demo-v2";
 
 const uuid = () => crypto.randomUUID();
 
@@ -67,7 +72,13 @@ export class DemoRepo implements Repo {
   }
 
   async createAccount(input: NewAccount): Promise<Account> {
-    const account: Account = { id: uuid(), archived: false, createdAt: new Date().toISOString(), ...input };
+    const account: Account = {
+      id: uuid(),
+      archived: false,
+      createdAt: new Date().toISOString(),
+      ...input,
+      paymentAccountId: input.paymentAccountId ?? null,
+    };
     this.store.accounts.push(account);
     this.save();
     return account;
@@ -83,6 +94,8 @@ export class DemoRepo implements Repo {
     this.store.accounts = this.store.accounts.filter((a) => a.id !== id);
     this.store.transactions = this.store.transactions.filter((t) => t.accountId !== id);
     this.store.templates = this.store.templates.filter((t) => t.accountId !== id);
+    for (const a of this.store.accounts) if (a.paymentAccountId === id) a.paymentAccountId = null;
+    for (const p of this.store.purchases) if (p.accountId === id) p.accountId = null;
     this.save();
   }
 
@@ -101,6 +114,7 @@ export class DemoRepo implements Repo {
     this.store.categories = this.store.categories.filter((c) => c.id !== id);
     for (const t of this.store.transactions) if (t.categoryId === id) t.categoryId = null;
     for (const t of this.store.templates) if (t.categoryId === id) t.categoryId = null;
+    for (const p of this.store.purchases) if (p.categoryId === id) p.categoryId = null;
     this.save();
   }
 
@@ -129,6 +143,7 @@ export class DemoRepo implements Repo {
       recurringTemplateId: input.recurringTemplateId ?? null,
       loanId: input.loanId ?? null,
       victvsPayoutId: null,
+      purchaseId: null,
       createdAt: new Date().toISOString(),
     };
     this.store.transactions.push(tx);
@@ -189,6 +204,7 @@ export class DemoRepo implements Repo {
       recurringTemplateId: null,
       loanId: null,
       victvsPayoutId: null,
+      purchaseId: null,
       createdAt: now,
     };
     this.store.transactions.push(
@@ -264,6 +280,7 @@ export class DemoRepo implements Repo {
         recurringTemplateId: template.id,
         loanId: template.loanId,
         victvsPayoutId: null,
+        purchaseId: null,
         createdAt: now,
       });
     }
@@ -344,6 +361,7 @@ export class DemoRepo implements Repo {
       recurringTemplateId: null,
       loanId: null,
       victvsPayoutId: payoutId,
+      purchaseId: null,
       createdAt: now,
     });
     const payout: VictvsPayout = {
@@ -376,6 +394,70 @@ export class DemoRepo implements Repo {
       }
     }
     this.store.victvsPayouts = this.store.victvsPayouts.filter((p) => p.id !== payoutId);
+    this.save();
+  }
+
+  async listPurchases(): Promise<Purchase[]> {
+    return [...this.store.purchases];
+  }
+
+  private createPurchaseTransactions(purchase: Purchase, fxSnapshot: FxSnapshot | null): void {
+    const account = purchase.accountId ? this.store.accounts.find((a) => a.id === purchase.accountId) : null;
+    if (!account) return;
+    const now = new Date().toISOString();
+    for (const spec of buildPurchaseTransactionSpecs(purchase, account.currency, todayISO())) {
+      this.store.transactions.push({
+        id: uuid(),
+        accountId: account.id,
+        direction: "expense",
+        categoryId: purchase.categoryId,
+        amount: spec.amount,
+        status: spec.status,
+        dueDate: spec.dueDate,
+        completedAt: spec.status === "completed" ? now : null,
+        description: spec.description,
+        fxSnapshot: spec.status === "completed" ? fxSnapshot : null,
+        transferGroupId: null,
+        transferMarketRate: null,
+        recurringTemplateId: null,
+        loanId: null,
+        victvsPayoutId: null,
+        purchaseId: purchase.id,
+        createdAt: now,
+      });
+    }
+  }
+
+  async createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase> {
+    const purchase: Purchase = { id: uuid(), createdAt: new Date().toISOString(), ...input };
+    this.store.purchases.push(purchase);
+    if (purchase.reflected && purchase.accountId) this.createPurchaseTransactions(purchase, fxSnapshot);
+    this.save();
+    return purchase;
+  }
+
+  async updatePurchase(id: string, patch: Partial<Pick<Purchase, "name" | "details" | "categoryId">>): Promise<void> {
+    const purchase = this.store.purchases.find((p) => p.id === id);
+    if (purchase) Object.assign(purchase, patch);
+    this.save();
+  }
+
+  async setPurchaseReflected(id: string, reflected: boolean, fxSnapshot: FxSnapshot | null): Promise<void> {
+    const purchase = this.store.purchases.find((p) => p.id === id);
+    if (!purchase || purchase.reflected === reflected) return;
+    this.store.transactions = this.store.transactions.filter((t) => t.purchaseId !== id);
+    purchase.reflected = reflected;
+    if (reflected && purchase.accountId) this.createPurchaseTransactions(purchase, fxSnapshot);
+    this.save();
+  }
+
+  async deletePurchase(id: string, deleteTransactions: boolean): Promise<void> {
+    this.store.purchases = this.store.purchases.filter((p) => p.id !== id);
+    if (deleteTransactions) {
+      this.store.transactions = this.store.transactions.filter((t) => t.purchaseId !== id);
+    } else {
+      for (const t of this.store.transactions) if (t.purchaseId === id) t.purchaseId = null;
+    }
     this.save();
   }
 

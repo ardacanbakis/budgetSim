@@ -1,10 +1,12 @@
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { amortizationSchedule } from "@/lib/domain/loan";
+import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { FALLBACK_USD_PER } from "@/lib/rates/fallback";
 import {
   Account,
   Category,
   Loan,
+  Purchase,
   RecurringTemplate,
   Transaction,
   VictvsPayout,
@@ -19,6 +21,7 @@ export interface DemoStore {
   victvsSessions: VictvsSession[];
   victvsPayouts: VictvsPayout[];
   loans: Loan[];
+  purchases: Purchase[];
 }
 
 const uuid = () =>
@@ -37,14 +40,25 @@ export function buildDemoSeed(): DemoStore {
   const nowIso = new Date().toISOString();
   const snapshot = { usdPer: FALLBACK_USD_PER, at: nowIso };
 
+  const base = { archived: false, paymentAccountId: null, createdAt: nowIso };
   const accounts: Account[] = [
-    { id: uuid(), name: "Ziraat TRY", currency: "TRY", kind: "fiat", openingBalance: 260000, archived: false, createdAt: nowIso },
-    { id: uuid(), name: "Wise USD", currency: "USD", kind: "fiat", openingBalance: 6400, archived: false, createdAt: nowIso },
-    { id: uuid(), name: "EUR Savings", currency: "EUR", kind: "fiat", openingBalance: 2150, archived: false, createdAt: nowIso },
-    { id: uuid(), name: "Cold Wallet", currency: "BTC", kind: "crypto", openingBalance: 0.0412, archived: false, createdAt: nowIso },
-    { id: uuid(), name: "Gram Gold", currency: "XAU_G", kind: "gold", openingBalance: 36, archived: false, createdAt: nowIso },
+    { ...base, id: uuid(), name: "Ziraat TRY", currency: "TRY", kind: "fiat", openingBalance: 260000 },
+    { ...base, id: uuid(), name: "Wise USD", currency: "USD", kind: "fiat", openingBalance: 6400 },
+    { ...base, id: uuid(), name: "EUR Savings", currency: "EUR", kind: "fiat", openingBalance: 2150 },
+    { ...base, id: uuid(), name: "Cold Wallet", currency: "BTC", kind: "crypto", openingBalance: 0.0412 },
+    { ...base, id: uuid(), name: "Gram Gold", currency: "XAU_G", kind: "gold", openingBalance: 36 },
   ];
   const [tryAcc, usdAcc, , ,] = accounts;
+  const cardAcc: Account = {
+    ...base,
+    id: uuid(),
+    name: "Bonus Card",
+    currency: "TRY",
+    kind: "credit_card",
+    openingBalance: 0,
+    paymentAccountId: tryAcc.id,
+  };
+  accounts.push(cardAcc);
 
   const mkCat = (name: string, direction: Category["direction"], color: string): Category => ({
     id: uuid(),
@@ -75,6 +89,7 @@ export function buildDemoSeed(): DemoStore {
     recurringTemplateId: null,
     loanId: null,
     victvsPayoutId: null,
+    purchaseId: null,
     createdAt: nowIso,
   };
 
@@ -153,6 +168,60 @@ export function buildDemoSeed(): DemoStore {
     });
   }
 
+  // Big purchases: a reflected 6-installment phone on the card (2 posted) +
+  // an unreflected one-shot log entry. Groceries/bills also hit the card so
+  // the averages card has data.
+  const phonePurchaseDate = addMonthsClamped(today, -2);
+  const phoneFirstDue = addMonthsClamped(phonePurchaseDate, 1);
+  const phonePurchase: Purchase = {
+    id: uuid(),
+    name: "iPhone 17",
+    accountId: cardAcc.id,
+    amount: 84000,
+    purchaseDate: phonePurchaseDate,
+    installmentCount: 6,
+    firstDue: phoneFirstDue,
+    details: "Apple Store, 2yr warranty",
+    reflected: true,
+    categoryId: cat("Other expense"),
+    createdAt: nowIso,
+  };
+  const oneShotPurchase: Purchase = {
+    id: uuid(),
+    name: "Washing machine",
+    accountId: tryAcc.id,
+    amount: 32500,
+    purchaseDate: addMonthsClamped(today, -1),
+    installmentCount: 1,
+    firstDue: addMonthsClamped(today, -1),
+    details: "Not reflected — paid before I started tracking",
+    reflected: false,
+    categoryId: cat("Other expense"),
+    createdAt: nowIso,
+  };
+  const purchases = [phonePurchase, oneShotPurchase];
+  for (const spec of buildPurchaseTransactionSpecs(phonePurchase, "TRY", today)) {
+    transactions.push({
+      ...baseTx,
+      id: uuid(),
+      accountId: cardAcc.id,
+      direction: "expense",
+      categoryId: phonePurchase.categoryId,
+      amount: spec.amount,
+      status: spec.status,
+      dueDate: spec.dueDate,
+      completedAt: spec.status === "completed" ? nowIso : null,
+      description: spec.description,
+      fxSnapshot: spec.status === "completed" ? snapshot : null,
+      purchaseId: phonePurchase.id,
+    });
+  }
+  // groceries on the card this month + last month (feeds averages, card debt)
+  transactions.push(
+    { ...baseTx, id: uuid(), accountId: cardAcc.id, direction: "expense", categoryId: cat("Groceries"), amount: 5240.3, status: "completed", dueDate: `${lastMonth.slice(0, 7)}-18`, completedAt: nowIso, description: "Migros + market" },
+    { ...baseTx, id: uuid(), accountId: cardAcc.id, direction: "expense", categoryId: cat("Utilities & bills"), amount: 980, status: "completed", dueDate: `${lastMonth.slice(0, 7)}-21`, completedAt: nowIso, description: "Phone + internet" }
+  );
+
   const victvsSessions: VictvsSession[] = [
     { id: uuid(), date: `${lastMonth.slice(0, 7)}-08`, sessionType: "Pearson VUE Invigilation", amount: 120, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
     { id: uuid(), date: `${lastMonth.slice(0, 7)}-15`, sessionType: "Remote Proctoring AM", amount: 95.5, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
@@ -168,5 +237,6 @@ export function buildDemoSeed(): DemoStore {
     victvsSessions,
     victvsPayouts: [] as VictvsPayout[],
     loans,
+    purchases,
   };
 }
