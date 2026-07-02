@@ -7,8 +7,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { KEYS, useRates } from "@/lib/data/queries";
+import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
+import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
 const NAV = [
@@ -19,14 +21,16 @@ const NAV = [
   { href: "/victvs", key: "nav.victvs", icon: "✓" },
   { href: "/recurring", key: "nav.recurring", icon: "↻" },
   { href: "/loans", key: "nav.loans", icon: "⌂" },
+  { href: "/reports", key: "nav.reports", icon: "◔" },
   { href: "/projections", key: "nav.projections", icon: "↗" },
   { href: "/settings", key: "nav.settings", icon: "⚙" },
 ] as const;
 
 /**
  * Runs once per session when data is ready: seed default categories,
- * materialize recurring templates 12 months out, then auto-complete due
- * items with today's rates. Works identically in demo and Supabase modes.
+ * materialize recurring templates 12 months out, auto-complete due items
+ * with today's rates, and take the monthly net-worth snapshot if this
+ * month doesn't have one yet. Works identically in demo and Supabase modes.
  */
 function Bootstrapper() {
   const { session } = useApp();
@@ -38,7 +42,8 @@ function Bootstrapper() {
     if (ran.current || session.status !== "ready" || !rates.data) return;
     ran.current = true;
     const repo = session.repo;
-    const snapshot = snapshotFromTable(rates.data);
+    const table = rates.data;
+    const snapshot = snapshotFromTable(table);
     (async () => {
       try {
         await repo.seedDefaultCategories();
@@ -47,6 +52,26 @@ function Bootstrapper() {
         if (created || completed) {
           await queryClient.invalidateQueries({ queryKey: KEYS.transactions });
           await queryClient.invalidateQueries({ queryKey: KEYS.categories });
+        }
+        // monthly net-worth snapshot (skipped while on fallback rates — a
+        // stale-rate snapshot would poison the history)
+        const isStale =
+          ("stale" in table && table.stale) || Object.values(table.sources).some((s) => s === "fallback");
+        if (!isStale) {
+          const today = todayISO();
+          const existing = await repo.listSnapshots();
+          if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
+            const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
+            const balances = computeBalances(accounts, transactions);
+            const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
+            await repo.takeSnapshot({
+              snapshotDate: today,
+              balances: Object.fromEntries(balances),
+              usdPer: table.usdPer,
+              totalUsd: total,
+            });
+            await queryClient.invalidateQueries({ queryKey: KEYS.snapshots });
+          }
         }
       } catch (err) {
         console.warn("bootstrap failed", err);

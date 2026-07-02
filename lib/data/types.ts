@@ -140,6 +140,15 @@ export interface Goal {
   createdAt: string;
 }
 
+export interface NetWorthSnapshot {
+  id: string;
+  /** yyyy-mm-dd; unique per month per user */
+  snapshotDate: string;
+  balances: Record<string, number>;
+  usdPer: import("@/lib/domain/fx").UsdPerMap;
+  totalUsd: number;
+}
+
 export interface DashboardLayout {
   order: string[];
   hidden: string[];

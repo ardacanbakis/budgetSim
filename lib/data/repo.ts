@@ -9,6 +9,7 @@ import {
   Goal,
   Loan,
   LoanKind,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -177,6 +178,10 @@ export interface Repo {
 
   getUserSettings(): Promise<UserSettings>;
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>;
+
+  listSnapshots(): Promise<NetWorthSnapshot[]>;
+  /** upserts a snapshot for its date (auto-taken monthly; manual any time) */
+  takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void>;
 
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */

@@ -22,6 +22,7 @@ import {
   Category,
   Goal,
   Loan,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -33,7 +34,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 
 // bump the suffix whenever the DemoStore shape changes — old sandboxes reseed
-const STORAGE_KEY = "renovator-demo-v3";
+const STORAGE_KEY = "renovator-demo-v4";
 
 const uuid = () => crypto.randomUUID();
 
@@ -441,6 +442,17 @@ export class DemoRepo implements Repo {
 
   async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
     this.store.settings = { ...this.store.settings, ...patch };
+    this.save();
+  }
+
+  async listSnapshots(): Promise<NetWorthSnapshot[]> {
+    return [...this.store.snapshots];
+  }
+
+  async takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void> {
+    this.store.snapshots = this.store.snapshots.filter((s) => s.snapshotDate !== input.snapshotDate);
+    this.store.snapshots.push({ id: uuid(), ...input });
+    this.store.snapshots.sort((a, b) => (a.snapshotDate < b.snapshotDate ? -1 : 1));
     this.save();
   }
 

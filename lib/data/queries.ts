@@ -17,6 +17,7 @@ export const KEYS = {
   budgets: ["budgets"] as const,
   goals: ["goals"] as const,
   userSettings: ["user-settings"] as const,
+  snapshots: ["snapshots"] as const,
   rates: ["rates"] as const,
 };
 
@@ -73,6 +74,11 @@ export function useGoals() {
 export function useUserSettings() {
   const repo = useRepo();
   return useQuery({ queryKey: KEYS.userSettings, queryFn: () => repo.getUserSettings() });
+}
+
+export function useSnapshots() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.snapshots, queryFn: () => repo.listSnapshots() });
 }
 
 /** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */

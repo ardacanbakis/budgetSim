@@ -25,7 +25,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1200); // charts settle
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "purchases", "loans", "projections"] as const) {
+    for (const route of ["victvs", "transactions", "purchases", "loans", "reports", "projections"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(800);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });

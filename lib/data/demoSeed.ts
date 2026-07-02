@@ -8,6 +8,7 @@ import {
   Category,
   Goal,
   Loan,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -28,6 +29,7 @@ export interface DemoStore {
   budgets: Budget[];
   goals: Goal[];
   settings: UserSettings;
+  snapshots: NetWorthSnapshot[];
 }
 
 const uuid = () =>
@@ -243,6 +245,15 @@ export function buildDemoSeed(): DemoStore {
     { id: uuid(), name: "Emergency fund", accountId: usdAcc.id, targetAmount: 10000, targetDate: addMonthsClamped(today, 6), createdAt: nowIso },
   ];
 
+  // a few months of net-worth history so the reports chart has a line to draw
+  const snapshots: NetWorthSnapshot[] = [-4, -3, -2, -1].map((i, idx) => ({
+    id: uuid(),
+    snapshotDate: addMonthsClamped(today, i),
+    balances: {},
+    usdPer: FALLBACK_USD_PER,
+    totalUsd: 15200 + idx * 850 + (idx % 2 === 0 ? -240 : 310),
+  }));
+
   return {
     accounts,
     categories,
@@ -255,5 +266,6 @@ export function buildDemoSeed(): DemoStore {
     budgets,
     goals,
     settings: { dashboardLayout: null, theme: "system", compact: false },
+    snapshots,
   };
 }

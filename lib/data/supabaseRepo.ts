@@ -19,6 +19,7 @@ import {
   Category,
   Goal,
   Loan,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -628,6 +629,32 @@ export class SupabaseRepo implements Repo {
     if (patch.theme != null) row.theme = patch.theme;
     if (patch.compact != null) row.compact = patch.compact;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
+    throwIf(error);
+  }
+
+  async listSnapshots(): Promise<NetWorthSnapshot[]> {
+    const { data, error } = await this.db.from("net_worth_snapshots").select("*").order("snapshot_date");
+    throwIf(error);
+    return (data ?? []).map((r: Row) => ({
+      id: r.id,
+      snapshotDate: r.snapshot_date,
+      balances: r.balances,
+      usdPer: r.usd_per,
+      totalUsd: Number(r.total_usd),
+    }));
+  }
+
+  async takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void> {
+    const { error } = await this.db.from("net_worth_snapshots").upsert(
+      {
+        user_id: this.userId,
+        snapshot_date: input.snapshotDate,
+        balances: input.balances,
+        usd_per: input.usdPer,
+        total_usd: input.totalUsd,
+      },
+      { onConflict: "user_id,snapshot_date" }
+    );
     throwIf(error);
   }
 
