@@ -3,6 +3,7 @@ import { FxSnapshot } from "@/lib/domain/fx";
 import { amortizationSchedule } from "@/lib/domain/loan";
 import { computeMissingOccurrences, findAutoCompletable } from "@/lib/domain/materialize";
 import {
+  BackupFile,
   MarkPaidInput,
   NewAccount,
   NewLoan,
@@ -19,6 +20,7 @@ import {
   Category,
   Goal,
   Loan,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -105,6 +107,7 @@ const sessionFromRow = (r: Row): VictvsSession => ({
   id: r.id,
   date: r.date,
   sessionType: r.session_type,
+  sessionNo: r.session_no ?? "",
   amount: Number(r.amount),
   status: r.status,
   payoutId: r.payout_id,
@@ -449,6 +452,7 @@ export class SupabaseRepo implements Repo {
       user_id: this.userId,
       date: s.date,
       session_type: s.sessionType,
+      session_no: s.sessionNo ?? "",
       amount: s.amount,
       notes: s.notes ?? "",
       source: s.source,
@@ -517,6 +521,15 @@ export class SupabaseRepo implements Repo {
       .update({ status: "paid", payout_id: payout!.id })
       .in("id", input.sessionIds);
     throwIf(sessionsError);
+  }
+
+  async markVictvsUnpaid(sessionIds: string[]): Promise<void> {
+    if (!sessionIds.length) return;
+    const { error } = await this.db
+      .from("victvs_sessions")
+      .update({ status: "unpaid", payout_id: null })
+      .in("id", sessionIds);
+    throwIf(error);
   }
 
   async unmarkVictvsPayout(payoutId: string): Promise<void> {
@@ -618,8 +631,17 @@ export class SupabaseRepo implements Repo {
   async getUserSettings(): Promise<UserSettings> {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
-    if (!data) return { dashboardLayout: null, theme: "system", compact: false };
-    return { dashboardLayout: data.dashboard_layout, theme: data.theme, compact: data.compact };
+    if (!data) {
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null };
+    }
+    return {
+      dashboardLayout: data.dashboard_layout,
+      theme: data.theme,
+      compact: data.compact,
+      victvsAccountId: data.victvs_account_id ?? null,
+      victvsDefaults: data.victvs_defaults ?? null,
+      navOrder: data.nav_order ?? null,
+    };
   }
 
   async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
@@ -627,7 +649,36 @@ export class SupabaseRepo implements Repo {
     if (patch.dashboardLayout !== undefined) row.dashboard_layout = patch.dashboardLayout;
     if (patch.theme != null) row.theme = patch.theme;
     if (patch.compact != null) row.compact = patch.compact;
+    if (patch.victvsAccountId !== undefined) row.victvs_account_id = patch.victvsAccountId;
+    if (patch.victvsDefaults !== undefined) row.victvs_defaults = patch.victvsDefaults;
+    if (patch.navOrder !== undefined) row.nav_order = patch.navOrder;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
+    throwIf(error);
+  }
+
+  async listSnapshots(): Promise<NetWorthSnapshot[]> {
+    const { data, error } = await this.db.from("net_worth_snapshots").select("*").order("snapshot_date");
+    throwIf(error);
+    return (data ?? []).map((r: Row) => ({
+      id: r.id,
+      snapshotDate: r.snapshot_date,
+      balances: r.balances,
+      usdPer: r.usd_per,
+      totalUsd: Number(r.total_usd),
+    }));
+  }
+
+  async takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void> {
+    const { error } = await this.db.from("net_worth_snapshots").upsert(
+      {
+        user_id: this.userId,
+        snapshot_date: input.snapshotDate,
+        balances: input.balances,
+        usd_per: input.usdPer,
+        total_usd: input.totalUsd,
+      },
+      { onConflict: "user_id,snapshot_date" }
+    );
     throwIf(error);
   }
 
@@ -776,9 +827,116 @@ export class SupabaseRepo implements Repo {
 
   async deleteAllData(): Promise<void> {
     // FK cascades wipe dependents when accounts go; clear the rest explicitly.
-    for (const table of ["transactions", "purchases", "budgets", "goals", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories", "user_settings"]) {
+    for (const table of ["transactions", "purchases", "budgets", "goals", "net_worth_snapshots", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories", "user_settings"]) {
       const { error } = await this.db.from(table).delete().eq("user_id", this.userId);
       throwIf(error);
     }
+  }
+
+  async exportAll(): Promise<BackupFile> {
+    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots] =
+      await Promise.all([
+        this.listAccounts(),
+        this.listCategories(),
+        this.listTransactions(),
+        this.listTemplates(),
+        this.listVictvsSessions(),
+        this.listVictvsPayouts(),
+        this.listLoans(),
+        this.listPurchases(),
+        this.listBudgets(),
+        this.listGoals(),
+        this.listSnapshots(),
+      ]);
+    return {
+      app: "renovator",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      accounts,
+      categories,
+      transactions,
+      templates,
+      victvsSessions,
+      victvsPayouts,
+      loans,
+      purchases,
+      budgets,
+      goals,
+      snapshots,
+    };
+  }
+
+  /** replaces all data; inserts follow FK dependency order with two-pass patches for circular refs */
+  async importAll(backup: BackupFile): Promise<void> {
+    await this.deleteAllData();
+    const u = this.userId;
+    const insert = async (table: string, rows: Row[]) => {
+      if (!rows.length) return;
+      const { error } = await this.db.from(table).insert(rows);
+      throwIf(error);
+    };
+
+    // accounts first without self-referencing payment_account_id, patched after
+    await insert(
+      "accounts",
+      backup.accounts.map((a) => ({
+        id: a.id, user_id: u, name: a.name, currency: a.currency, kind: a.kind,
+        opening_balance: a.openingBalance, archived: a.archived, created_at: a.createdAt,
+      }))
+    );
+    for (const a of backup.accounts) {
+      if (a.paymentAccountId) {
+        const { error } = await this.db.from("accounts").update({ payment_account_id: a.paymentAccountId }).eq("id", a.id);
+        throwIf(error);
+      }
+    }
+    await insert("categories", backup.categories.map((c) => ({ id: c.id, user_id: u, name: c.name, direction: c.direction, color: c.color })));
+    await insert("purchases", backup.purchases.map((p) => ({
+      id: p.id, user_id: u, name: p.name, account_id: p.accountId, amount: p.amount,
+      purchase_date: p.purchaseDate, installment_count: p.installmentCount, first_due: p.firstDue,
+      details: p.details, reflected: p.reflected, category_id: p.categoryId, created_at: p.createdAt,
+    })));
+    // loans ↔ templates are circular: loans go in without the template link, patched after
+    await insert("loans", backup.loans.map((l) => ({
+      id: l.id, user_id: u, name: l.name, kind: l.kind, currency: l.currency, principal: l.principal,
+      monthly_rate_pct: l.monthlyRatePct, term_months: l.termMonths, start_date: l.startDate,
+      installment: l.installment, created_at: l.createdAt,
+    })));
+    await insert("recurring_templates", backup.templates.map((tpl) => ({
+      id: tpl.id, user_id: u, name: tpl.name, account_id: tpl.accountId, direction: tpl.direction,
+      category_id: tpl.categoryId, amount: tpl.amount, frequency: tpl.frequency, start_date: tpl.startDate,
+      end_date: tpl.endDate, auto_complete: tpl.autoComplete, loan_id: tpl.loanId, created_at: tpl.createdAt,
+    })));
+    for (const l of backup.loans) {
+      if (l.recurringTemplateId) {
+        const { error } = await this.db.from("loans").update({ recurring_template_id: l.recurringTemplateId }).eq("id", l.id);
+        throwIf(error);
+      }
+    }
+    // payouts ↔ transactions are circular: payouts go in without the tx link, patched after
+    await insert("victvs_payouts", backup.victvsPayouts.map((p) => ({
+      id: p.id, user_id: u, payment_date: p.paymentDate, account_id: p.accountId, total: p.total,
+      session_count: p.sessionCount, created_at: p.createdAt,
+    })));
+    await insert("transactions", backup.transactions.map((t) => ({
+      id: t.id, user_id: u, account_id: t.accountId, direction: t.direction, category_id: t.categoryId,
+      amount: t.amount, status: t.status, due_date: t.dueDate, completed_at: t.completedAt,
+      description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
+      transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
+      loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, created_at: t.createdAt,
+    })));
+    for (const p of backup.victvsPayouts) {
+      if (p.transactionId) {
+        const { error } = await this.db.from("victvs_payouts").update({ transaction_id: p.transactionId }).eq("id", p.id);
+        throwIf(error);
+      }
+    }
+    await insert("victvs_sessions", backup.victvsSessions.map((s) => ({
+      id: s.id, user_id: u, date: s.date, session_type: s.sessionType, amount: s.amount, status: s.status,
+      payout_id: s.payoutId, notes: s.notes, source: s.source, created_at: s.createdAt,
+    })));
+    await insert("budgets", backup.budgets.map((b) => ({ id: b.id, user_id: u, category_id: b.categoryId, monthly_limit: b.monthlyLimit, currency: b.currency })));
+    await insert("goals", backup.goals.map((g) => ({ id: g.id, user_id: u, name: g.name, account_id: g.accountId, target_amount: g.targetAmount, target_date: g.targetDate, created_at: g.createdAt })));
+    await insert("net_worth_snapshots", backup.snapshots.map((s) => ({ id: s.id, user_id: u, snapshot_date: s.snapshotDate, balances: s.balances, usd_per: s.usdPer, total_usd: s.totalUsd })));
   }
 }

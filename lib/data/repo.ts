@@ -9,6 +9,7 @@ import {
   Goal,
   Loan,
   LoanKind,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -81,6 +82,7 @@ export interface NewTemplate {
 export interface NewVictvsSession {
   date: string;
   sessionType: string;
+  sessionNo?: string;
   amount: number;
   notes?: string;
   source: "manual" | "paste";
@@ -165,6 +167,8 @@ export interface Repo {
   markVictvsPaid(input: MarkPaidInput): Promise<void>;
   /** undo a payout: sessions back to unpaid, aggregated transaction removed */
   unmarkVictvsPayout(payoutId: string): Promise<void>;
+  /** detach sessions from their payout and mark them unpaid (payout tx untouched) */
+  markVictvsUnpaid(sessionIds: string[]): Promise<void>;
 
   listBudgets(): Promise<Budget[]>;
   /** upserts the category's budget; monthlyLimit null removes it */
@@ -177,6 +181,10 @@ export interface Repo {
 
   getUserSettings(): Promise<UserSettings>;
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>;
+
+  listSnapshots(): Promise<NetWorthSnapshot[]>;
+  /** upserts a snapshot for its date (auto-taken monthly; manual any time) */
+  takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void>;
 
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */
@@ -193,4 +201,37 @@ export interface Repo {
 
   /** wipe all data for this user/sandbox (demo reset & "delete my data") */
   deleteAllData(): Promise<void>;
+
+  /** full backup of every table, camelCase, version-tagged */
+  exportAll(): Promise<BackupFile>;
+  /** replaces ALL data with the backup's contents */
+  importAll(backup: BackupFile): Promise<void>;
+}
+
+export interface BackupFile {
+  app: "renovator";
+  version: 1;
+  exportedAt: string;
+  accounts: Account[];
+  categories: Category[];
+  transactions: Transaction[];
+  templates: RecurringTemplate[];
+  victvsSessions: VictvsSession[];
+  victvsPayouts: VictvsPayout[];
+  loans: Loan[];
+  purchases: Purchase[];
+  budgets: Budget[];
+  goals: Goal[];
+  snapshots: NetWorthSnapshot[];
+}
+
+export function isBackupFile(data: unknown): data is BackupFile {
+  const d = data as BackupFile;
+  return (
+    d != null &&
+    d.app === "renovator" &&
+    d.version === 1 &&
+    Array.isArray(d.accounts) &&
+    Array.isArray(d.transactions)
+  );
 }

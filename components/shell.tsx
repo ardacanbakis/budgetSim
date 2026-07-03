@@ -2,16 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Select, Spinner } from "@/components/ui";
+import { TransactionModal } from "@/components/transactionModal";
+import { TransferModal } from "@/components/transferModal";
 import { useApp } from "@/lib/data/provider";
-import { KEYS, useRates } from "@/lib/data/queries";
+import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
+import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
+import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
-const NAV = [
+export const NAV = [
   { href: "/", key: "nav.dashboard", icon: "◧" },
   { href: "/accounts", key: "nav.accounts", icon: "▤" },
   { href: "/transactions", key: "nav.transactions", icon: "⇄" },
@@ -19,14 +23,31 @@ const NAV = [
   { href: "/victvs", key: "nav.victvs", icon: "✓" },
   { href: "/recurring", key: "nav.recurring", icon: "↻" },
   { href: "/loans", key: "nav.loans", icon: "⌂" },
+  { href: "/reports", key: "nav.reports", icon: "◔" },
   { href: "/projections", key: "nav.projections", icon: "↗" },
   { href: "/settings", key: "nav.settings", icon: "⚙" },
 ] as const;
 
+/** Apply the user's saved sidebar order; unknown ids dropped, missing appended. */
+export function orderedNav(navOrder: string[] | null | undefined): (typeof NAV)[number][] {
+  if (!navOrder?.length) return [...NAV];
+  const byHref = new Map<string, (typeof NAV)[number]>(NAV.map((item) => [item.href, item]));
+  const result: (typeof NAV)[number][] = [];
+  for (const href of navOrder) {
+    const item = byHref.get(href);
+    if (item) {
+      result.push(item);
+      byHref.delete(href);
+    }
+  }
+  return [...result, ...byHref.values()];
+}
+
 /**
  * Runs once per session when data is ready: seed default categories,
- * materialize recurring templates 12 months out, then auto-complete due
- * items with today's rates. Works identically in demo and Supabase modes.
+ * materialize recurring templates 12 months out, auto-complete due items
+ * with today's rates, and take the monthly net-worth snapshot if this
+ * month doesn't have one yet. Works identically in demo and Supabase modes.
  */
 function Bootstrapper() {
   const { session } = useApp();
@@ -38,7 +59,8 @@ function Bootstrapper() {
     if (ran.current || session.status !== "ready" || !rates.data) return;
     ran.current = true;
     const repo = session.repo;
-    const snapshot = snapshotFromTable(rates.data);
+    const table = rates.data;
+    const snapshot = snapshotFromTable(table);
     (async () => {
       try {
         await repo.seedDefaultCategories();
@@ -47,6 +69,26 @@ function Bootstrapper() {
         if (created || completed) {
           await queryClient.invalidateQueries({ queryKey: KEYS.transactions });
           await queryClient.invalidateQueries({ queryKey: KEYS.categories });
+        }
+        // monthly net-worth snapshot (skipped while on fallback rates — a
+        // stale-rate snapshot would poison the history)
+        const isStale =
+          ("stale" in table && table.stale) || Object.values(table.sources).some((s) => s === "fallback");
+        if (!isStale) {
+          const today = todayISO();
+          const existing = await repo.listSnapshots();
+          if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
+            const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
+            const balances = computeBalances(accounts, transactions);
+            const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
+            await repo.takeSnapshot({
+              snapshotDate: today,
+              balances: Object.fromEntries(balances),
+              usdPer: table.usdPer,
+              totalUsd: total,
+            });
+            await queryClient.invalidateQueries({ queryKey: KEYS.snapshots });
+          }
         }
       } catch (err) {
         console.warn("bootstrap failed", err);
@@ -58,16 +100,15 @@ function Bootstrapper() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { session, displayCurrency, setDisplayCurrency, signOut } = useApp();
-  const { t } = useI18n();
-  const pathname = usePathname();
+  const { session } = useApp();
   const router = useRouter();
-  const rates = useRates();
 
   useEffect(() => {
-    if (session.status === "signedOut") router.replace("/login");
+    if (session.status === "signedOut") router.replace("/welcome");
   }, [session.status, router]);
 
+  // repo-backed hooks (useUserSettings etc.) live in ShellChrome, which only
+  // mounts once the session is ready — also keeps prerender repo-free
   if (session.status !== "ready") {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -75,8 +116,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
+  return <ShellChrome>{children}</ShellChrome>;
+}
 
-  const isDemo = session.repo.mode === "demo";
+function ShellChrome({ children }: { children: React.ReactNode }) {
+  const { session, displayCurrency, setDisplayCurrency, signOut } = useApp();
+  const { t } = useI18n();
+  const pathname = usePathname();
+  const router = useRouter();
+  const rates = useRates();
+  const settings = useUserSettings();
+  const nav = orderedNav(settings.data?.navOrder);
+  const [quickTx, setQuickTx] = useState(false);
+  const [quickTransfer, setQuickTransfer] = useState(false);
+
+  // desktop shortcuts: n = new transaction, t = transfer (unless typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (e.key === "n") {
+        e.preventDefault();
+        setQuickTx(true);
+      } else if (e.key === "t") {
+        e.preventDefault();
+        setQuickTransfer(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const isDemo = session.status === "ready" && session.repo.mode === "demo";
   // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
   const ratesStale = Boolean(
     rates.data &&
@@ -96,14 +168,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
 
-      <div className="mx-auto flex w-full max-w-[1800px]">
+      <div className="flex w-full">
         {/* sidebar — desktop & ultrawide */}
-        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-zinc-200 px-3 py-4 md:flex dark:border-zinc-800">
+        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[var(--edge)] px-3 py-4 md:flex">
           <Link href="/" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
             Renovator
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const active = pathname === item.href;
               return (
                 <Link
@@ -131,7 +203,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="min-w-0 flex-1">
           {/* header */}
-          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50/90 px-4 py-2.5 backdrop-blur md:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
+          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
             <div className="text-base font-semibold md:hidden">Renovator</div>
             <div className="flex flex-1 items-center justify-end gap-3">
               {rates.data ? (
@@ -163,9 +235,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
+      <button
+        onClick={() => setQuickTx(true)}
+        aria-label={t("tx.newTransaction")}
+        title={`${t("tx.newTransaction")} (n)`}
+        className="no-print fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
+      >
+        +
+      </button>
+      <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
+      <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
+
       {/* bottom nav — mobile */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-zinc-200 bg-white/95 backdrop-blur md:hidden dark:border-zinc-800 dark:bg-zinc-900/95">
-        {NAV.map((item) => {
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--edge)] bg-[var(--surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {nav.map((item) => {
           const active = pathname === item.href;
           return (
             <Link

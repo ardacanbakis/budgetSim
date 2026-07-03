@@ -8,6 +8,8 @@ import { NewLoan } from "@/lib/data/repo";
 import { Loan, LoanKind } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
+import { computeBalances } from "@/lib/domain/balances";
+import { computeDebtOverview } from "@/lib/domain/debt";
 import { amortizationSchedule } from "@/lib/domain/loan";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
@@ -45,11 +47,76 @@ export default function LoansPage() {
     return amortizationSchedule(p, r, n, startDate, currency);
   }, [principal, rate, term, startDate, currency]);
 
-  if (loans.isLoading || accounts.isLoading) return <Spinner />;
+  if (loans.isLoading || accounts.isLoading || transactions.isLoading) return <Spinner />;
+
+  const balances = computeBalances(accounts.data ?? [], transactions.data ?? []);
+  const overview = rates.data
+    ? computeDebtOverview({
+        loans: loans.data ?? [],
+        accounts: accounts.data ?? [],
+        balances,
+        transactions: transactions.data ?? [],
+        usdPer: rates.data.usdPer,
+        display: displayCurrency,
+        today: todayISO(),
+      })
+    : null;
+  const cardItems = overview?.items.filter((i) => i.kind === "card") ?? [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]">
-      <h1 className="text-xl font-bold">{t("loans.title")}</h1>
+      <h1 className="text-xl font-bold">{t("nav.loans")}</h1>
+
+      {overview && overview.items.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card className="p-4">
+            <div className="text-xs text-zinc-500">
+              {t("debt.totalDebt")} ({displayCurrency})
+            </div>
+            <div className="mt-1 text-2xl font-bold text-red-600 tabular-nums">
+              {formatAmount(overview.totalInDisplay, displayCurrency, locale)}
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs text-zinc-500">{t("debt.debtFree")}</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{overview.debtFreeDate ?? "—"}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs text-zinc-500">{t("debt.avalanche")}</div>
+            <div className="mt-1 truncate text-lg font-bold">
+              {overview.avalancheTarget ? `${overview.avalancheTarget.name} (%${overview.avalancheTarget.monthlyRatePct} ${t("debt.perMonth")})` : "—"}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {cardItems.length > 0 ? (
+        <Card>
+          <CardHeader title={t("debt.cards")} />
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {cardItems.map((item) => {
+              const posted = -(balances.get(item.id) ?? 0);
+              const upcoming = item.outstanding - Math.max(0, posted);
+              return (
+                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                  <span className="font-medium">💳 {item.name}</span>
+                  <span className="tabular-nums text-zinc-500">
+                    <span className="font-semibold text-red-600">{formatAmount(Math.max(0, posted), item.currency, locale)}</span>{" "}
+                    {t("debt.posted")}
+                    {upcoming > 0 ? (
+                      <>
+                        {" "}
+                        + {formatAmount(upcoming, item.currency, locale)} {t("debt.upcoming")}
+                      </>
+                    ) : null}
+                    {item.endDate ? ` · ${t("debt.debtFree").toLowerCase()}: ${item.endDate}` : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* simulator */}

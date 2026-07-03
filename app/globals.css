@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* dark mode is class-driven (html.dark), set by the theme setting (system/light/dark) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -7,25 +10,88 @@
   --breakpoint-3xl: 120rem; /* 1920px */
 }
 
+/* Structural surfaces — themed via .dark and data-theme (Slate/Ocean/Forest/Mocha) */
+:root {
+  --page: #fafafa;
+  --surface: #ffffff;
+  --field: #ffffff;
+  --edge: #e4e4e7;
+  --edge-soft: #f4f4f5;
+}
+.dark {
+  --page: #09090b;
+  --surface: #18181b;
+  --field: #09090b;
+  --edge: #27272a;
+  --edge-soft: #27272a;
+}
+html[data-theme="slate"] {
+  --page: #0f172a;
+  --surface: #1e293b;
+  --field: #0f172a;
+  --edge: #334155;
+  --edge-soft: #293548;
+}
+html[data-theme="ocean"] {
+  --page: #081430;
+  --surface: #0c1e3e;
+  --field: #081430;
+  --edge: #1e3a8a;
+  --edge-soft: #14295c;
+}
+html[data-theme="forest"] {
+  --page: #0a1c15;
+  --surface: #0f2920;
+  --field: #0a1c15;
+  --edge: #1f4d3a;
+  --edge-soft: #17392c;
+}
+html[data-theme="mocha"] {
+  --page: #120d09;
+  --surface: #1c1410;
+  --field: #120d09;
+  --edge: #3a2818;
+  --edge-soft: #2b1e13;
+}
+
 body {
   font-family: var(--font-sans), system-ui, sans-serif;
+  background: var(--page);
 }
 
 /* Data-viz roles (validated reference palette; light/dark selected per surface) */
 :root {
   --viz-series-1: #2a78d6; /* blue */
   --viz-series-2: #1baf7a; /* aqua */
+  --viz-series-3: #eda100; /* yellow */
+  --viz-series-4: #008300; /* green */
+  --viz-series-5: #4a3aa7; /* violet */
   --viz-grid: #e1e0d9;
   --viz-axis: #c3c2b7;
   --viz-muted: #898781;
   --viz-tooltip-bg: #ffffff;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --viz-series-1: #3987e5;
-    --viz-series-2: #199e70;
-    --viz-grid: #2c2c2a;
-    --viz-axis: #383835;
-    --viz-tooltip-bg: #1a1a19;
+.dark {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #199e70;
+  --viz-series-3: #c98500;
+  --viz-series-4: #008300;
+  --viz-series-5: #9085e9;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-tooltip-bg: #1a1a19;
+}
+
+/* compact mode: everything is rem-based, so shrinking the root shrinks density */
+html[data-compact="true"] {
+  font-size: 14px;
+}
+
+@media print {
+  aside,
+  nav,
+  header,
+  .no-print {
+    display: none !important;
   }
 }

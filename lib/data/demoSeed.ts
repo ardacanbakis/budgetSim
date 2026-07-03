@@ -8,6 +8,7 @@ import {
   Category,
   Goal,
   Loan,
+  NetWorthSnapshot,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -28,6 +29,7 @@ export interface DemoStore {
   budgets: Budget[];
   goals: Goal[];
   settings: UserSettings;
+  snapshots: NetWorthSnapshot[];
 }
 
 const uuid = () =>
@@ -229,10 +231,11 @@ export function buildDemoSeed(): DemoStore {
   );
 
   const victvsSessions: VictvsSession[] = [
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-08`, sessionType: "Pearson VUE Invigilation", amount: 120, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-15`, sessionType: "Remote Proctoring AM", amount: 95.5, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-22`, sessionType: "On-site Lead Invigilator", amount: 150, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
-    { id: uuid(), date: addMonthsClamped(`${lastMonth.slice(0, 7)}-28`, -1), sessionType: "IELTS Session", amount: 85, status: "paid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-08`, sessionType: "CIPS OR", sessionNo: "32138", amount: 37.5, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-15`, sessionType: "IWCF", sessionNo: "79668", amount: 60, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-22`, sessionType: "CIPS CR", sessionNo: "36951", amount: 60, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: `${today.slice(0, 7)}-04`, sessionType: "FIFA", sessionNo: "41002", amount: 30, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: addMonthsClamped(`${lastMonth.slice(0, 7)}-28`, -1), sessionType: "IWCF", sessionNo: "71455", amount: 60, status: "paid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
   ];
 
   const budgets: Budget[] = [
@@ -242,6 +245,15 @@ export function buildDemoSeed(): DemoStore {
   const goals: Goal[] = [
     { id: uuid(), name: "Emergency fund", accountId: usdAcc.id, targetAmount: 10000, targetDate: addMonthsClamped(today, 6), createdAt: nowIso },
   ];
+
+  // a few months of net-worth history so the reports chart has a line to draw
+  const snapshots: NetWorthSnapshot[] = [-4, -3, -2, -1].map((i, idx) => ({
+    id: uuid(),
+    snapshotDate: addMonthsClamped(today, i),
+    balances: {},
+    usdPer: FALLBACK_USD_PER,
+    totalUsd: 15200 + idx * 850 + (idx % 2 === 0 ? -240 : 310),
+  }));
 
   return {
     accounts,
@@ -254,6 +266,14 @@ export function buildDemoSeed(): DemoStore {
     purchases,
     budgets,
     goals,
-    settings: { dashboardLayout: null, theme: "system", compact: false },
+    settings: {
+      dashboardLayout: null,
+      theme: "system",
+      compact: false,
+      victvsAccountId: usdAcc.id,
+      victvsDefaults: null,
+      navOrder: null,
+    },
+    snapshots,
   };
 }

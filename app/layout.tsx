@@ -23,6 +23,8 @@ export const viewport: Viewport = {
   themeColor: "#0d9488",
   width: "device-width",
   initialScale: 1,
+  // edge-to-edge on iPhone (Dynamic Island / home indicator); insets handled via safe-area paddings
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -35,7 +37,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <body className="min-h-full bg-[var(--page)] text-zinc-900 dark:text-zinc-100">
         <Providers>{children}</Providers>
       </body>
     </html>

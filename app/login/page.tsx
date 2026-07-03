@@ -50,7 +50,9 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-4">
         <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-teal-700 dark:text-teal-400">{t("auth.title")}</h1>
+          <button onClick={() => router.push("/welcome")} className="text-2xl font-bold tracking-tight text-teal-700 dark:text-teal-400">
+            {t("auth.title")}
+          </button>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t("auth.subtitle")}</p>
         </div>
 

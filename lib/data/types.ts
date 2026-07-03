@@ -85,10 +85,29 @@ export interface RecurringTemplate {
 
 export type VictvsStatus = "unpaid" | "paid";
 
+/** The built-in session kinds; custom types can be added in Settings. */
+export const VICTVS_TYPES = ["IWCF", "CIPS OR", "CIPS CR", "FIFA"] as const;
+export type VictvsType = (typeof VICTVS_TYPES)[number];
+
+export const DEFAULT_VICTVS_AMOUNTS: Record<VictvsType, number> = {
+  IWCF: 60,
+  "CIPS OR": 37.5,
+  "CIPS CR": 60,
+  FIFA: 30,
+};
+
+/** Built-ins first, then any custom types defined via victvsDefaults keys. */
+export function victvsTypeList(defaults: Record<string, number> | null | undefined): string[] {
+  const custom = Object.keys(defaults ?? {}).filter((k) => !(VICTVS_TYPES as readonly string[]).includes(k));
+  return [...VICTVS_TYPES, ...custom.sort()];
+}
+
 export interface VictvsSession {
   id: string;
   date: string;
   sessionType: string;
+  /** exam/session number, e.g. "37324" */
+  sessionNo: string;
   amount: number; // USD
   status: VictvsStatus;
   payoutId: string | null;
@@ -140,6 +159,15 @@ export interface Goal {
   createdAt: string;
 }
 
+export interface NetWorthSnapshot {
+  id: string;
+  /** yyyy-mm-dd; unique per month per user */
+  snapshotDate: string;
+  balances: Record<string, number>;
+  usdPer: import("@/lib/domain/fx").UsdPerMap;
+  totalUsd: number;
+}
+
 export interface DashboardLayout {
   order: string[];
   hidden: string[];
@@ -147,6 +175,12 @@ export interface DashboardLayout {
 
 export interface UserSettings {
   dashboardLayout: DashboardLayout | null;
-  theme: "system" | "light" | "dark";
+  theme: "system" | "light" | "dark" | "slate" | "ocean" | "forest" | "mocha";
   compact: boolean;
+  /** default deposit account for VICTVS payouts */
+  victvsAccountId: string | null;
+  /** per-type default session amounts (USD); extra keys define custom types */
+  victvsDefaults: Record<string, number> | null;
+  /** user-defined sidebar order (nav hrefs) */
+  navOrder: string[] | null;
 }
