@@ -82,6 +82,7 @@ export interface NewTemplate {
 export interface NewVictvsSession {
   date: string;
   sessionType: string;
+  sessionNo?: string;
   amount: number;
   notes?: string;
   source: "manual" | "paste";
@@ -166,6 +167,8 @@ export interface Repo {
   markVictvsPaid(input: MarkPaidInput): Promise<void>;
   /** undo a payout: sessions back to unpaid, aggregated transaction removed */
   unmarkVictvsPayout(payoutId: string): Promise<void>;
+  /** detach sessions from their payout and mark them unpaid (payout tx untouched) */
+  markVictvsUnpaid(sessionIds: string[]): Promise<void>;
 
   listBudgets(): Promise<Budget[]>;
   /** upserts the category's budget; monthlyLimit null removes it */

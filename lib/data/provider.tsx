@@ -13,11 +13,32 @@ const DISPLAY_KEY = "renovator-display-currency";
 const THEME_KEY = "renovator-theme";
 const COMPACT_KEY = "renovator-compact";
 
-export type Theme = "system" | "light" | "dark";
+export type Theme = "system" | "light" | "dark" | "slate" | "ocean" | "forest" | "mocha";
+
+export const THEMES: Array<{ id: Theme; preview: { bg: string; accent: string } }> = [
+  { id: "system", preview: { bg: "#ffffff", accent: "#0d9488" } },
+  { id: "light", preview: { bg: "#ffffff", accent: "#0d9488" } },
+  { id: "dark", preview: { bg: "#09090b", accent: "#2dd4bf" } },
+  { id: "slate", preview: { bg: "#1e293b", accent: "#38bdf8" } },
+  { id: "ocean", preview: { bg: "#0c1e3e", accent: "#60a5fa" } },
+  { id: "forest", preview: { bg: "#0f2920", accent: "#34d399" } },
+  { id: "mocha", preview: { bg: "#1c1410", accent: "#d4a574" } },
+];
+
+const CUSTOM_THEMES: Theme[] = ["slate", "ocean", "forest", "mocha"];
+
+export function isTheme(value: string): value is Theme {
+  return THEMES.some((t) => t.id === value);
+}
 
 function applyTheme(theme: Theme): void {
-  const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const dark =
+    theme === "dark" ||
+    CUSTOM_THEMES.includes(theme) ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  if (CUSTOM_THEMES.includes(theme)) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
 }
 
 function applyCompact(compact: boolean): void {
@@ -56,9 +77,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     queueMicrotask(() => {
       const saved = window.localStorage.getItem(DISPLAY_KEY);
       if (saved && isCurrency(saved)) setDisplayCurrencyState(saved);
-      const savedTheme = window.localStorage.getItem(THEME_KEY) as Theme | null;
-      if (savedTheme === "light" || savedTheme === "dark" || savedTheme === "system") setThemeState(savedTheme);
-      applyTheme(savedTheme ?? "system");
+      const savedTheme = window.localStorage.getItem(THEME_KEY);
+      const theme: Theme = savedTheme && isTheme(savedTheme) ? savedTheme : "system";
+      setThemeState(theme);
+      applyTheme(theme);
       const savedCompact = window.localStorage.getItem(COMPACT_KEY) === "true";
       setCompactState(savedCompact);
       applyCompact(savedCompact);

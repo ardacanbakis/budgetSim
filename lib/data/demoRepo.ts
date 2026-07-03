@@ -35,7 +35,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 
 // bump the suffix whenever the DemoStore shape changes — old sandboxes reseed
-const STORAGE_KEY = "renovator-demo-v4";
+const STORAGE_KEY = "renovator-demo-v5";
 
 const uuid = () => crypto.randomUUID();
 
@@ -321,6 +321,7 @@ export class DemoRepo implements Repo {
         id: uuid(),
         date: input.date,
         sessionType: input.sessionType,
+        sessionNo: input.sessionNo ?? "",
         amount: input.amount,
         status: "unpaid",
         payoutId: null,
@@ -384,6 +385,16 @@ export class DemoRepo implements Repo {
       if (input.sessionIds.includes(session.id)) {
         session.status = "paid";
         session.payoutId = payoutId;
+      }
+    }
+    this.save();
+  }
+
+  async markVictvsUnpaid(sessionIds: string[]): Promise<void> {
+    for (const session of this.store.victvsSessions) {
+      if (sessionIds.includes(session.id)) {
+        session.status = "unpaid";
+        session.payoutId = null;
       }
     }
     this.save();

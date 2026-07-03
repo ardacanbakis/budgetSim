@@ -94,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [quickTransfer, setQuickTransfer] = useState(false);
 
   useEffect(() => {
-    if (session.status === "signedOut") router.replace("/login");
+    if (session.status === "signedOut") router.replace("/welcome");
   }, [session.status, router]);
 
   // desktop shortcuts: n = new transaction, t = transfer (unless typing)
@@ -145,7 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="mx-auto flex w-full max-w-[1800px]">
         {/* sidebar — desktop & ultrawide */}
-        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-zinc-200 px-3 py-4 md:flex dark:border-zinc-800">
+        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[var(--edge)] px-3 py-4 md:flex">
           <Link href="/" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
             Renovator
           </Link>
@@ -178,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="min-w-0 flex-1">
           {/* header */}
-          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50/90 px-4 py-2.5 backdrop-blur md:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
+          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
             <div className="text-base font-semibold md:hidden">Renovator</div>
             <div className="flex flex-1 items-center justify-end gap-3">
               {rates.data ? (
@@ -214,7 +214,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onClick={() => setQuickTx(true)}
         aria-label={t("tx.newTransaction")}
         title={`${t("tx.newTransaction")} (n)`}
-        className="no-print fixed right-4 bottom-20 z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
+        className="no-print fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
       >
         +
       </button>
@@ -222,7 +222,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
 
       {/* bottom nav — mobile */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-zinc-200 bg-white/95 backdrop-blur md:hidden dark:border-zinc-800 dark:bg-zinc-900/95">
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--edge)] bg-[var(--surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {NAV.map((item) => {
           const active = pathname === item.href;
           return (

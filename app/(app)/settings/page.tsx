@@ -1,15 +1,28 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
-import { Theme, useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAppMutation, useBudgets, useCategories } from "@/lib/data/queries";
+import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
+import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
-import { TxDirection } from "@/lib/data/types";
+import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES } from "@/lib/data/types";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { Locale, useI18n } from "@/lib/i18n";
+
+type SettingsView = "panels" | "compact";
+
+/** Panels = cards (default); Compact = collapsed accordion rows. */
+function Section({ title, view, children }: { title: string; view: SettingsView; children: React.ReactNode }) {
+  if (view === "panels") return <>{children}</>;
+  return (
+    <details className="rounded-lg border border-[var(--edge)] bg-[var(--surface)]">
+      <summary className="cursor-pointer px-4 py-2.5 text-sm font-semibold">{title}</summary>
+      <div className="[&>*]:border-0 [&>*]:shadow-none">{children}</div>
+    </details>
+  );
+}
 
 export default function SettingsPage() {
   const { t, locale, setLocale } = useI18n();
@@ -20,6 +33,17 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState("");
   const [newCatName, setNewCatName] = useState("");
   const [newCatDirection, setNewCatDirection] = useState<TxDirection>("expense");
+  const [view, setView] = useState<SettingsView>("panels");
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (window.localStorage.getItem("renovator-settings-view") === "compact") setView("compact");
+    });
+  }, []);
+  const switchView = (v: SettingsView) => {
+    setView(v);
+    window.localStorage.setItem("renovator-settings-view", v);
+  };
 
   const createCategory = useAppMutation(
     (input: { name: string; direction: TxDirection; color: string }) => repo.createCategory(input),
@@ -34,125 +58,158 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-xl font-bold">{t("settings.title")}</h1>
-
-      <Card>
-        <CardHeader title={t("settings.displayCurrency")} />
-        <div className="space-y-2 p-4">
-          <Select value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value as Currency)}>
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {t(`currency.${c}`)}
-              </option>
-            ))}
-          </Select>
-          <p className="text-xs text-zinc-400">{t("settings.displayHint")}</p>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">{t("settings.title")}</h1>
+        <div className="flex gap-1 rounded-lg bg-[var(--edge-soft)] p-1">
+          {(["panels", "compact"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => switchView(v)}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${view === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500"}`}
+            >
+              {t(`settings.view${v === "panels" ? "Panels" : "Compact"}`)}
+            </button>
+          ))}
         </div>
-      </Card>
+      </div>
 
-      <Card>
-        <CardHeader title={t("settings.language")} />
-        <div className="p-4">
-          <Select value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
-            <option value="en">English</option>
-            <option value="tr">Türkçe</option>
-          </Select>
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeader title={t("settings.categories")} />
-        <div className="space-y-3 p-4">
-          <div className="flex flex-wrap gap-1.5">
-            {(categories.data ?? []).map((c) => (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-white"
-                style={{ backgroundColor: c.color }}
-              >
-                {c.name}
-                <button
-                  aria-label={t("common.delete")}
-                  onClick={() => window.confirm(t("common.confirmDelete")) && deleteCategory.mutate(c.id)}
-                  className="opacity-70 hover:opacity-100"
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-          </div>
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!newCatName.trim()) return;
-              const colors = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444", "#16a34a", "#ec4899", "#64748b"];
-              await createCategory.mutateAsync({
-                name: newCatName.trim(),
-                direction: newCatDirection,
-                color: colors[Math.floor(Math.random() * colors.length)],
-              });
-              setNewCatName("");
-            }}
-          >
-            <div className="min-w-40 flex-1">
-              <Field label={t("settings.newCategory")}>
-                <Input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} />
-              </Field>
-            </div>
-            <Select className="!w-auto" value={newCatDirection} onChange={(e) => setNewCatDirection(e.target.value as TxDirection)}>
-              <option value="expense">{t("tx.expense")}</option>
-              <option value="income">{t("tx.income")}</option>
+      <Section title={t("settings.displayCurrency")} view={view}>
+        <Card>
+          <CardHeader title={t("settings.displayCurrency")} />
+          <div className="space-y-2 p-4">
+            <Select value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value as Currency)}>
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {t(`currency.${c}`)}
+                </option>
+              ))}
             </Select>
-            <Button type="submit">{t("common.add")}</Button>
-          </form>
-        </div>
-      </Card>
+            <p className="text-xs text-zinc-400">{t("settings.displayHint")}</p>
+          </div>
+        </Card>
+      </Section>
 
-      <BudgetsEditor />
+      <Section title={t("settings.language")} view={view}>
+        <Card>
+          <CardHeader title={t("settings.language")} />
+          <div className="p-4">
+            <Select value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
+              <option value="en">English</option>
+              <option value="tr">Türkçe</option>
+            </Select>
+          </div>
+        </Card>
+      </Section>
 
-      <AppearanceCard />
-
-      <ExportsCard />
-
-      <Card>
-        <CardHeader title={t("settings.account")} />
-        <div className="space-y-3 p-4 text-sm">
-          {session.status === "ready" && session.email ? (
-            <p>
-              {t("settings.signedInAs")}: <span className="font-medium">{session.email}</span>
-            </p>
-          ) : null}
-          {isDemo ? (
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => resetDemo()}>{t("auth.resetDemo")}</Button>
-              <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("auth.exitDemo")}</Button>
+      <Section title={t("settings.categories")} view={view}>
+        <Card>
+          <CardHeader title={t("settings.categories")} />
+          <div className="space-y-3 p-4">
+            <div className="flex flex-wrap gap-1.5">
+              {(categories.data ?? []).map((c) => (
+                <span
+                  key={c.id}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-white"
+                  style={{ backgroundColor: c.color }}
+                >
+                  {c.name}
+                  <button
+                    aria-label={t("common.delete")}
+                    onClick={() => window.confirm(t("common.confirmDelete")) && deleteCategory.mutate(c.id)}
+                    className="opacity-70 hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
             </div>
-          ) : (
-            <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("nav.logout")}</Button>
-          )}
-        </div>
-      </Card>
-
-      <Card className="border-red-200 dark:border-red-900">
-        <CardHeader title={<span className="text-red-600">{t("settings.dangerZone")}</span>} />
-        <div className="space-y-3 p-4">
-          <p className="text-sm text-zinc-500">{t("settings.deleteAllConfirm")}</p>
-          <div className="flex gap-2">
-            <Input className="max-w-40" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" />
-            <Button
-              variant="danger"
-              disabled={confirmText !== "DELETE" || deleteAll.isPending}
-              onClick={async () => {
-                await deleteAll.mutateAsync(undefined as never);
-                setConfirmText("");
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newCatName.trim()) return;
+                const colors = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444", "#16a34a", "#ec4899", "#64748b"];
+                await createCategory.mutateAsync({
+                  name: newCatName.trim(),
+                  direction: newCatDirection,
+                  color: colors[Math.floor(Math.random() * colors.length)],
+                });
+                setNewCatName("");
               }}
             >
-              {t("settings.deleteAll")}
-            </Button>
+              <div className="min-w-40 flex-1">
+                <Field label={t("settings.newCategory")}>
+                  <Input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} />
+                </Field>
+              </div>
+              <Select className="!w-auto" value={newCatDirection} onChange={(e) => setNewCatDirection(e.target.value as TxDirection)}>
+                <option value="expense">{t("tx.expense")}</option>
+                <option value="income">{t("tx.income")}</option>
+              </Select>
+              <Button type="submit">{t("common.add")}</Button>
+            </form>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </Section>
+
+      <Section title={t("budgets.title")} view={view}>
+        <BudgetsEditor />
+      </Section>
+
+      <Section title={t("theme.title")} view={view}>
+        <AppearanceCard />
+      </Section>
+
+      <Section title={t("victvs.settingsTitle")} view={view}>
+        <VictvsSettingsCard />
+      </Section>
+
+      <Section title={t("exports.title")} view={view}>
+        <ExportsCard />
+      </Section>
+
+      <Section title={t("settings.account")} view={view}>
+        <Card>
+          <CardHeader title={t("settings.account")} />
+          <div className="space-y-3 p-4 text-sm">
+            {session.status === "ready" && session.email ? (
+              <p>
+                {t("settings.signedInAs")}: <span className="font-medium">{session.email}</span>
+              </p>
+            ) : null}
+            {isDemo ? (
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => resetDemo()}>{t("auth.resetDemo")}</Button>
+                <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("auth.exitDemo")}</Button>
+              </div>
+            ) : (
+              <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("nav.logout")}</Button>
+            )}
+          </div>
+        </Card>
+      </Section>
+
+      <Section title={t("settings.dangerZone")} view={view}>
+        <Card className="border-red-200 dark:border-red-900">
+          <CardHeader title={<span className="text-red-600">{t("settings.dangerZone")}</span>} />
+          <div className="space-y-3 p-4">
+            <p className="text-sm text-zinc-500">{t("settings.deleteAllConfirm")}</p>
+            <div className="flex gap-2">
+              <Input className="max-w-40" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" />
+              <Button
+                variant="danger"
+                disabled={confirmText !== "DELETE" || deleteAll.isPending}
+                onClick={async () => {
+                  await deleteAll.mutateAsync(undefined as never);
+                  setConfirmText("");
+                }}
+              >
+                {t("settings.deleteAll")}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </Section>
     </div>
   );
 }
@@ -221,11 +278,26 @@ function AppearanceCard() {
       <CardHeader title={t("theme.title")} />
       <div className="space-y-3 p-4">
         <Field label={t("theme.theme")}>
-          <Select value={theme} onChange={(e) => setTheme(e.target.value as Theme)}>
-            <option value="system">{t("theme.system")}</option>
-            <option value="light">{t("theme.light")}</option>
-            <option value="dark">{t("theme.dark")}</option>
-          </Select>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {THEMES.map(({ id, preview }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTheme(id as Theme)}
+                className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 text-xs capitalize transition-colors ${
+                  theme === id ? "border-teal-500 ring-1 ring-teal-500/50" : "border-[var(--edge)] hover:border-teal-500/40"
+                }`}
+              >
+                <span
+                  className="flex h-8 w-full items-center justify-center rounded-md border border-black/10"
+                  style={{ backgroundColor: preview.bg }}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: preview.accent }} />
+                </span>
+                {id === "system" || id === "light" || id === "dark" ? t(`theme.${id}`) : id}
+              </button>
+            ))}
+          </div>
         </Field>
         <label className="flex items-start gap-2">
           <input
@@ -338,6 +410,66 @@ function ExportsCard() {
             </Button>
           </div>
           {message ? <p className="text-xs font-medium">{message}</p> : null}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function VictvsSettingsCard() {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const accounts = useAccounts();
+  const settings = useUserSettings();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  const save = useAppMutation(
+    (patch: Parameters<typeof repo.saveUserSettings>[0]) => repo.saveUserSettings(patch),
+    [KEYS.userSettings]
+  );
+
+  const active = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
+  const defaults: Record<string, number> = { ...DEFAULT_VICTVS_AMOUNTS, ...(settings.data?.victvsDefaults ?? {}) };
+
+  return (
+    <Card>
+      <CardHeader title={t("victvs.settingsTitle")} />
+      <div className="space-y-4 p-4">
+        <Field label={t("victvs.settingsAccount")} hint={t("victvs.settingsAccountHint")}>
+          <Select
+            value={settings.data?.victvsAccountId ?? ""}
+            onChange={(e) => save.mutate({ victvsAccountId: e.target.value || null })}
+          >
+            <option value="">{t("common.none")}</option>
+            {active.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.currency})
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div>
+          <p className="mb-2 text-xs font-medium text-zinc-500">{t("victvs.settingsDefaults")}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {VICTVS_TYPES.map((type) => (
+              <label key={type} className="block space-y-1">
+                <span className="text-xs text-zinc-400">{type}</span>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={drafts[type] ?? String(defaults[type] ?? "")}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [type]: e.target.value }))}
+                  onBlur={() => {
+                    const value = Number(drafts[type]);
+                    if (drafts[type] != null && value > 0 && value !== defaults[type]) {
+                      save.mutate({ victvsDefaults: { ...defaults, [type]: value } });
+                    }
+                  }}
+                />
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </Card>

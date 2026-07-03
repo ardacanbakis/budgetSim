@@ -107,6 +107,7 @@ const sessionFromRow = (r: Row): VictvsSession => ({
   id: r.id,
   date: r.date,
   sessionType: r.session_type,
+  sessionNo: r.session_no ?? "",
   amount: Number(r.amount),
   status: r.status,
   payoutId: r.payout_id,
@@ -451,6 +452,7 @@ export class SupabaseRepo implements Repo {
       user_id: this.userId,
       date: s.date,
       session_type: s.sessionType,
+      session_no: s.sessionNo ?? "",
       amount: s.amount,
       notes: s.notes ?? "",
       source: s.source,
@@ -519,6 +521,15 @@ export class SupabaseRepo implements Repo {
       .update({ status: "paid", payout_id: payout!.id })
       .in("id", input.sessionIds);
     throwIf(sessionsError);
+  }
+
+  async markVictvsUnpaid(sessionIds: string[]): Promise<void> {
+    if (!sessionIds.length) return;
+    const { error } = await this.db
+      .from("victvs_sessions")
+      .update({ status: "unpaid", payout_id: null })
+      .in("id", sessionIds);
+    throwIf(error);
   }
 
   async unmarkVictvsPayout(payoutId: string): Promise<void> {
@@ -620,8 +631,16 @@ export class SupabaseRepo implements Repo {
   async getUserSettings(): Promise<UserSettings> {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
-    if (!data) return { dashboardLayout: null, theme: "system", compact: false };
-    return { dashboardLayout: data.dashboard_layout, theme: data.theme, compact: data.compact };
+    if (!data) {
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null };
+    }
+    return {
+      dashboardLayout: data.dashboard_layout,
+      theme: data.theme,
+      compact: data.compact,
+      victvsAccountId: data.victvs_account_id ?? null,
+      victvsDefaults: data.victvs_defaults ?? null,
+    };
   }
 
   async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
@@ -629,6 +648,8 @@ export class SupabaseRepo implements Repo {
     if (patch.dashboardLayout !== undefined) row.dashboard_layout = patch.dashboardLayout;
     if (patch.theme != null) row.theme = patch.theme;
     if (patch.compact != null) row.compact = patch.compact;
+    if (patch.victvsAccountId !== undefined) row.victvs_account_id = patch.victvsAccountId;
+    if (patch.victvsDefaults !== undefined) row.victvs_defaults = patch.victvsDefaults;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
     throwIf(error);
   }

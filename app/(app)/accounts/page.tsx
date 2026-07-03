@@ -1,25 +1,28 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
-import { Account } from "@/lib/data/types";
+import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
 import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { useI18n } from "@/lib/i18n";
 
-export default function AccountsPage() {
+export default function PortfolioPage() {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const { displayCurrency } = useApp();
   const accounts = useAccounts();
   const transactions = useTransactions();
+  const categories = useCategories();
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [latestFirst, setLatestFirst] = useState(true);
 
   const createAccount = useAppMutation((input: NewAccount) => repo.createAccount(input), [KEYS.accounts]);
   const updateAccount = useAppMutation(
@@ -35,76 +38,186 @@ export default function AccountsPage() {
 
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const list = accounts.data ?? [];
-  const active = list.filter((a) => !a.archived);
-  const archived = list.filter((a) => a.archived);
+  const list = (accounts.data ?? []).filter((a) => !a.archived);
+  const archived = (accounts.data ?? []).filter((a) => a.archived);
+  const sections: Array<{ key: string; title: string; items: Account[] }> = [
+    { key: "accounts", title: t("portfolio.accounts"), items: list.filter((a) => a.kind === "fiat") },
+    { key: "cards", title: t("portfolio.cards"), items: list.filter((a) => a.kind === "credit_card") },
+    { key: "assets", title: t("portfolio.assets"), items: list.filter((a) => a.kind === "crypto" || a.kind === "gold") },
+  ];
+  const selected = (accounts.data ?? []).find((a) => a.id === selectedId) ?? null;
+  const categoryById = new Map((categories.data ?? []).map((c) => [c.id, c]));
 
-  function renderAccount(account: Account) {
+  function itemRow(account: Account) {
     const balance = balances.get(account.id) ?? 0;
     const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
     const isCard = account.kind === "credit_card";
+    const active = selectedId === account.id;
     return (
-      <Card key={account.id} className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold">
-                {isCard ? "💳 " : ""}
-                {account.name}
-              </span>
-              <Badge tone={isCard ? "red" : account.kind === "crypto" ? "sky" : account.kind === "gold" ? "amber" : "zinc"}>
-                {isCard ? t("accounts.creditCard") : t(`currency.${account.currency}`)}
-              </Badge>
-              {account.archived ? <Badge tone="red">{t("accounts.archived")}</Badge> : null}
-            </div>
-            <div className={`mt-2 text-2xl font-bold tabular-nums ${isCard && balance < 0 ? "text-red-600" : ""}`}>
-              {formatAmount(balance, account.currency, locale)}
-            </div>
-            {account.currency !== displayCurrency ? (
-              <div className="text-sm text-zinc-500">
-                {converted != null ? `≈ ${formatAmount(converted, displayCurrency, locale)}` : t("common.rateUnavailable")}
-              </div>
-            ) : null}
+      <button
+        key={account.id}
+        onClick={() => setSelectedId(account.id)}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
+          active ? "bg-teal-50 ring-1 ring-teal-500/40 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-base">{isCard ? "💳" : account.kind === "crypto" ? "₿" : account.kind === "gold" ? "🪙" : "🏦"}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{account.name}</span>
+            <span className="block text-[11px] text-zinc-400">{account.currency === "XAU_G" ? "GOLD g" : account.currency}</span>
+          </span>
+        </span>
+        <span className="text-right">
+          <span className={`block text-sm font-semibold tabular-nums ${isCard && balance < 0 ? "text-red-600" : ""}`}>
+            {formatAmount(balance, account.currency, locale)}
+          </span>
+          {account.currency !== displayCurrency && converted != null ? (
+            <span className="block text-[11px] tabular-nums text-zinc-400">≈ {formatAmount(converted, displayCurrency, locale)}</span>
+          ) : null}
+        </span>
+      </button>
+    );
+  }
+
+  const history = selected
+    ? (transactions.data ?? [])
+        .filter((tx) => tx.accountId === selected.id)
+        .sort((a, b) => (latestFirst ? (a.dueDate < b.dueDate ? 1 : -1) : a.dueDate > b.dueDate ? 1 : -1))
+    : [];
+  const upcoming = history.filter((tx) => tx.status === "planned");
+  const completed = history.filter((tx) => tx.status === "completed");
+
+  function historyRow(tx: Transaction) {
+    if (!selected) return null;
+    const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
+    const income = tx.direction === "income";
+    return (
+      <li key={tx.id} className={`flex items-center gap-3 px-4 py-2 ${tx.status === "planned" ? "opacity-70" : ""}`}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm">{tx.description || category?.name || (tx.transferGroupId ? t("tx.transfer") : "—")}</span>
+            {tx.transferGroupId ? <Badge tone="sky">{t("tx.transfer")}</Badge> : null}
+            {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Button variant="ghost" onClick={() => setEditing(account)}>
-              {t("common.edit")}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => updateAccount.mutate({ id: account.id, patch: { archived: !account.archived } })}
-            >
-              {account.archived ? t("accounts.unarchive") : t("accounts.archive")}
-            </Button>
-          </div>
+          <div className="text-[11px] text-zinc-400">{tx.dueDate}</div>
         </div>
-      </Card>
+        <span className={`text-sm font-semibold tabular-nums ${income ? "text-green-600" : "text-red-600"}`}>
+          {income ? "+" : "−"}
+          {formatAmount(tx.amount, selected.currency, locale)}
+        </span>
+      </li>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 3xl:max-w-7xl">
+    <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">{t("accounts.title")}</h1>
+        <h1 className="text-xl font-bold">{t("portfolio.title")}</h1>
         <Button variant="primary" onClick={() => setModalOpen(true)}>
           + {t("accounts.newAccount")}
         </Button>
       </div>
 
-      {active.length === 0 && archived.length === 0 ? (
-        <EmptyState>{t("accounts.empty")}</EmptyState>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">{active.map(renderAccount)}</div>
-      )}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+        {/* left: sections */}
+        <div className="space-y-4">
+          {sections.map((section) =>
+            section.items.length === 0 ? null : (
+              <Card key={section.key}>
+                <CardHeader title={section.title} />
+                <div className="space-y-0.5 p-2">{section.items.map(itemRow)}</div>
+              </Card>
+            )
+          )}
+          {list.length === 0 ? <EmptyState>{t("accounts.empty")}</EmptyState> : null}
+          {archived.length > 0 ? (
+            <details>
+              <summary className="cursor-pointer text-sm text-zinc-500">
+                {t("accounts.archived")} ({archived.length})
+              </summary>
+              <Card className="mt-2">
+                <div className="space-y-0.5 p-2">{archived.map(itemRow)}</div>
+              </Card>
+            </details>
+          ) : null}
+        </div>
 
-      {archived.length > 0 ? (
-        <details className="pt-2">
-          <summary className="cursor-pointer text-sm text-zinc-500">
-            {t("accounts.archived")} ({archived.length})
-          </summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">{archived.map(renderAccount)}</div>
-        </details>
-      ) : null}
+        {/* right: detail + history */}
+        <Card className="lg:sticky lg:top-16">
+          {!selected ? (
+            <div className="p-8 text-center text-sm text-zinc-400">{t("portfolio.selectHint")}</div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--edge-soft)] p-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-semibold">{selected.name}</span>
+                    <Badge tone={selected.kind === "credit_card" ? "red" : selected.kind === "crypto" ? "sky" : selected.kind === "gold" ? "amber" : "zinc"}>
+                      {selected.kind === "credit_card" ? t("accounts.creditCard") : t(`currency.${selected.currency}`)}
+                    </Badge>
+                    {selected.archived ? <Badge tone="red">{t("accounts.archived")}</Badge> : null}
+                  </div>
+                  <div className={`mt-1 text-3xl font-bold tabular-nums ${selected.kind === "credit_card" && (balances.get(selected.id) ?? 0) < 0 ? "text-red-600" : ""}`}>
+                    {formatAmount(balances.get(selected.id) ?? 0, selected.currency, locale)}
+                  </div>
+                  {rates.data && selected.currency !== displayCurrency ? (
+                    <div className="text-sm text-zinc-400 tabular-nums">
+                      ≈ {(() => {
+                        const converted = convert(balances.get(selected.id) ?? 0, selected.currency, displayCurrency, rates.data.usdPer);
+                        return converted != null ? formatAmount(converted, displayCurrency, locale) : t("common.rateUnavailable");
+                      })()}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" onClick={() => setEditing(selected)}>
+                    {t("common.edit")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => updateAccount.mutate({ id: selected.id, patch: { archived: !selected.archived } })}
+                  >
+                    {selected.archived ? t("accounts.unarchive") : t("accounts.archive")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-4 pt-3">
+                <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{t("portfolio.history")}</h3>
+                <button
+                  onClick={() => setLatestFirst(!latestFirst)}
+                  className="text-xs text-teal-600 hover:underline"
+                >
+                  {latestFirst ? t("portfolio.sortLatest") : t("portfolio.sortOldest")} ⇅
+                </button>
+              </div>
+              {history.length === 0 ? (
+                <p className="p-4 text-sm text-zinc-400">{t("portfolio.noHistory")}</p>
+              ) : (
+                <div className="max-h-[60vh] overflow-y-auto pb-2">
+                  {upcoming.length > 0 ? (
+                    <>
+                      <div className="px-4 pt-2 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
+                        {t("portfolio.upcoming")}
+                      </div>
+                      <ul className="divide-y divide-[var(--edge-soft)]">{upcoming.map(historyRow)}</ul>
+                    </>
+                  ) : null}
+                  {completed.length > 0 ? (
+                    <>
+                      <div className="px-4 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                        {t("tx.completed")}
+                      </div>
+                      <ul className="divide-y divide-[var(--edge-soft)]">{completed.map(historyRow)}</ul>
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
 
       <AccountModal
         open={modalOpen || editing != null}
@@ -125,6 +238,7 @@ export default function AccountsPage() {
                 if (window.confirm(t("accounts.deleteWarning"))) {
                   await deleteAccount.mutateAsync(editing.id);
                   setEditing(null);
+                  setSelectedId(null);
                 }
               }
             : undefined

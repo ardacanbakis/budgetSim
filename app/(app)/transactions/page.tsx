@@ -22,6 +22,7 @@ export default function TransactionsPage() {
   const [filterAccount, setFilterAccount] = useState("all");
   const [filterStatus, setFilterStatus] = useState<"all" | TxStatus>("all");
   const [filterDirection, setFilterDirection] = useState<"all" | TxDirection>("all");
+  const [latestFirst, setLatestFirst] = useState(true);
   const [txModal, setTxModal] = useState(false);
   const [transferModal, setTransferModal] = useState(false);
   const [completing, setCompleting] = useState<Transaction | null>(null);
@@ -42,8 +43,10 @@ export default function TransactionsPage() {
     if (filterAccount !== "all") list = list.filter((tx) => tx.accountId === filterAccount);
     if (filterStatus !== "all") list = list.filter((tx) => tx.status === filterStatus);
     if (filterDirection !== "all") list = list.filter((tx) => tx.direction === filterDirection);
-    return [...list].sort((a, b) => (a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0));
-  }, [transactions.data, filterAccount, filterStatus, filterDirection]);
+    return [...list].sort((a, b) =>
+      latestFirst ? (a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0) : a.dueDate > b.dueDate ? 1 : a.dueDate < b.dueDate ? -1 : 0
+    );
+  }, [transactions.data, filterAccount, filterStatus, filterDirection, latestFirst]);
 
   if (accounts.isLoading || transactions.isLoading || categories.isLoading) return <Spinner />;
 
@@ -84,6 +87,9 @@ export default function TransactionsPage() {
           <option value="income">{t("tx.income")}</option>
           <option value="expense">{t("tx.expense")}</option>
         </Select>
+        <button onClick={() => setLatestFirst(!latestFirst)} className="text-xs text-teal-600 hover:underline">
+          {latestFirst ? t("portfolio.sortLatest") : t("portfolio.sortOldest")} ⇅
+        </button>
       </div>
 
       {filtered.length === 0 ? (
@@ -120,7 +126,7 @@ export default function TransactionsPage() {
                   </div>
                   <div
                     className={`text-right text-sm font-semibold tabular-nums ${
-                      tx.direction === "income" ? "text-emerald-600" : "text-zinc-800 dark:text-zinc-200"
+                      tx.direction === "income" ? "text-green-600" : "text-red-600"
                     }`}
                   >
                     {tx.direction === "income" ? "+" : "−"}

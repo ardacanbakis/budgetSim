@@ -2,18 +2,20 @@ import { expect, Page, test } from "@playwright/test";
 
 /**
  * Demo-mode smoke: enter without credentials, exercise the core flows, and
- * capture screenshots at phone / tablet / desktop / 21:9 ultrawide sizes.
+ * capture screenshots at phone (incl. iPhone 16 Pro / Pro Max) / tablet /
+ * desktop / 21:9 ultrawide sizes.
  */
 
 const VIEWPORTS = [
-  { name: "mobile-390", width: 390, height: 844 },
+  { name: "iphone16pro-402", width: 402, height: 874 },
+  { name: "iphone16promax-440", width: 440, height: 956 },
   { name: "tablet-768", width: 768, height: 1024 },
   { name: "desktop-1280", width: 1280, height: 800 },
   { name: "ultrawide-3440", width: 3440, height: 1440 },
 ] as const;
 
 async function enterDemo(page: Page) {
-  await page.goto("/login");
+  await page.goto("/welcome");
   await page.getByRole("button", { name: /demo/i }).click();
   await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible({ timeout: 15_000 });
 }
@@ -21,77 +23,81 @@ async function enterDemo(page: Page) {
 for (const vp of VIEWPORTS) {
   test(`demo mode renders at ${vp.name}`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
-    await enterDemo(page);
-    await page.waitForTimeout(1200); // charts settle
+
+    // welcome screen first (neon THEO grid + footer)
+    await page.goto("/welcome");
+    await page.waitForTimeout(2600); // intro animations settle
+    await page.screenshot({ path: `e2e/screenshots/welcome-${vp.name}.png` });
+
+    await page.getByRole("button", { name: /demo/i }).click();
+    await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(1000);
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "purchases", "loans", "reports", "projections"] as const) {
+    for (const route of ["victvs", "transactions", "purchases", "accounts", "loans", "reports", "projections"] as const) {
       await page.goto(`/${route}`);
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(700);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
     }
   });
 }
 
-test("purchases: create installment purchase on the card", async ({ page }) => {
+test("portfolio: selecting an item shows its history", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
-  await page.goto("/purchases");
+  await page.goto("/accounts");
+  await expect(page.getByText(/Select an account|Geçmişini görmek/)).toBeVisible();
+  await page.getByRole("button", { name: /Bonus Card/ }).click();
+  await expect(page.getByRole("heading", { name: /History|Geçmiş/i })).toBeVisible();
+  await expect(page.getByText(/iPhone 17 \(1\/6\)/).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
+});
 
-  await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
-  await page.getByPlaceholder("iPhone 17").fill("MacBook Air");
-  await page.getByLabel(/amount/i).first().fill("120000");
-  await page.getByLabel(/number of installments|taksit sayısı/i).fill("12");
-  await page.getByRole("button", { name: /^save$|^kaydet$/i }).click();
+test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  await page.goto("/victvs");
 
-  // appears under the card with an installment badge and progress line
-  await expect(page.getByText("MacBook Air")).toBeVisible();
-  await expect(page.getByText(/12×/)).toBeVisible();
-  await page.screenshot({ path: "e2e/screenshots/purchase-created.png" });
+  // month sections with half-month quick select
+  await expect(page.getByRole("button", { name: /1st half|İlk yarı/i }).first()).toBeVisible();
+  await page.getByRole("button", { name: /1st half|İlk yarı/i }).first().click();
+  await page.screenshot({ path: "e2e/screenshots/victvs-groups.png" });
 
-  // its planned installments exist in transactions
-  await page.goto("/transactions");
-  await expect(page.getByText("MacBook Air (1/12)")).toBeVisible();
+  // paste with the real email formats
+  await page.getByRole("button", { name: /paste|yapıştır/i }).click();
+  await page
+    .getByRole("textbox")
+    .fill(
+      "CIPS OR Exam 37324 - Wed 15 Jul 26\nV3 - ONLINE - 83849, PTS, 788, Jakarta, Indonesia - 08 Jul 26 - 1500\n21 Jan 26\tCIPS CR Exam \t36951\t60"
+    );
+  await page.getByRole("button", { name: /preview|önizle/i }).click();
+  await expect(page.getByText(/3 sessions recognized|3 seans tanındı/)).toBeVisible();
+  // defaults prefilled: CIPS OR 37.5, IWCF 60
+  await expect(page.locator('input[value="37.5"]')).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/victvs-paste-preview.png" });
 });
 
 test("scenario overlay and quick-add shortcut", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  // TRY devaluation overlay adds a dashed line + legend
   await page.goto("/projections");
   await page.getByText(/TRY devaluation|TL devalüasyonu/).click();
   await page.waitForTimeout(600);
   await expect(page.getByText(/TRY −25%/)).toBeVisible();
-  await page.screenshot({ path: "e2e/screenshots/projections-scenario.png" });
 
-  // keyboard shortcut opens the shared quick-add modal (blur the checkbox first)
   await page.locator("h1").click();
   await page.keyboard.press("n");
   await expect(page.getByRole("heading", { name: /new transaction|yeni işlem/i })).toBeVisible();
   await page.keyboard.press("Escape");
 });
 
-test("demo flows: complete planned, transfer, victvs paste preview", async ({ page }) => {
+test("themes: mocha applies tinted surfaces", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
-
-  // transfer modal with market-rate prefill
-  await page.goto("/transactions");
-  await page.getByRole("button", { name: /transfer/i }).first().click();
-  await page.getByLabel(/amount sent|gönderilen/i).fill("100");
-  const received = page.getByLabel(/amount received|alınan/i);
-  await expect(received).not.toHaveValue("");
-  await page.screenshot({ path: "e2e/screenshots/transfer-modal.png" });
-  await page.keyboard.press("Escape");
-
-  // victvs paste → preview grid
-  await page.goto("/victvs");
-  await page.getByRole("button", { name: /paste|yapıştır/i }).click();
-  await page
-    .getByRole("textbox")
-    .fill("12/01/2026\tPearson VUE Invigilation\t$120\n13.01.2026\tRemote Proctoring\t95.50 USD\nbroken line without numbers here");
-  await page.getByRole("button", { name: /preview|önizle/i }).click();
-  await expect(page.getByText(/2 sessions recognized|2 seans tanındı/)).toBeVisible();
-  await page.screenshot({ path: "e2e/screenshots/victvs-paste-preview.png" });
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /^mocha$/i }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "mocha");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "e2e/screenshots/theme-mocha.png" });
 });

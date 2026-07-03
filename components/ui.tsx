@@ -8,7 +8,7 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cx("rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900", className)}>
+    <div className={cx("rounded-xl border border-[var(--edge)] bg-[var(--surface)] shadow-sm", className)}>
       {children}
     </div>
   );
@@ -16,7 +16,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 export function CardHeader({ title, action }: { title: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+    <div className="flex items-center justify-between gap-2 border-b border-[var(--edge-soft)] px-4 py-3">
       <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{title}</h2>
       {action}
     </div>
@@ -34,7 +34,7 @@ export function Button({
     primary:
       "bg-teal-600 text-white hover:bg-teal-700 disabled:bg-teal-600/50 dark:bg-teal-500 dark:hover:bg-teal-400 dark:text-zinc-950",
     secondary:
-      "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800",
+      "border border-[var(--edge)] bg-[var(--surface)] text-zinc-700 hover:brightness-95 dark:text-zinc-200 dark:hover:brightness-125",
     danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-600/50",
     ghost: "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
   };
@@ -55,7 +55,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cx(
-        "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
+        "w-full rounded-lg border border-[var(--edge)] bg-[var(--field)] px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100",
         props.className
       )}
     />
@@ -67,7 +67,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cx(
-        "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
+        "w-full rounded-lg border border-[var(--edge)] bg-[var(--field)] px-3 py-2 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100",
         props.className
       )}
     />
@@ -79,7 +79,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cx(
-        "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
+        "w-full rounded-lg border border-[var(--edge)] bg-[var(--field)] px-3 py-2 text-sm text-zinc-900 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100",
         props.className
       )}
     />
@@ -144,7 +144,7 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div
         className={cx(
-          "max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl dark:bg-zinc-900",
+          "max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-4 shadow-xl sm:rounded-2xl",
           wide ? "sm:max-w-2xl" : "sm:max-w-md"
         )}
         onClick={(e) => e.stopPropagation()}

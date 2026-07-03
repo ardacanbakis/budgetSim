@@ -6,47 +6,52 @@ import { Account, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { UsdPerMap } from "../fx";
 
 describe("parseVictvsPaste", () => {
-  it("parses tab-separated email rows (date, type, amount)", () => {
+  it("parses email confirmation lines (CIPS OR/CR + V3 with location noise and start time)", () => {
     const text = [
-      "Date\tExam\tFee",
-      "12/01/2026\tPearson VUE Invigilation\t$120",
-      "13.01.2026\tRemote Proctoring AM\t95.50 USD",
-      "2026-01-20\tOn-site Lead\tUSD 150",
+      "CIPS OR Exam 37324 - Wed 15 Jul 26",
+      "CIPS CR Exam 36951 - Tue 21 Jul 26",
+      "V3 - ONLINE - 83849, PTS, 788, Jakarta, Indonesia - 08 Jul 26 - 1500",
     ].join("\n");
     const { sessions, errors } = parseVictvsPaste(text);
     expect(errors).toEqual([]);
     expect(sessions).toEqual([
-      expect.objectContaining({ date: "2026-01-12", sessionType: "Pearson VUE Invigilation", amount: 120 }),
-      expect.objectContaining({ date: "2026-01-13", sessionType: "Remote Proctoring AM", amount: 95.5 }),
-      expect.objectContaining({ date: "2026-01-20", sessionType: "On-site Lead", amount: 150 }),
+      expect.objectContaining({ date: "2026-07-15", sessionType: "CIPS OR", sessionNo: "37324", amount: null }),
+      expect.objectContaining({ date: "2026-07-21", sessionType: "CIPS CR", sessionNo: "36951", amount: null }),
+      expect.objectContaining({ date: "2026-07-08", sessionType: "IWCF", sessionNo: "83849", amount: null }),
     ]);
   });
 
-  it("parses prose-style lines and month names (en + tr)", () => {
+  it("parses tab-separated rows (date, type, session no, amount) with 2- and 4-digit years", () => {
     const text = [
-      "15 Jan 2026 - IELTS Session - $85",
-      "3 Şubat 2026 Sınav Gözetmenliği 110,50",
+      "21 Jan 26\tCIPS OR Exam \t32138\t37.5",
+      "22 Jan 26\tV3 - ONLINE Al Muntazah\t79668\t60",
+      "21 Jul 2026\tCIPS CR Exam \t36951\t60",
+      "05 Mar 26\tFIFA Session\t41002\t30",
     ].join("\n");
     const { sessions, errors } = parseVictvsPaste(text);
     expect(errors).toEqual([]);
-    expect(sessions[0]).toMatchObject({ date: "2026-01-15", sessionType: "IELTS Session", amount: 85 });
-    expect(sessions[1]).toMatchObject({ date: "2026-02-03", sessionType: "Sınav Gözetmenliği", amount: 110.5 });
+    expect(sessions).toEqual([
+      expect.objectContaining({ date: "2026-01-21", sessionType: "CIPS OR", sessionNo: "32138", amount: 37.5 }),
+      expect.objectContaining({ date: "2026-01-22", sessionType: "IWCF", sessionNo: "79668", amount: 60 }),
+      expect.objectContaining({ date: "2026-07-21", sessionType: "CIPS CR", sessionNo: "36951", amount: 60 }),
+      expect.objectContaining({ date: "2026-03-05", sessionType: "FIFA", sessionNo: "41002", amount: 30 }),
+    ]);
   });
 
-  it("flags bad lines instead of dropping them, ignores headers/empty", () => {
+  it("flags unknown types and broken dates instead of dropping them, ignores headers/empty", () => {
     const text = [
       "",
       "Upcoming sessions:",
-      "99/99/2026 Broken row $50",
-      "18/02/2026 Missing amount row",
-      "No date here $75",
+      "Pearson VUE thing 12345 - 15 Jul 26",
+      "CIPS OR Exam 37324 - 99 Jul 26",
+      "CIPS CR Exam 36951",
     ].join("\n");
     const { sessions, errors } = parseVictvsPaste(text);
     expect(sessions).toEqual([]);
     expect(errors).toEqual([
-      { line: 3, raw: "99/99/2026 Broken row $50", reason: "bad-date" },
-      { line: 4, raw: "18/02/2026 Missing amount row", reason: "no-amount" },
-      { line: 5, raw: "No date here $75", reason: "no-date" },
+      { line: 3, raw: "Pearson VUE thing 12345 - 15 Jul 26", reason: "no-type" },
+      { line: 4, raw: "CIPS OR Exam 37324 - 99 Jul 26", reason: "bad-date" },
+      { line: 5, raw: "CIPS CR Exam 36951", reason: "no-date" },
     ]);
   });
 });

@@ -85,10 +85,23 @@ export interface RecurringTemplate {
 
 export type VictvsStatus = "unpaid" | "paid";
 
+/** The four session kinds; sessionType stays a string for forward-compat. */
+export const VICTVS_TYPES = ["IWCF", "CIPS OR", "CIPS CR", "FIFA"] as const;
+export type VictvsType = (typeof VICTVS_TYPES)[number];
+
+export const DEFAULT_VICTVS_AMOUNTS: Record<VictvsType, number> = {
+  IWCF: 60,
+  "CIPS OR": 37.5,
+  "CIPS CR": 60,
+  FIFA: 30,
+};
+
 export interface VictvsSession {
   id: string;
   date: string;
   sessionType: string;
+  /** exam/session number, e.g. "37324" */
+  sessionNo: string;
   amount: number; // USD
   status: VictvsStatus;
   payoutId: string | null;
@@ -156,6 +169,10 @@ export interface DashboardLayout {
 
 export interface UserSettings {
   dashboardLayout: DashboardLayout | null;
-  theme: "system" | "light" | "dark";
+  theme: "system" | "light" | "dark" | "slate" | "ocean" | "forest" | "mocha";
   compact: boolean;
+  /** default deposit account for VICTVS payouts */
+  victvsAccountId: string | null;
+  /** per-type default session amounts (USD) */
+  victvsDefaults: Record<string, number> | null;
 }

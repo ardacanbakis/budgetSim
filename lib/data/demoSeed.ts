@@ -231,10 +231,11 @@ export function buildDemoSeed(): DemoStore {
   );
 
   const victvsSessions: VictvsSession[] = [
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-08`, sessionType: "Pearson VUE Invigilation", amount: 120, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-15`, sessionType: "Remote Proctoring AM", amount: 95.5, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
-    { id: uuid(), date: `${lastMonth.slice(0, 7)}-22`, sessionType: "On-site Lead Invigilator", amount: 150, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
-    { id: uuid(), date: addMonthsClamped(`${lastMonth.slice(0, 7)}-28`, -1), sessionType: "IELTS Session", amount: 85, status: "paid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-08`, sessionType: "CIPS OR", sessionNo: "32138", amount: 37.5, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-15`, sessionType: "IWCF", sessionNo: "79668", amount: 60, status: "unpaid", payoutId: null, notes: "", source: "paste", createdAt: nowIso },
+    { id: uuid(), date: `${lastMonth.slice(0, 7)}-22`, sessionType: "CIPS CR", sessionNo: "36951", amount: 60, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: `${today.slice(0, 7)}-04`, sessionType: "FIFA", sessionNo: "41002", amount: 30, status: "unpaid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
+    { id: uuid(), date: addMonthsClamped(`${lastMonth.slice(0, 7)}-28`, -1), sessionType: "IWCF", sessionNo: "71455", amount: 60, status: "paid", payoutId: null, notes: "", source: "manual", createdAt: nowIso },
   ];
 
   const budgets: Budget[] = [
@@ -265,7 +266,13 @@ export function buildDemoSeed(): DemoStore {
     purchases,
     budgets,
     goals,
-    settings: { dashboardLayout: null, theme: "system", compact: false },
+    settings: {
+      dashboardLayout: null,
+      theme: "system",
+      compact: false,
+      victvsAccountId: usdAcc.id,
+      victvsDefaults: null,
+    },
     snapshots,
   };
 }
