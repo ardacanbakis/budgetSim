@@ -7,7 +7,8 @@ import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/compo
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
-import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES } from "@/lib/data/types";
+import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
+import { NAV, orderedNav } from "@/components/shell";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { Locale, useI18n } from "@/lib/i18n";
 
@@ -162,6 +163,10 @@ export default function SettingsPage() {
 
       <Section title={t("victvs.settingsTitle")} view={view}>
         <VictvsSettingsCard />
+      </Section>
+
+      <Section title={t("settings.sidebar")} view={view}>
+        <SidebarOrderCard />
       </Section>
 
       <Section title={t("exports.title")} view={view}>
@@ -422,6 +427,8 @@ function VictvsSettingsCard() {
   const accounts = useAccounts();
   const settings = useUserSettings();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [newType, setNewType] = useState("");
+  const [newTypeAmount, setNewTypeAmount] = useState("");
 
   const save = useAppMutation(
     (patch: Parameters<typeof repo.saveUserSettings>[0]) => repo.saveUserSettings(patch),
@@ -451,27 +458,130 @@ function VictvsSettingsCard() {
         <div>
           <p className="mb-2 text-xs font-medium text-zinc-500">{t("victvs.settingsDefaults")}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {VICTVS_TYPES.map((type) => (
-              <label key={type} className="block space-y-1">
-                <span className="text-xs text-zinc-400">{type}</span>
-                <Input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={drafts[type] ?? String(defaults[type] ?? "")}
-                  onChange={(e) => setDrafts((d) => ({ ...d, [type]: e.target.value }))}
-                  onBlur={() => {
-                    const value = Number(drafts[type]);
-                    if (drafts[type] != null && value > 0 && value !== defaults[type]) {
-                      save.mutate({ victvsDefaults: { ...defaults, [type]: value } });
-                    }
-                  }}
-                />
-              </label>
-            ))}
+            {victvsTypeList(defaults).map((type) => {
+              const isCustom = !(VICTVS_TYPES as readonly string[]).includes(type);
+              return (
+                <label key={type} className="block space-y-1">
+                  <span className="flex items-center gap-1 text-xs text-zinc-400">
+                    {type}
+                    {isCustom ? (
+                      <button
+                        type="button"
+                        aria-label={t("common.delete")}
+                        className="text-zinc-400 hover:text-red-600"
+                        onClick={() => {
+                          const next = { ...defaults };
+                          delete next[type];
+                          save.mutate({ victvsDefaults: next });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </span>
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={drafts[type] ?? String(defaults[type] ?? "")}
+                    onChange={(e) => setDrafts((d) => ({ ...d, [type]: e.target.value }))}
+                    onBlur={() => {
+                      const value = Number(drafts[type]);
+                      if (drafts[type] != null && value > 0 && value !== defaults[type]) {
+                        save.mutate({ victvsDefaults: { ...defaults, [type]: value } });
+                      }
+                    }}
+                  />
+                </label>
+              );
+            })}
           </div>
+          <form
+            className="mt-3 flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = newType.trim();
+              const amount = Number(newTypeAmount);
+              if (!name || !(amount > 0) || defaults[name] != null) return;
+              save.mutate({ victvsDefaults: { ...defaults, [name]: amount } });
+              setNewType("");
+              setNewTypeAmount("");
+            }}
+          >
+            <div className="min-w-32 flex-1">
+              <Field label={t("victvs.newType")}>
+                <Input value={newType} onChange={(e) => setNewType(e.target.value)} placeholder="IELTS" />
+              </Field>
+            </div>
+            <div className="w-28">
+              <Field label={`${t("common.amount")} ($)`}>
+                <Input type="number" step="any" min="0" value={newTypeAmount} onChange={(e) => setNewTypeAmount(e.target.value)} />
+              </Field>
+            </div>
+            <Button type="submit">{t("common.add")}</Button>
+          </form>
         </div>
       </div>
+    </Card>
+  );
+}
+
+function SidebarOrderCard() {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const settings = useUserSettings();
+
+  const save = useAppMutation(
+    (navOrder: string[]) => repo.saveUserSettings({ navOrder }),
+    [KEYS.userSettings]
+  );
+
+  const nav = orderedNav(settings.data?.navOrder);
+
+  const move = (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= nav.length) return;
+    const next = nav.map((item) => item.href);
+    [next[index], next[target]] = [next[target], next[index]];
+    save.mutate(next);
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title={t("settings.sidebar")}
+        action={
+          settings.data?.navOrder ? (
+            <Button variant="ghost" onClick={() => save.mutate(NAV.map((item) => item.href))}>
+              {t("settings.sidebarReset")}
+            </Button>
+          ) : undefined
+        }
+      />
+      <ul className="divide-y divide-[var(--edge-soft)]">
+        {nav.map((item, index) => (
+          <li key={item.href} className="flex items-center gap-3 px-4 py-2">
+            <span className="w-4 text-center text-zinc-400">{item.icon}</span>
+            <span className="flex-1 text-sm">{t(item.key)}</span>
+            <button
+              onClick={() => move(index, -1)}
+              disabled={index === 0}
+              className="px-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
+              aria-label={t("layout.moveUp")}
+            >
+              ↑
+            </button>
+            <button
+              onClick={() => move(index, 1)}
+              disabled={index === nav.length - 1}
+              className="px-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
+              aria-label={t("layout.moveDown")}
+            >
+              ↓
+            </button>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

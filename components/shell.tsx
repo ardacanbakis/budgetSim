@@ -8,14 +8,14 @@ import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
 import { useApp } from "@/lib/data/provider";
-import { KEYS, useRates } from "@/lib/data/queries";
+import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
-const NAV = [
+export const NAV = [
   { href: "/", key: "nav.dashboard", icon: "◧" },
   { href: "/accounts", key: "nav.accounts", icon: "▤" },
   { href: "/transactions", key: "nav.transactions", icon: "⇄" },
@@ -27,6 +27,21 @@ const NAV = [
   { href: "/projections", key: "nav.projections", icon: "↗" },
   { href: "/settings", key: "nav.settings", icon: "⚙" },
 ] as const;
+
+/** Apply the user's saved sidebar order; unknown ids dropped, missing appended. */
+export function orderedNav(navOrder: string[] | null | undefined): (typeof NAV)[number][] {
+  if (!navOrder?.length) return [...NAV];
+  const byHref = new Map<string, (typeof NAV)[number]>(NAV.map((item) => [item.href, item]));
+  const result: (typeof NAV)[number][] = [];
+  for (const href of navOrder) {
+    const item = byHref.get(href);
+    if (item) {
+      result.push(item);
+      byHref.delete(href);
+    }
+  }
+  return [...result, ...byHref.values()];
+}
 
 /**
  * Runs once per session when data is ready: seed default categories,
@@ -85,17 +100,35 @@ function Bootstrapper() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { session } = useApp();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (session.status === "signedOut") router.replace("/welcome");
+  }, [session.status, router]);
+
+  // repo-backed hooks (useUserSettings etc.) live in ShellChrome, which only
+  // mounts once the session is ready — also keeps prerender repo-free
+  if (session.status !== "ready") {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <Spinner />
+      </main>
+    );
+  }
+  return <ShellChrome>{children}</ShellChrome>;
+}
+
+function ShellChrome({ children }: { children: React.ReactNode }) {
   const { session, displayCurrency, setDisplayCurrency, signOut } = useApp();
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const rates = useRates();
+  const settings = useUserSettings();
+  const nav = orderedNav(settings.data?.navOrder);
   const [quickTx, setQuickTx] = useState(false);
   const [quickTransfer, setQuickTransfer] = useState(false);
-
-  useEffect(() => {
-    if (session.status === "signedOut") router.replace("/welcome");
-  }, [session.status, router]);
 
   // desktop shortcuts: n = new transaction, t = transfer (unless typing)
   useEffect(() => {
@@ -115,15 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  if (session.status !== "ready") {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <Spinner />
-      </main>
-    );
-  }
-
-  const isDemo = session.repo.mode === "demo";
+  const isDemo = session.status === "ready" && session.repo.mode === "demo";
   // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
   const ratesStale = Boolean(
     rates.data &&
@@ -143,14 +168,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
 
-      <div className="mx-auto flex w-full max-w-[1800px]">
+      <div className="flex w-full">
         {/* sidebar — desktop & ultrawide */}
         <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[var(--edge)] px-3 py-4 md:flex">
           <Link href="/" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
             Renovator
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const active = pathname === item.href;
               return (
                 <Link
@@ -223,7 +248,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* bottom nav — mobile */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--edge)] bg-[var(--surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = pathname === item.href;
           return (
             <Link

@@ -33,10 +33,25 @@ pnpm dev
 ### Supabase setup (one time)
 
 1. Create a project at supabase.com.
-2. Run `supabase/migrations/0001_initial_schema.sql` in the SQL editor.
+2. Run every file in `supabase/migrations/` (0001 → 0006, in order) in the SQL
+   editor. **All migrations are idempotent** — if a run fails halfway or you're
+   unsure what already ran, just run the file again; `already exists` can't
+   happen.
 3. Auth → Providers: enable **Email** (password sign-in). Disable "Confirm email"
    if you want instant sign-in.
 4. Copy the project URL and anon key into `.env.local`.
+
+### Deploying to Vercel
+
+Set these in **Vercel → Project → Settings → Environment Variables**, then
+**redeploy** (they are inlined at build time — adding them without a new
+deployment has no effect, and the login page will say "Server database is not
+configured"):
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `COLLECT_API_KEY` (optional — live gram-gold rate)
+- `SUPABASE_SERVICE_ROLE_KEY` (optional — fx rate history)
 
 ### Demo mode
 

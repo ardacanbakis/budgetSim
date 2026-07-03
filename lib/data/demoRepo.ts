@@ -449,7 +449,16 @@ export class DemoRepo implements Repo {
   }
 
   async getUserSettings(): Promise<UserSettings> {
-    return { ...this.store.settings };
+    // older sandboxes may miss newer fields — normalize
+    const defaults: UserSettings = {
+      dashboardLayout: null,
+      theme: "system",
+      compact: false,
+      victvsAccountId: null,
+      victvsDefaults: null,
+      navOrder: null,
+    };
+    return { ...defaults, ...(this.store.settings as Partial<UserSettings>) };
   }
 
   async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {

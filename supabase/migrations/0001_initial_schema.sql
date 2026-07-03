@@ -1,16 +1,31 @@
 -- Renovator: multi-currency budget app — initial schema.
 -- Server-authoritative: balances are always derived from completed
 -- transactions (see account_balances view), never stored.
+-- Every statement is idempotent — the file can be re-run safely.
 
-create type currency_code as enum ('TRY', 'USD', 'EUR', 'BTC', 'XAU_G');
-create type account_kind as enum ('fiat', 'crypto', 'gold');
-create type tx_direction as enum ('income', 'expense');
-create type tx_status as enum ('planned', 'completed');
-create type frequency as enum ('weekly', 'monthly', 'yearly');
-create type victvs_status as enum ('unpaid', 'paid');
-create type loan_kind as enum ('house', 'car', 'other');
+do $$ begin
+  create type currency_code as enum ('TRY', 'USD', 'EUR', 'BTC', 'XAU_G');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type account_kind as enum ('fiat', 'crypto', 'gold');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type tx_direction as enum ('income', 'expense');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type tx_status as enum ('planned', 'completed');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type frequency as enum ('weekly', 'monthly', 'yearly');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type victvs_status as enum ('unpaid', 'paid');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type loan_kind as enum ('house', 'car', 'other');
+exception when duplicate_object then null; end $$;
 
-create table accounts (
+create table if not exists accounts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
@@ -21,7 +36,7 @@ create table accounts (
   created_at timestamptz not null default now()
 );
 
-create table categories (
+create table if not exists categories (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
@@ -30,7 +45,7 @@ create table categories (
   created_at timestamptz not null default now()
 );
 
-create table recurring_templates (
+create table if not exists recurring_templates (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
@@ -46,7 +61,7 @@ create table recurring_templates (
   created_at timestamptz not null default now()
 );
 
-create table victvs_payouts (
+create table if not exists victvs_payouts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   payment_date date not null,
@@ -57,7 +72,7 @@ create table victvs_payouts (
   created_at timestamptz not null default now()
 );
 
-create table victvs_sessions (
+create table if not exists victvs_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   date date not null,
@@ -70,7 +85,7 @@ create table victvs_sessions (
   created_at timestamptz not null default now()
 );
 
-create table loans (
+create table if not exists loans (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
@@ -85,11 +100,12 @@ create table loans (
   created_at timestamptz not null default now()
 );
 
+alter table recurring_templates drop constraint if exists recurring_templates_loan_fk;
 alter table recurring_templates
   add constraint recurring_templates_loan_fk
   foreign key (loan_id) references loans (id) on delete cascade;
 
-create table transactions (
+create table if not exists transactions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   account_id uuid not null references accounts (id) on delete cascade,
@@ -110,12 +126,13 @@ create table transactions (
   check (status <> 'completed' or completed_at is not null)
 );
 
+alter table victvs_payouts drop constraint if exists victvs_payouts_transaction_fk;
 alter table victvs_payouts
   add constraint victvs_payouts_transaction_fk
   foreign key (transaction_id) references transactions (id) on delete set null;
 
 -- Global (not per-user) rate history written by the server cron.
-create table fx_rates (
+create table if not exists fx_rates (
   id bigint generated always as identity primary key,
   currency currency_code not null,
   usd_per numeric(20, 10) not null,
@@ -123,14 +140,14 @@ create table fx_rates (
   fetched_at timestamptz not null default now()
 );
 
-create index transactions_user_due_idx on transactions (user_id, due_date);
-create index transactions_account_idx on transactions (account_id);
-create index transactions_transfer_group_idx on transactions (transfer_group_id) where transfer_group_id is not null;
-create index victvs_sessions_user_status_idx on victvs_sessions (user_id, status, date);
-create index fx_rates_currency_fetched_idx on fx_rates (currency, fetched_at desc);
+create index if not exists transactions_user_due_idx on transactions (user_id, due_date);
+create index if not exists transactions_account_idx on transactions (account_id);
+create index if not exists transactions_transfer_group_idx on transactions (transfer_group_id) where transfer_group_id is not null;
+create index if not exists victvs_sessions_user_status_idx on victvs_sessions (user_id, status, date);
+create index if not exists fx_rates_currency_fetched_idx on fx_rates (currency, fetched_at desc);
 
 -- Derived balances: the single source of truth every device reads.
-create view account_balances with (security_invoker = true) as
+create or replace view account_balances with (security_invoker = true) as
 select
   a.id as account_id,
   a.user_id,
@@ -154,23 +171,31 @@ alter table loans enable row level security;
 alter table transactions enable row level security;
 alter table fx_rates enable row level security;
 
+drop policy if exists "own accounts" on accounts;
 create policy "own accounts" on accounts for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own categories" on categories;
 create policy "own categories" on categories for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own recurring_templates" on recurring_templates;
 create policy "own recurring_templates" on recurring_templates for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own victvs_payouts" on victvs_payouts;
 create policy "own victvs_payouts" on victvs_payouts for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own victvs_sessions" on victvs_sessions;
 create policy "own victvs_sessions" on victvs_sessions for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own loans" on loans;
 create policy "own loans" on loans for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own transactions" on transactions;
 create policy "own transactions" on transactions for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Anyone signed in (including anonymous demo sessions) may read rates;
 -- only the service role writes them.
+drop policy if exists "read rates" on fx_rates;
 create policy "read rates" on fx_rates for select to authenticated using (true);
 
 -- Default categories for a new user, callable right after signup.

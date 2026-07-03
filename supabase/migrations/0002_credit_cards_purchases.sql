@@ -1,12 +1,13 @@
 -- Wave 1: credit cards as debt accounts + big purchases log (taksit installments).
+-- Every statement is idempotent — the file can be re-run safely.
 
 alter type account_kind add value if not exists 'credit_card';
 
 -- Default account the card's bill is paid from (credit cards only).
 alter table accounts
-  add column payment_account_id uuid references accounts (id) on delete set null;
+  add column if not exists payment_account_id uuid references accounts (id) on delete set null;
 
-create table purchases (
+create table if not exists purchases (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
@@ -24,11 +25,12 @@ create table purchases (
 );
 
 alter table transactions
-  add column purchase_id uuid references purchases (id) on delete cascade;
+  add column if not exists purchase_id uuid references purchases (id) on delete cascade;
 
-create index purchases_user_idx on purchases (user_id, purchase_date desc);
-create index transactions_purchase_idx on transactions (purchase_id) where purchase_id is not null;
+create index if not exists purchases_user_idx on purchases (user_id, purchase_date desc);
+create index if not exists transactions_purchase_idx on transactions (purchase_id) where purchase_id is not null;
 
 alter table purchases enable row level security;
+drop policy if exists "own purchases" on purchases;
 create policy "own purchases" on purchases for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);

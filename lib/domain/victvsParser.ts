@@ -1,5 +1,3 @@
-import { VictvsType } from "@/lib/data/types";
-
 /**
  * Tolerant parser for VICTVS session lines pasted from confirmation emails or
  * spreadsheets. Recognized session types: IWCF (V3 lines), CIPS OR, CIPS CR,
@@ -19,7 +17,8 @@ import { VictvsType } from "@/lib/data/types";
 
 export interface ParsedSession {
   date: string; // yyyy-mm-dd
-  sessionType: VictvsType;
+  /** one of the built-in types from parsing; custom types selectable in the preview */
+  sessionType: string;
   sessionNo: string;
   /** null = no amount on the line; caller applies the per-type default */
   amount: number | null;
@@ -58,7 +57,7 @@ function validDate(y: number, m: number, d: number): boolean {
   return d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-function detectType(line: string): VictvsType | null {
+function detectType(line: string): string | null {
   if (/CIPS\s*OR/i.test(line)) return "CIPS OR";
   if (/CIPS\s*CR/i.test(line)) return "CIPS CR";
   if (/\bV3\b|IWCF/i.test(line)) return "IWCF";

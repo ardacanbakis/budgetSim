@@ -272,6 +272,7 @@ export function buildDemoSeed(): DemoStore {
       compact: false,
       victvsAccountId: usdAcc.id,
       victvsDefaults: null,
+      navOrder: null,
     },
     snapshots,
   };

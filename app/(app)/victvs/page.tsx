@@ -14,7 +14,7 @@ import {
   useVictvsSessions,
 } from "@/lib/data/queries";
 import { MarkPaidInput, NewVictvsSession } from "@/lib/data/repo";
-import { DEFAULT_VICTVS_AMOUNTS, VICTVS_TYPES, VictvsSession, VictvsType } from "@/lib/data/types";
+import { DEFAULT_VICTVS_AMOUNTS, VictvsSession, victvsTypeList } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
@@ -446,12 +446,12 @@ function PasteModal({
                             value={r.sessionType}
                             onChange={(e) =>
                               updateRow(i, {
-                                sessionType: e.target.value as VictvsType,
+                                sessionType: e.target.value,
                                 amount: defaults[e.target.value] ?? r.amount,
                               })
                             }
                           >
-                            {VICTVS_TYPES.map((type) => (
+                            {victvsTypeList(defaults).map((type) => (
                               <option key={type} value={type}>
                                 {type}
                               </option>
@@ -525,7 +525,7 @@ function AddModal({
 }) {
   const { t } = useI18n();
   const [date, setDate] = useState(todayISO());
-  const [sessionType, setSessionType] = useState<VictvsType>("IWCF");
+  const [sessionType, setSessionType] = useState<string>("IWCF");
   const [sessionNo, setSessionNo] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -550,11 +550,11 @@ function AddModal({
             <Select
               value={sessionType}
               onChange={(e) => {
-                setSessionType(e.target.value as VictvsType);
+                setSessionType(e.target.value);
                 setAmount("");
               }}
             >
-              {VICTVS_TYPES.map((type) => (
+              {victvsTypeList(defaults).map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
