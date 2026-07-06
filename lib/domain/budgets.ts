@@ -26,7 +26,7 @@ export function budgetStatuses(params: {
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
   const spentByCategory = new Map<string, number>();
   for (const t of transactions) {
-    if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null) continue;
+    if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null || t.legacy) continue;
     if (t.categoryId == null || t.dueDate.slice(0, 7) !== month) continue;
     const currency = currencyOf.get(t.accountId);
     if (!currency) continue;

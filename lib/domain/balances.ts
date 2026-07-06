@@ -18,7 +18,7 @@ export function computeBalances(
     currencyOf.set(a.id, a.currency);
   }
   for (const t of transactions) {
-    if (t.status !== "completed") continue;
+    if (t.status !== "completed" || t.legacy) continue;
     const cur = currencyOf.get(t.accountId);
     if (cur == null) continue;
     const sign = t.direction === "income" ? 1 : -1;
