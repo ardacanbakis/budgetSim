@@ -99,6 +99,7 @@ export default function PortfolioPage() {
             <span className="truncate text-sm">{tx.description || category?.name || (tx.transferGroupId ? t("tx.transfer") : "—")}</span>
             {tx.transferGroupId ? <Badge tone="sky">{t("tx.transfer")}</Badge> : null}
             {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
+            {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
           </div>
           <div className="text-[11px] text-zinc-400">{tx.dueDate}</div>
         </div>

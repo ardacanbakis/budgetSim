@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useUserSettings } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
 import { NAV, orderedNav } from "@/components/shell";
-import { CURRENCIES, Currency } from "@/lib/domain/currencies";
+import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
+import { snapshotFromTable } from "@/lib/domain/fx";
+import { todayISO } from "@/lib/domain/recurrence";
+import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { Locale, useI18n } from "@/lib/i18n";
 
 type SettingsView = "panels" | "compact";
@@ -167,6 +170,10 @@ export default function SettingsPage() {
 
       <Section title={t("settings.sidebar")} view={view}>
         <SidebarOrderCard />
+      </Section>
+
+      <Section title={t("legacy.title")} view={view}>
+        <LegacyCard />
       </Section>
 
       <Section title={t("exports.title")} view={view}>
@@ -582,6 +589,187 @@ function SidebarOrderCard() {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+function LegacyCard() {
+  const { t, locale } = useI18n();
+  const repo = useRepo();
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const transactions = useTransactions();
+  const settings = useUserSettings();
+  const rates = useRates();
+
+  const [pasteText, setPasteText] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [direction, setDirection] = useState<TxDirection>("income");
+  const [accountId, setAccountId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [description, setDescription] = useState("");
+
+  const importSessions = useAppMutation(
+    (inputs: Parameters<typeof repo.createVictvsSessions>[0]) => repo.createVictvsSessions(inputs),
+    [KEYS.victvsSessions]
+  );
+  const addLegacyTx = useAppMutation(
+    (input: Parameters<typeof repo.createTransaction>[0]) => repo.createTransaction(input),
+    [KEYS.transactions]
+  );
+  const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), [KEYS.transactions]);
+
+  const defaults: Record<string, number> = { ...DEFAULT_VICTVS_AMOUNTS, ...(settings.data?.victvsDefaults ?? {}) };
+  const active = (accounts.data ?? []).filter((a) => !a.archived);
+  const account = active.find((a) => a.id === accountId) ?? active[0];
+  const dirCategories = (categories.data ?? []).filter((c) => c.direction === direction);
+  const accountById = new Map(active.map((a) => [a.id, a]));
+  const legacyTxs = (transactions.data ?? [])
+    .filter((tx) => tx.legacy)
+    .sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
+
+  async function importVictvs() {
+    setMessage(null);
+    const { sessions } = parseVictvsPaste(pasteText);
+    if (!sessions.length) return;
+    await importSessions.mutateAsync(
+      sessions.map((s) => ({
+        date: s.date,
+        sessionType: s.sessionType,
+        sessionNo: s.sessionNo,
+        amount: s.amount ?? defaults[s.sessionType] ?? 0,
+        source: "paste" as const,
+        status: "paid" as const,
+      }))
+    );
+    setPasteText("");
+    setMessage(t("legacy.added", { count: sessions.length }));
+  }
+
+  return (
+    <Card>
+      <CardHeader title={t("legacy.title")} />
+      <div className="space-y-5 p-4">
+        <p className="text-xs text-zinc-500">{t("legacy.hint")}</p>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-zinc-500">{t("legacy.victvsTitle")}</p>
+          <Textarea
+            rows={4}
+            placeholder={"21 Jan 26\tCIPS OR Exam \t32138\t37.5"}
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-zinc-400">{t("legacy.victvsHint")}</span>
+            <Button onClick={importVictvs} disabled={!pasteText.trim() || importSessions.isPending}>
+              {t("common.add")}
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-2 border-t border-[var(--edge-soft)] pt-4">
+          <p className="text-xs font-medium text-zinc-500">{t("legacy.txTitle")}</p>
+          <form
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!account || !(Number(amount) > 0)) return;
+              await addLegacyTx.mutateAsync({
+                accountId: account.id,
+                direction,
+                categoryId: categoryId || null,
+                amount: Number(amount),
+                status: "completed",
+                dueDate: date,
+                description,
+                fxSnapshot: rates.data ? snapshotFromTable(rates.data) : null,
+                legacy: true,
+              });
+              setAmount("");
+              setDescription("");
+              setMessage(t("legacy.added", { count: 1 }));
+            }}
+          >
+            <Field label={t("tx.filterDirection")}>
+              <Select value={direction} onChange={(e) => { setDirection(e.target.value as TxDirection); setCategoryId(""); }}>
+                <option value="income">{t("tx.income")}</option>
+                <option value="expense">{t("tx.expense")}</option>
+              </Select>
+            </Field>
+            <Field label={t("common.account")}>
+              <Select value={account?.id ?? ""} onChange={(e) => setAccountId(e.target.value)}>
+                {active.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.currency})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("common.category")}>
+              <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                <option value="">{t("common.none")}</option>
+                {dirCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={`${t("common.amount")} ${account ? `(${account.currency})` : ""}`}>
+              <Input type="number" step="any" min="0" required inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+            <Field label={t("common.date")}>
+              <Input type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+            </Field>
+            <Field label={`${t("common.description")} (${t("common.optional")})`}>
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <div className="col-span-2 flex items-end justify-between gap-2 sm:col-span-3">
+              <span className="text-xs text-zinc-400">{t("legacy.txHint")}</span>
+              <Button type="submit" variant="primary" disabled={addLegacyTx.isPending}>
+                {t("legacy.add")}
+              </Button>
+            </div>
+          </form>
+          {message ? <p className="text-xs font-medium text-emerald-600">{message}</p> : null}
+        </div>
+
+        <div className="space-y-2 border-t border-[var(--edge-soft)] pt-4">
+          <p className="text-xs font-medium text-zinc-500">{t("legacy.listTitle")}</p>
+          {legacyTxs.length === 0 ? (
+            <EmptyState>{t("legacy.empty")}</EmptyState>
+          ) : (
+            <ul className="max-h-72 divide-y divide-[var(--edge-soft)] overflow-y-auto">
+              {legacyTxs.map((tx) => {
+                const acc = accountById.get(tx.accountId);
+                return (
+                  <li key={tx.id} className="flex items-center gap-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="truncate text-sm">{tx.description || "—"}</span>
+                        <Badge tone="zinc">{t("legacy.badge")}</Badge>
+                      </div>
+                      <div className="text-[11px] text-zinc-400">
+                        {acc?.name} · {tx.dueDate}
+                      </div>
+                    </div>
+                    <span className={`text-sm font-semibold tabular-nums ${tx.direction === "income" ? "text-green-600" : "text-red-600"}`}>
+                      {tx.direction === "income" ? "+" : "−"}
+                      {acc ? formatAmount(tx.amount, acc.currency, locale) : tx.amount}
+                    </span>
+                    <Button variant="ghost" aria-label={t("common.delete")} onClick={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(tx.id)}>
+                      ✕
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }

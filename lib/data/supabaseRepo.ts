@@ -85,6 +85,7 @@ const txFromRow = (r: Row): Transaction => ({
   loanId: r.loan_id,
   victvsPayoutId: r.victvs_payout_id,
   purchaseId: r.purchase_id ?? null,
+  legacy: r.legacy ?? false,
   createdAt: r.created_at,
 });
 
@@ -247,6 +248,7 @@ export class SupabaseRepo implements Repo {
       fx_snapshot: input.status === "completed" ? input.fxSnapshot : null,
       recurring_template_id: input.recurringTemplateId ?? null,
       loan_id: input.loanId ?? null,
+      legacy: input.legacy ?? false,
     };
   }
 
@@ -454,6 +456,7 @@ export class SupabaseRepo implements Repo {
       session_type: s.sessionType,
       session_no: s.sessionNo ?? "",
       amount: s.amount,
+      status: s.status ?? "unpaid",
       notes: s.notes ?? "",
       source: s.source,
     }));
@@ -923,7 +926,7 @@ export class SupabaseRepo implements Repo {
       amount: t.amount, status: t.status, due_date: t.dueDate, completed_at: t.completedAt,
       description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
       transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
-      loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, created_at: t.createdAt,
+      loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
     })));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {

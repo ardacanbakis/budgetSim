@@ -53,6 +53,8 @@ export interface NewTransaction {
   fxSnapshot: FxSnapshot | null;
   recurringTemplateId?: string | null;
   loanId?: string | null;
+  /** true = reference-only history; never touches balances or current stats */
+  legacy?: boolean;
 }
 
 export interface NewTransfer {
@@ -86,6 +88,8 @@ export interface NewVictvsSession {
   amount: number;
   notes?: string;
   source: "manual" | "paste";
+  /** "paid" = legacy import: recorded as already settled, no payout/transaction */
+  status?: "unpaid" | "paid";
 }
 
 export interface MarkPaidInput {

@@ -119,6 +119,7 @@ export default function TransactionsPage() {
                         </span>
                       ) : null}
                       {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
+                      {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
                     </div>
                     <div className="mt-0.5 text-xs text-zinc-500">
                       {account.name} · {tx.dueDate}

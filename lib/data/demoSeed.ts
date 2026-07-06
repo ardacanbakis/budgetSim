@@ -98,6 +98,7 @@ export function buildDemoSeed(): DemoStore {
     loanId: null,
     victvsPayoutId: null,
     purchaseId: null,
+    legacy: false,
     createdAt: nowIso,
   };
 

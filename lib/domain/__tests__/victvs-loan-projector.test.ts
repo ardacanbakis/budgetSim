@@ -129,6 +129,7 @@ describe("projectCashflow", () => {
         loanId: null,
         victvsPayoutId: null,
         purchaseId: null,
+        legacy: false,
         createdAt: "2026-06-20",
       },
     ];
@@ -168,6 +169,7 @@ describe("projectCashflow", () => {
         loanId: null,
         victvsPayoutId: null,
         purchaseId: null,
+        legacy: false,
         createdAt: "2026-06-20",
       },
     ];

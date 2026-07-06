@@ -92,6 +92,33 @@ test("scenario overlay and quick-add shortcut", async ({ page }) => {
   await page.keyboard.press("Escape");
 });
 
+test("legacy import: shows in history but never moves net worth", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const before = await netWorthTile.textContent();
+
+  await page.goto("/settings");
+  const legacySection = page.locator("text=Past incomes & expenses").locator("../..");
+  await legacySection.getByLabel(/amount/i).fill("9999");
+  await legacySection.getByLabel(/description/i).fill("Old salary 2024");
+  await legacySection.getByRole("button", { name: /add legacy record/i }).click();
+  await page.waitForTimeout(500);
+  await expect(page.getByText("Old salary 2024")).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/legacy-settings.png" });
+
+  // transactions list shows it with the Legacy badge
+  await page.goto("/transactions");
+  await expect(page.getByText("Old salary 2024")).toBeVisible();
+
+  // dashboard net worth unchanged
+  await page.goto("/");
+  await page.waitForTimeout(800);
+  const after = await netWorthTile.textContent();
+  expect(after).toBe(before);
+});
+
 test("themes: mocha applies tinted surfaces", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

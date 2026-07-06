@@ -47,6 +47,8 @@ export interface Transaction {
   loanId: string | null;
   victvsPayoutId: string | null;
   purchaseId: string | null;
+  /** settled history imported for reference — excluded from balances and current stats */
+  legacy: boolean;
   createdAt: string;
 }
 

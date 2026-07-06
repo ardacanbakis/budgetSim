@@ -32,6 +32,7 @@ function tx(partial: Partial<Transaction> & Pick<Transaction, "accountId" | "dir
     loanId: null,
     victvsPayoutId: null,
     purchaseId: null,
+    legacy: false,
     createdAt: "2026-06-01",
     ...partial,
   };
@@ -51,6 +52,16 @@ describe("computeBalances", () => {
     const balances = computeBalances(accounts, txs);
     expect(balances.get("usd")).toBe(1150.25);
     expect(balances.get("try")).toBe(3800);
+  });
+
+  it("ignores legacy transactions entirely — reference-only history", () => {
+    const accounts = [account("usd", "USD", 1000)];
+    const txs = [
+      tx({ accountId: "usd", direction: "income", amount: 5000, legacy: true }),
+      tx({ accountId: "usd", direction: "expense", amount: 300, legacy: true }),
+      tx({ accountId: "usd", direction: "income", amount: 100 }),
+    ];
+    expect(computeBalances(accounts, txs).get("usd")).toBe(1100);
   });
 
   it("handles transfer legs as normal income/expense on each account", () => {

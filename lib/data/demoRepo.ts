@@ -150,6 +150,7 @@ export class DemoRepo implements Repo {
       loanId: input.loanId ?? null,
       victvsPayoutId: null,
       purchaseId: null,
+      legacy: input.legacy ?? false,
       createdAt: new Date().toISOString(),
     };
     this.store.transactions.push(tx);
@@ -211,6 +212,7 @@ export class DemoRepo implements Repo {
       loanId: null,
       victvsPayoutId: null,
       purchaseId: null,
+      legacy: false,
       createdAt: now,
     };
     this.store.transactions.push(
@@ -287,6 +289,7 @@ export class DemoRepo implements Repo {
         loanId: template.loanId,
         victvsPayoutId: null,
         purchaseId: null,
+        legacy: false,
         createdAt: now,
       });
     }
@@ -323,7 +326,7 @@ export class DemoRepo implements Repo {
         sessionType: input.sessionType,
         sessionNo: input.sessionNo ?? "",
         amount: input.amount,
-        status: "unpaid",
+        status: input.status ?? "unpaid",
         payoutId: null,
         notes: input.notes ?? "",
         source: input.source,
@@ -369,6 +372,7 @@ export class DemoRepo implements Repo {
       loanId: null,
       victvsPayoutId: payoutId,
       purchaseId: null,
+      legacy: false,
       createdAt: now,
     });
     const payout: VictvsPayout = {
@@ -503,6 +507,7 @@ export class DemoRepo implements Repo {
         loanId: null,
         victvsPayoutId: null,
         purchaseId: purchase.id,
+        legacy: false,
         createdAt: now,
       });
     }

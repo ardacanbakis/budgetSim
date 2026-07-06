@@ -24,6 +24,7 @@ function tx(partial: Partial<Transaction> & Pick<Transaction, "accountId" | "dir
     loanId: null,
     victvsPayoutId: null,
     purchaseId: null,
+    legacy: false,
     createdAt: "2026-06-10",
     ...partial,
   };
