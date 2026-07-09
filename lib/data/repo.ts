@@ -102,6 +102,8 @@ export interface MarkPaidInput {
   totalUsd: number;
   categoryId: string | null;
   fxSnapshot: FxSnapshot | null;
+  /** true = the aggregated payout transaction is legacy — sessions paid, balances untouched */
+  legacy?: boolean;
 }
 
 export interface NewLoan {
@@ -143,10 +145,14 @@ export interface Repo {
     id: string,
     patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>
   ): Promise<void>;
-  /** planned → completed, capturing the FX snapshot and optional final amount */
-  completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number): Promise<void>;
+  /** planned → completed, capturing the FX snapshot and optional final amount; legacy = don't touch balances */
+  completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void>;
   /** completed → planned (undo) */
   reopenTransaction(id: string): Promise<void>;
+  /** flip the legacy flag on any transaction (instantly in/excludes it from balances) */
+  setTransactionLegacy(id: string, legacy: boolean): Promise<void>;
+  /** complete each planned id as legacy with the given snapshot; returns count */
+  bulkCompleteAsLegacy(ids: string[], fxSnapshot: FxSnapshot): Promise<number>;
   deleteTransaction(id: string): Promise<void>;
   createTransfer(input: NewTransfer): Promise<void>;
 

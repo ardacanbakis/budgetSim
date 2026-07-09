@@ -276,13 +276,14 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
-  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number): Promise<void> {
+  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
     const row: Row = {
       status: "completed",
       completed_at: new Date().toISOString(),
       fx_snapshot: fxSnapshot,
     };
     if (amount != null) row.amount = amount;
+    if (legacy != null) row.legacy = legacy;
     const { error } = await this.db.from("transactions").update(row).eq("id", id);
     throwIf(error);
   }
@@ -290,9 +291,25 @@ export class SupabaseRepo implements Repo {
   async reopenTransaction(id: string): Promise<void> {
     const { error } = await this.db
       .from("transactions")
-      .update({ status: "planned", completed_at: null, fx_snapshot: null })
+      .update({ status: "planned", completed_at: null, fx_snapshot: null, legacy: false })
       .eq("id", id);
     throwIf(error);
+  }
+
+  async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
+    const { error } = await this.db.from("transactions").update({ legacy }).eq("id", id);
+    throwIf(error);
+  }
+
+  async bulkCompleteAsLegacy(ids: string[], fxSnapshot: FxSnapshot): Promise<number> {
+    if (!ids.length) return 0;
+    const { error } = await this.db
+      .from("transactions")
+      .update({ status: "completed", completed_at: new Date().toISOString(), fx_snapshot: fxSnapshot, legacy: true })
+      .in("id", ids)
+      .eq("status", "planned");
+    throwIf(error);
+    return ids.length;
   }
 
   async deleteTransaction(id: string): Promise<void> {
@@ -510,6 +527,7 @@ export class SupabaseRepo implements Repo {
         description: `VICTVS payout (${input.sessionIds.length} sessions)`,
         fx_snapshot: input.fxSnapshot,
         victvs_payout_id: payout!.id,
+        legacy: input.legacy ?? false,
       })
       .select()
       .single();

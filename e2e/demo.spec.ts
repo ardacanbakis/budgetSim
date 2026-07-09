@@ -119,6 +119,29 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
   expect(after).toBe(before);
 });
 
+test("complete as legacy: planned item completes without moving net worth", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const before = await netWorthTile.textContent();
+
+  // complete a planned item with the legacy checkbox ticked
+  await page.goto("/transactions");
+  await page.getByRole("button", { name: /^Complete$/ }).first().click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: /^Confirm$/ }).click();
+  await page.waitForTimeout(500);
+  // it now shows completed + Legacy badge
+  await expect(page.getByText("Legacy").first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/complete-legacy.png" });
+
+  // dashboard net worth unchanged
+  await page.goto("/");
+  await page.waitForTimeout(800);
+  expect(await netWorthTile.textContent()).toBe(before);
+});
+
 test("themes: mocha applies tinted surfaces", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
