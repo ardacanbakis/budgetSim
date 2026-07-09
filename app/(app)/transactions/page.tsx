@@ -9,6 +9,7 @@ import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransact
 import { Transaction, TxDirection, TxStatus } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
+import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
 export default function TransactionsPage() {
@@ -31,9 +32,20 @@ export default function TransactionsPage() {
   const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), invalidate);
   const reopenTx = useAppMutation((id: string) => repo.reopenTransaction(id), invalidate);
   const completeTx = useAppMutation(
-    (v: { id: string; amount?: number }) => repo.completeTransaction(v.id, snapshotFromTable(rates.data!), v.amount),
+    (v: { id: string; amount?: number; legacy?: boolean }) =>
+      repo.completeTransaction(v.id, snapshotFromTable(rates.data!), v.amount, v.legacy),
     invalidate
   );
+  const toggleLegacy = useAppMutation(
+    (v: { id: string; legacy: boolean }) => repo.setTransactionLegacy(v.id, v.legacy),
+    invalidate
+  );
+  const bulkLegacy = useAppMutation(
+    (ids: string[]) => repo.bulkCompleteAsLegacy(ids, snapshotFromTable(rates.data!)),
+    invalidate
+  );
+
+  const overduePlanned = (transactions.data ?? []).filter((tx) => tx.status === "planned" && tx.dueDate < todayISO());
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data]);
   const categoryById = useMemo(() => new Map((categories.data ?? []).map((c) => [c.id, c])), [categories.data]);
@@ -92,6 +104,22 @@ export default function TransactionsPage() {
         </button>
       </div>
 
+      {filterStatus === "planned" && overduePlanned.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--edge)] bg-[var(--edge-soft)] px-4 py-2.5 text-sm">
+          <span className="text-zinc-600 dark:text-zinc-300">{t("legacy.overdueCount", { count: overduePlanned.length })}</span>
+          <Button
+            disabled={!rates.data || bulkLegacy.isPending}
+            onClick={() => {
+              if (window.confirm(t("legacy.bulkConfirm", { count: overduePlanned.length }))) {
+                bulkLegacy.mutate(overduePlanned.map((tx) => tx.id));
+              }
+            }}
+          >
+            {t("legacy.bulkComplete")}
+          </Button>
+        </div>
+      ) : null}
+
       {filtered.length === 0 ? (
         <EmptyState>{t("tx.empty")}</EmptyState>
       ) : (
@@ -139,9 +167,18 @@ export default function TransactionsPage() {
                         {t("tx.complete")}
                       </Button>
                     ) : !isTransfer ? (
-                      <Button variant="ghost" onClick={() => reopenTx.mutate(tx.id)}>
-                        {t("tx.reopen")}
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          title={tx.legacy ? t("legacy.unmark") : t("legacy.mark")}
+                          onClick={() => toggleLegacy.mutate({ id: tx.id, legacy: !tx.legacy })}
+                        >
+                          {tx.legacy ? "↩" : "🗄"}
+                        </Button>
+                        <Button variant="ghost" onClick={() => reopenTx.mutate(tx.id)}>
+                          {t("tx.reopen")}
+                        </Button>
+                      </>
                     ) : null}
                     <Button
                       variant="ghost"
@@ -166,14 +203,17 @@ export default function TransactionsPage() {
         tx={completing}
         accountCurrency={completing ? accountById.get(completing.accountId)?.currency : undefined}
         onClose={() => setCompleting(null)}
-        onConfirm={async (amount) => {
-          if (completing) await completeTx.mutateAsync({ id: completing.id, amount });
+        onConfirm={async (amount, legacy) => {
+          if (completing) await completeTx.mutateAsync({ id: completing.id, amount, legacy });
           setCompleting(null);
         }}
       />
     </div>
   );
 }
+
+/** older than this (months) → the legacy checkbox is pre-checked */
+const LEGACY_AGE_MONTHS = 3;
 
 function CompleteModal({
   tx,
@@ -184,14 +224,17 @@ function CompleteModal({
   tx: Transaction | null;
   accountCurrency?: string;
   onClose: () => void;
-  onConfirm: (amount?: number) => Promise<void>;
+  onConfirm: (amount?: number, legacy?: boolean) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [amount, setAmount] = useState("");
+  const [legacy, setLegacy] = useState(false);
   const [key, setKey] = useState<string | null>(null);
   if (tx && key !== tx.id) {
     setKey(tx.id);
     setAmount(String(tx.amount));
+    // pre-check for items due well in the past — assume they've long since settled
+    setLegacy(tx.dueDate < addMonthsClamped(todayISO(), -LEGACY_AGE_MONTHS));
   }
   return (
     <Modal open={tx != null} onClose={onClose} title={t("tx.completeTitle")}>
@@ -200,9 +243,16 @@ function CompleteModal({
         <Field label={`${t("tx.finalAmount")} (${accountCurrency ?? ""})`}>
           <Input type="number" step="any" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal-600" checked={legacy} onChange={(e) => setLegacy(e.target.checked)} />
+          <span>
+            <span className="block text-sm font-medium">{t("legacy.completeAs")}</span>
+            <span className="block text-xs text-zinc-500">{t("legacy.completeHint")}</span>
+          </span>
+        </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={() => onConfirm(Number(amount) || undefined)}>
+          <Button variant="primary" onClick={() => onConfirm(Number(amount) || undefined, legacy)}>
             {t("common.confirm")}
           </Button>
         </div>

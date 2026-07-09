@@ -299,7 +299,7 @@ export default function VictvsPage() {
         onClose={() => setPayOpen(false)}
         sessions={selectedUnpaid}
         defaultAccountId={settings.data?.victvsAccountId ?? null}
-        onConfirm={async (accountId, paymentDate, receivedAmount, categoryId) => {
+        onConfirm={async (accountId, paymentDate, receivedAmount, categoryId, legacy) => {
           await markPaid.mutateAsync({
             sessionIds: selectedUnpaid.map((s) => s.id),
             accountId,
@@ -308,6 +308,7 @@ export default function VictvsPage() {
             totalUsd: selectedTotal,
             categoryId,
             fxSnapshot: rates.data ? snapshotFromTable(rates.data) : null,
+            legacy,
           });
           setSelected(new Set());
           setPayOpen(false);
@@ -594,7 +595,7 @@ function MarkPaidModal({
   onClose: () => void;
   sessions: VictvsSession[];
   defaultAccountId: string | null;
-  onConfirm: (accountId: string, paymentDate: string, receivedAmount: number, categoryId: string | null) => Promise<void>;
+  onConfirm: (accountId: string, paymentDate: string, receivedAmount: number, categoryId: string | null, legacy: boolean) => Promise<void>;
 }) {
   const { t, locale } = useI18n();
   const accounts = useAccounts();
@@ -604,6 +605,7 @@ function MarkPaidModal({
   const [paymentDate, setPaymentDate] = useState(todayISO());
   const [received, setReceived] = useState("");
   const [receivedTouched, setReceivedTouched] = useState(false);
+  const [legacy, setLegacy] = useState(false);
 
   const totalUsd = sumAmounts("USD", sessions.map((s) => s.amount));
   const active = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
@@ -624,9 +626,10 @@ function MarkPaidModal({
         onSubmit={async (e) => {
           e.preventDefault();
           if (!account) return;
-          await onConfirm(account.id, paymentDate, Number(shownReceived), victvsCategory?.id ?? null);
+          await onConfirm(account.id, paymentDate, Number(shownReceived), victvsCategory?.id ?? null, legacy);
           setReceivedTouched(false);
           setReceived("");
+          setLegacy(false);
         }}
       >
         <div className="rounded-lg bg-[var(--edge-soft)] p-3 text-sm">
@@ -664,7 +667,14 @@ function MarkPaidModal({
             }}
           />
         </Field>
-        <p className="text-xs text-zinc-400">{t("victvs.payoutCreated")}</p>
+        <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal-600" checked={legacy} onChange={(e) => setLegacy(e.target.checked)} />
+          <span>
+            <span className="block text-sm font-medium">{t("legacy.completeAs")}</span>
+            <span className="block text-xs text-zinc-500">{t("legacy.victvsPayoutHint")}</span>
+          </span>
+        </label>
+        <p className="text-xs text-zinc-400">{legacy ? t("legacy.victvsPayoutLegacy") : t("victvs.payoutCreated")}</p>
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={onClose}>
             {t("common.cancel")}

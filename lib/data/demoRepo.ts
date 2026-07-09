@@ -167,13 +167,14 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
-  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number): Promise<void> {
+  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
     const tx = this.store.transactions.find((t) => t.id === id);
     if (!tx) return;
     tx.status = "completed";
     tx.completedAt = new Date().toISOString();
     tx.fxSnapshot = fxSnapshot;
     if (amount != null) tx.amount = amount;
+    if (legacy != null) tx.legacy = legacy;
     this.save();
   }
 
@@ -183,7 +184,31 @@ export class DemoRepo implements Repo {
     tx.status = "planned";
     tx.completedAt = null;
     tx.fxSnapshot = null;
+    tx.legacy = false;
     this.save();
+  }
+
+  async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
+    const tx = this.store.transactions.find((t) => t.id === id);
+    if (!tx) return;
+    tx.legacy = legacy;
+    this.save();
+  }
+
+  async bulkCompleteAsLegacy(ids: string[], fxSnapshot: FxSnapshot): Promise<number> {
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const tx of this.store.transactions) {
+      if (ids.includes(tx.id) && tx.status === "planned") {
+        tx.status = "completed";
+        tx.completedAt = now;
+        tx.fxSnapshot = fxSnapshot;
+        tx.legacy = true;
+        count += 1;
+      }
+    }
+    if (count) this.save();
+    return count;
   }
 
   async deleteTransaction(id: string): Promise<void> {
@@ -372,7 +397,7 @@ export class DemoRepo implements Repo {
       loanId: null,
       victvsPayoutId: payoutId,
       purchaseId: null,
-      legacy: false,
+      legacy: input.legacy ?? false,
       createdAt: now,
     });
     const payout: VictvsPayout = {
