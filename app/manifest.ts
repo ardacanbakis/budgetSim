@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Renovator — multi-currency budget",
-    short_name: "Renovator",
+    name: "BudgetSim — multi-currency budget",
+    short_name: "BudgetSim",
     description:
       "Personal budget for TRY, USD, EUR, BTC and gold with live rates, VICTVS sessions, loans and projections.",
     start_url: "/",

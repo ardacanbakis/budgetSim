@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Renovator — multi-currency budget",
+  title: "BudgetSim — multi-currency budget",
   description: "Personal budget for TRY, USD, EUR, BTC and gold with live rates, VICTVS sessions, loans and projections.",
   manifest: "/manifest.webmanifest",
 };

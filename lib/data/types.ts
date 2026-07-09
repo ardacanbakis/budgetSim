@@ -88,13 +88,14 @@ export interface RecurringTemplate {
 export type VictvsStatus = "unpaid" | "paid";
 
 /** The built-in session kinds; custom types can be added in Settings. */
-export const VICTVS_TYPES = ["IWCF", "CIPS OR", "CIPS CR", "FIFA"] as const;
+export const VICTVS_TYPES = ["IWCF", "CIPS OR", "CIPS CR", "CIPS Webinar", "FIFA"] as const;
 export type VictvsType = (typeof VICTVS_TYPES)[number];
 
 export const DEFAULT_VICTVS_AMOUNTS: Record<VictvsType, number> = {
   IWCF: 60,
   "CIPS OR": 37.5,
   "CIPS CR": 60,
+  "CIPS Webinar": 15,
   FIFA: 30,
 };
 
