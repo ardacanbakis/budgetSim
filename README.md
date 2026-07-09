@@ -1,4 +1,4 @@
-# Renovator
+# BudgetSim
 
 Personal multi-currency budget app for a household living in Turkey and earning USD:
 accounts in **TRY / USD / EUR / BTC / gold (grams)**, live rates, planned→completed

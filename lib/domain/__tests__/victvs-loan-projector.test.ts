@@ -12,8 +12,7 @@ describe("parseVictvsPaste", () => {
       "CIPS CR Exam 36951 - Tue 21 Jul 26",
       "V3 - ONLINE - 83849, PTS, 788, Jakarta, Indonesia - 08 Jul 26 - 1500",
     ].join("\n");
-    const { sessions, errors } = parseVictvsPaste(text);
-    expect(errors).toEqual([]);
+    const { sessions } = parseVictvsPaste(text);
     expect(sessions).toEqual([
       expect.objectContaining({ date: "2026-07-15", sessionType: "CIPS OR", sessionNo: "37324", amount: null }),
       expect.objectContaining({ date: "2026-07-21", sessionType: "CIPS CR", sessionNo: "36951", amount: null }),
@@ -21,15 +20,14 @@ describe("parseVictvsPaste", () => {
     ]);
   });
 
-  it("parses tab-separated rows (date, type, session no, amount) with 2- and 4-digit years", () => {
+  it("parses spreadsheet columns (date, center/type, session no, amount) with 2- and 4-digit years", () => {
     const text = [
       "21 Jan 26\tCIPS OR Exam \t32138\t37.5",
       "22 Jan 26\tV3 - ONLINE Al Muntazah\t79668\t60",
       "21 Jul 2026\tCIPS CR Exam \t36951\t60",
       "05 Mar 26\tFIFA Session\t41002\t30",
     ].join("\n");
-    const { sessions, errors } = parseVictvsPaste(text);
-    expect(errors).toEqual([]);
+    const { sessions } = parseVictvsPaste(text);
     expect(sessions).toEqual([
       expect.objectContaining({ date: "2026-01-21", sessionType: "CIPS OR", sessionNo: "32138", amount: 37.5 }),
       expect.objectContaining({ date: "2026-01-22", sessionType: "IWCF", sessionNo: "79668", amount: 60 }),
@@ -38,20 +36,41 @@ describe("parseVictvsPaste", () => {
     ]);
   });
 
-  it("flags unknown types and broken dates instead of dropping them, ignores headers/empty", () => {
+  it("always creates a row and pulls what it can — blank type for unknown centers, month headers skipped", () => {
     const text = [
-      "",
-      "Upcoming sessions:",
-      "Pearson VUE thing 12345 - 15 Jul 26",
-      "CIPS OR Exam 37324 - 99 Jul 26",
-      "CIPS CR Exam 36951",
+      "Date \tCenter Name  /V3\tSession number \t$ Amount",
+      "J A N U A R Y '25\t\t\t",
+      "23 Jan 25\tV3 - ONLINE\t69930\t60",
+      "14 Feb 25\tV3 - ONLINE\t70345 + 70495\t60",
+      "02 Mar 25\tARI\t70829\t60",
+      "07 Mar 25\t Petrotech\t70932\t67.5",
+      "Mon 19 May 2025\tNIBOSH ANKARA VISIT - 100 Pounds\tVA1116\t130",
     ].join("\n");
-    const { sessions, errors } = parseVictvsPaste(text);
-    expect(sessions).toEqual([]);
-    expect(errors).toEqual([
-      { line: 3, raw: "Pearson VUE thing 12345 - 15 Jul 26", reason: "no-type" },
-      { line: 4, raw: "CIPS OR Exam 37324 - 99 Jul 26", reason: "bad-date" },
-      { line: 5, raw: "CIPS CR Exam 36951", reason: "no-date" },
+    const { sessions } = parseVictvsPaste(text);
+    // header + month header dropped; the 5 data lines kept
+    expect(sessions).toEqual([
+      expect.objectContaining({ date: "2025-01-23", sessionType: "IWCF", sessionNo: "69930", amount: 60 }),
+      expect.objectContaining({ date: "2025-02-14", sessionType: "IWCF", sessionNo: "70345 + 70495", amount: 60 }),
+      expect.objectContaining({ date: "2025-03-02", sessionType: "", sessionNo: "70829", amount: 60 }),
+      expect.objectContaining({ date: "2025-03-07", sessionType: "", sessionNo: "70932", amount: 67.5 }),
+      expect.objectContaining({ date: "2025-05-19", sessionType: "", sessionNo: "VA1116", amount: 130 }),
+    ]);
+  });
+
+  it("recognizes CIPS Webinar (default $15, code session no) and keeps FIFA distinct", () => {
+    const text = [
+      "02 May 25\tCIPS WEBINAR\tCIPSWEB-RIMAY25\t15",
+      "5 Sep 25\tCIPSWEB-RISEP25\tCIPSWEB-RISEP25\t",
+      "10 Jun 25\tFIFA - webinar\tauto\t15",
+      "18 Jun 25\tFIFA\tFIFA18JUN25\t120",
+    ].join("\n");
+    const { sessions } = parseVictvsPaste(text);
+    expect(sessions).toEqual([
+      expect.objectContaining({ date: "2025-05-02", sessionType: "CIPS Webinar", sessionNo: "CIPSWEB-RIMAY25", amount: 15 }),
+      // amount column blank → CIPS Webinar default 15 applied
+      expect.objectContaining({ date: "2025-09-05", sessionType: "CIPS Webinar", sessionNo: "CIPSWEB-RISEP25", amount: 15 }),
+      expect.objectContaining({ date: "2025-06-10", sessionType: "FIFA", sessionNo: "auto", amount: 15 }),
+      expect.objectContaining({ date: "2025-06-18", sessionType: "FIFA", sessionNo: "FIFA18JUN25", amount: 120 }),
     ]);
   });
 });

@@ -6,7 +6,7 @@ import { useApp } from "@/lib/data/provider";
 import { useI18n } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
-// Feature cards ("See what Renovator does")
+// Feature cards ("See what BudgetSim does")
 // ---------------------------------------------------------------------------
 
 const FEATURES = [
@@ -312,7 +312,7 @@ export default function WelcomePage() {
             </div>
 
             <h1 className={`text-4xl font-semibold tracking-tight ${text}`} style={{ animation: "welcome-fade-up 0.7s ease-out 1.4s both" }}>
-              Renovator
+              BudgetSim
             </h1>
 
             <p
@@ -344,7 +344,7 @@ export default function WelcomePage() {
                   <button
                     type="button"
                     onClick={() => router.push("/login")}
-                    className="rounded-lg px-8 py-3 text-base font-medium text-white transition-all"
+                    className="mx-auto w-3/4 rounded-lg px-8 py-3 text-base font-medium text-white transition-all hover:scale-105"
                     style={{ background: gradient, boxShadow: `0 0 24px ${neonSoft}` }}
                   >
                     {t("auth.signIn")}
@@ -352,7 +352,7 @@ export default function WelcomePage() {
                   <button
                     type="button"
                     onClick={startDemo}
-                    className={`rounded-lg border px-8 py-3 text-base font-medium transition-colors ${
+                    className={`mx-auto w-3/4 rounded-lg border px-8 py-3 text-base font-medium transition-transform hover:scale-105 ${
                       dark
                         ? "border-gray-700/60 bg-gray-900/40 text-gray-200 hover:bg-gray-900/70"
                         : "border-gray-200 bg-white/60 text-gray-700 hover:bg-white"

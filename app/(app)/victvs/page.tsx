@@ -58,6 +58,10 @@ export default function VictvsPage() {
 
   const createSessions = useAppMutation((inputs: NewVictvsSession[]) => repo.createVictvsSessions(inputs), [KEYS.victvsSessions]);
   const deleteSession = useAppMutation((id: string) => repo.deleteVictvsSession(id), [KEYS.victvsSessions]);
+  const deleteSessions = useAppMutation(
+    (ids: string[]) => Promise.all(ids.map((id) => repo.deleteVictvsSession(id))).then(() => undefined),
+    [KEYS.victvsSessions]
+  );
   const markPaid = useAppMutation((input: MarkPaidInput) => repo.markVictvsPaid(input), VICTVS_KEYS);
   const markUnpaid = useAppMutation((ids: string[]) => repo.markVictvsUnpaid(ids), [KEYS.victvsSessions]);
   const undoPayout = useAppMutation((id: string) => repo.unmarkVictvsPayout(id), VICTVS_KEYS);
@@ -166,6 +170,19 @@ export default function VictvsPage() {
           </button>
         </div>
         <div className="flex gap-2">
+          {selectedUnpaid.length > 1 ? (
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm(t("victvs.bulkDeleteConfirm", { count: selectedUnpaid.length }))) {
+                  deleteSessions.mutate(selectedUnpaid.map((s) => s.id));
+                  setSelected(new Set());
+                }
+              }}
+            >
+              {t("victvs.bulkDelete")} ({selectedUnpaid.length})
+            </Button>
+          ) : null}
           {selectedPaid.length > 0 ? (
             <Button
               onClick={() => {
@@ -366,12 +383,10 @@ function PasteModal({
   const { t, locale } = useI18n();
   const [text, setText] = useState("");
   const [rows, setRows] = useState<ParsedSession[] | null>(null);
-  const [errors, setErrors] = useState<ReturnType<typeof parseVictvsPaste>["errors"]>([]);
 
   function preview() {
     const result = parseVictvsPaste(text);
-    setRows(result.sessions.map((s) => ({ ...s, amount: s.amount ?? defaults[s.sessionType] ?? null })));
-    setErrors(result.errors);
+    setRows(result.sessions.map((s) => ({ ...s, amount: s.amount ?? (s.sessionType ? defaults[s.sessionType] ?? null : null) })));
   }
 
   function updateRow(i: number, patch: Partial<ParsedSession>) {
@@ -381,14 +396,9 @@ function PasteModal({
   function reset() {
     setText("");
     setRows(null);
-    setErrors([]);
   }
 
-  const reasonKey = {
-    "no-date": "victvs.errorReasonNoDate",
-    "bad-date": "victvs.errorReasonBadDate",
-    "no-type": "victvs.errorReasonNoType",
-  } as const;
+  const blankRows = rows?.filter((r) => !r.date || !r.sessionType).length ?? 0;
 
   return (
     <Modal
@@ -402,7 +412,7 @@ function PasteModal({
     >
       <div className="space-y-3">
         <p className="text-sm text-zinc-500">{t("victvs.pasteHint")}</p>
-        <Textarea rows={6} placeholder={"CIPS OR Exam 37324 - Wed 15 Jul 26\nV3 - ONLINE - 83849, PTS, 788, Jakarta, Indonesia - 08 Jul 26 - 1500"} value={text} onChange={(e) => setText(e.target.value)} />
+        <Textarea rows={6} placeholder={"23 Jan 25\tV3 - ONLINE\t69930\t60\n02 Mar 25\tARI\t70829\t60"} value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex justify-end">
           <Button onClick={preview} disabled={!text.trim()}>
             {t("victvs.parse")}
@@ -413,17 +423,9 @@ function PasteModal({
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2 text-sm">
               <Badge tone="green">{t("victvs.parsedCount", { count: rows.length })}</Badge>
-              {errors.length > 0 ? <Badge tone="red">{t("victvs.errorCount", { count: errors.length })}</Badge> : null}
+              {blankRows > 0 ? <Badge tone="amber">{t("victvs.needsAttention", { count: blankRows })}</Badge> : null}
             </div>
-            {errors.length > 0 ? (
-              <ul className="space-y-1 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-                {errors.map((e) => (
-                  <li key={e.line} className="truncate">
-                    #{e.line} — {t(reasonKey[e.reason])}: <span className="font-mono">{e.raw}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            {blankRows > 0 ? <p className="text-xs text-zinc-400">{t("victvs.fillHint")}</p> : null}
             {rows.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -437,47 +439,52 @@ function PasteModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i}>
-                        <td className="py-1 pr-2">
-                          <Input type="date" value={r.date} onChange={(e) => updateRow(i, { date: e.target.value })} />
-                        </td>
-                        <td className="py-1 pr-2">
-                          <Select
-                            value={r.sessionType}
-                            onChange={(e) =>
-                              updateRow(i, {
-                                sessionType: e.target.value,
-                                amount: defaults[e.target.value] ?? r.amount,
-                              })
-                            }
-                          >
-                            {victvsTypeList(defaults).map((type) => (
-                              <option key={type} value={type}>
-                                {type}
-                              </option>
-                            ))}
-                          </Select>
-                        </td>
-                        <td className="py-1 pr-2">
-                          <Input value={r.sessionNo} onChange={(e) => updateRow(i, { sessionNo: e.target.value })} className="!w-24 font-mono" />
-                        </td>
-                        <td className="py-1">
-                          <Input
-                            type="number"
-                            step="any"
-                            min="0"
-                            value={r.amount ?? ""}
-                            onChange={(e) => updateRow(i, { amount: e.target.value === "" ? null : Number(e.target.value) })}
-                          />
-                        </td>
-                        <td className="py-1 pl-1">
-                          <Button variant="ghost" onClick={() => setRows((prev) => prev!.filter((_, idx) => idx !== i))}>
-                            ✕
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {rows.map((r, i) => {
+                      const needsAttention = !r.date || !r.sessionType;
+                      return (
+                        <tr key={i} className={needsAttention ? "bg-amber-50/60 dark:bg-amber-950/30" : ""}>
+                          <td className="py-1 pr-2">
+                            <Input type="date" value={r.date} onChange={(e) => updateRow(i, { date: e.target.value })} className={!r.date ? "!border-amber-400" : ""} />
+                          </td>
+                          <td className="py-1 pr-2">
+                            <Select
+                              value={r.sessionType}
+                              onChange={(e) =>
+                                updateRow(i, {
+                                  sessionType: e.target.value,
+                                  amount: e.target.value ? defaults[e.target.value] ?? r.amount : r.amount,
+                                })
+                              }
+                              className={!r.sessionType ? "!border-amber-400" : ""}
+                            >
+                              <option value="">— {t("victvs.pickType")} —</option>
+                              {victvsTypeList(defaults).map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
+                            </Select>
+                          </td>
+                          <td className="py-1 pr-2">
+                            <Input value={r.sessionNo} onChange={(e) => updateRow(i, { sessionNo: e.target.value })} className="!w-28 font-mono" />
+                          </td>
+                          <td className="py-1">
+                            <Input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={r.amount ?? ""}
+                              onChange={(e) => updateRow(i, { amount: e.target.value === "" ? null : Number(e.target.value) })}
+                            />
+                          </td>
+                          <td className="py-1 pl-1">
+                            <Button variant="ghost" aria-label={t("common.delete")} onClick={() => setRows((prev) => prev!.filter((_, idx) => idx !== i))}>
+                              ✕
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="mt-1 text-right text-xs text-zinc-500">
@@ -499,7 +506,8 @@ function PasteModal({
                 variant="primary"
                 disabled={rows.length === 0}
                 onClick={async () => {
-                  await onSave(rows);
+                  // rows still missing a date get today's date; missing types save blank
+                  await onSave(rows.map((r) => ({ ...r, date: r.date || todayISO() })));
                   reset();
                 }}
               >

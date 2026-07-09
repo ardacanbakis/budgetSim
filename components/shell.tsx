@@ -171,8 +171,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       <div className="flex w-full">
         {/* sidebar — desktop & ultrawide */}
         <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[var(--edge)] px-3 py-4 md:flex">
-          <Link href="/" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
-            Renovator
+          <Link href="/welcome" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
+            BudgetSim
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
             {nav.map((item) => {
@@ -204,7 +204,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         <div className="min-w-0 flex-1">
           {/* header */}
           <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
-            <div className="text-base font-semibold md:hidden">Renovator</div>
+            <Link href="/welcome" className="text-base font-semibold md:hidden">BudgetSim</Link>
             <div className="flex flex-1 items-center justify-end gap-3">
               {rates.data ? (
                 <span

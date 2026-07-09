@@ -77,6 +77,29 @@ test("victvs v2: month groups, half-month select, new paste formats", async ({ p
   await page.screenshot({ path: "e2e/screenshots/victvs-paste-preview.png" });
 });
 
+test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  await page.goto("/victvs");
+
+  // filter to unpaid so every visible row is deletable, then select two rows
+  await page.getByRole("button", { name: /^Unpaid$/ }).first().click();
+  const rowsBefore = await page.getByRole("checkbox").count();
+  await page.getByRole("checkbox").nth(0).check();
+  await page.getByRole("checkbox").nth(1).check();
+
+  // bulk delete only shows for 2+ selected
+  const bulkBtn = page.getByRole("button", { name: /Delete selected|Seçilenleri sil/i });
+  await expect(bulkBtn).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/victvs-bulk-delete.png" });
+
+  page.once("dialog", (d) => d.accept());
+  await bulkBtn.click();
+  await page.waitForTimeout(400);
+  const rowsAfter = await page.getByRole("checkbox").count();
+  expect(rowsAfter).toBeLessThan(rowsBefore);
+});
+
 test("scenario overlay and quick-add shortcut", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
