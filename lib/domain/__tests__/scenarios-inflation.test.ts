@@ -14,7 +14,7 @@ const usdAccount: Account = {
   kind: "fiat",
   openingBalance: 1000,
   archived: false,
-  paymentAccountId: null,
+  paymentAccountId: null, paymentDay: null,
   createdAt: "2026-01-01",
 };
 const tryAccount: Account = { ...usdAccount, id: "try", name: "TRY", currency: "TRY", openingBalance: 40000 };

@@ -49,7 +49,10 @@ export function AvgSpendCard({ className }: { className?: string }) {
             {WINDOWS.map((w) => (
               <button
                 key={w}
-                onClick={() => setWindow(w)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setWindow(w);
+                }}
                 className={`rounded-md px-2 py-0.5 text-xs font-medium ${
                   window === w ? "bg-white shadow-sm dark:bg-zinc-700" : "text-zinc-500"
                 }`}

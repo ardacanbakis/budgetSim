@@ -34,7 +34,7 @@ export function BudgetsCard({ className }: { className?: string }) {
       <CardHeader
         title={t("budgets.title")}
         action={
-          <Link href="/settings" className="text-xs text-teal-600 hover:underline">
+          <Link href="/settings" className="text-xs text-teal-600 hover:underline" onClick={(e) => e.stopPropagation()}>
             {t("budgets.editIn")} →
           </Link>
         }

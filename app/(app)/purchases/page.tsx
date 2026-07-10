@@ -26,12 +26,14 @@ import {
 } from "@/lib/domain/purchases";
 import { averageMonthlySpend } from "@/lib/domain/stats";
 import { todayISO } from "@/lib/domain/recurrence";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
 
 export default function PurchasesPage() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const { displayCurrency } = useApp();
   const purchases = usePurchases();
@@ -106,9 +108,9 @@ export default function PurchasesPage() {
             </div>
             <div className="mt-1 text-lg font-bold tabular-nums">{formatAmount(purchase.amount, currency, locale)}</div>
             <div className="text-xs text-zinc-500">
-              {purchase.purchaseDate}
+              {fmtDate(purchase.purchaseDate)}
               {isInstallment
-                ? ` · ${formatAmount(buildInstallmentPlan({ amount: purchase.amount, currency, count: purchase.installmentCount, firstDue: purchase.firstDue })[0].amount, currency, locale)} ${t("purchases.perInstallment")} · ${purchase.firstDue} → ${lastDueDate(purchase.firstDue, purchase.installmentCount)}`
+                ? ` · ${formatAmount(buildInstallmentPlan({ amount: purchase.amount, currency, count: purchase.installmentCount, firstDue: purchase.firstDue })[0].amount, currency, locale)} ${t("purchases.perInstallment")} · ${fmtDate(purchase.firstDue)} → ${fmtDate(lastDueDate(purchase.firstDue, purchase.installmentCount))}`
                 : ""}
             </div>
             {purchase.details ? <div className="mt-1 text-xs text-zinc-400">{purchase.details}</div> : null}

@@ -62,6 +62,9 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
             card: visible[0].account.name,
             amount: formatAmount(visible[0].suggestedAmount, visible[0].account.currency, locale),
           })}
+          {visible[0].account.paymentDay ? (
+            <span className="ml-1 opacity-80">{t("purchases.payReminderDue", { day: visible[0].account.paymentDay })}</span>
+          ) : null}
         </div>
         <div className="flex gap-2">
           <Button

@@ -149,6 +149,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isDemo = session.status === "ready" && session.repo.mode === "demo";
+  // floating quick-add is shown unless the user turned it off in Settings (null = shown)
+  const showQuickAdd = settings.data?.showQuickAdd ?? true;
   // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
   const ratesStale = Boolean(
     rates.data &&
@@ -235,14 +237,16 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <button
-        onClick={() => setQuickTx(true)}
-        aria-label={t("tx.newTransaction")}
-        title={`${t("tx.newTransaction")} (n)`}
-        className="no-print fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
-      >
-        +
-      </button>
+      {showQuickAdd ? (
+        <button
+          onClick={() => setQuickTx(true)}
+          aria-label={t("tx.newTransaction")}
+          title={`${t("tx.newTransaction")} (n)`}
+          className="no-print fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 flex h-13 w-13 items-center justify-center rounded-full bg-teal-600 text-2xl text-white shadow-lg transition-transform hover:scale-105 hover:bg-teal-700 md:bottom-6 dark:bg-teal-500 dark:text-zinc-950"
+        >
+          +
+        </button>
+      ) : null}
       <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
       <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
 

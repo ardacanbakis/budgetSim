@@ -13,6 +13,8 @@ import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
 import { parseVictvsPaste } from "@/lib/domain/victvsParser";
+import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
 
 type SettingsView = "panels" | "compact";
@@ -29,8 +31,8 @@ function Section({ title, view, children }: { title: string; view: SettingsView;
 }
 
 export default function SettingsPage() {
-  const { t, locale, setLocale } = useI18n();
-  const { session, displayCurrency, setDisplayCurrency, signOut, resetDemo } = useApp();
+  const { t } = useI18n();
+  const { session, signOut, resetDemo } = useApp();
   const repo = useRepo();
   const categories = useCategories();
   const router = useRouter();
@@ -62,8 +64,11 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">{t("settings.title")}</h1>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold">{t("settings.title")}</h1>
+          <p className="text-sm text-zinc-500">{t("settings.subtitle")}</p>
+        </div>
         <div className="flex gap-1 rounded-lg bg-[var(--edge-soft)] p-1">
           {(["panels", "compact"] as const).map((v) => (
             <button
@@ -77,32 +82,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Section title={t("settings.displayCurrency")} view={view}>
-        <Card>
-          <CardHeader title={t("settings.displayCurrency")} />
-          <div className="space-y-2 p-4">
-            <Select value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value as Currency)}>
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {t(`currency.${c}`)}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-zinc-400">{t("settings.displayHint")}</p>
-          </div>
-        </Card>
-      </Section>
-
-      <Section title={t("settings.language")} view={view}>
-        <Card>
-          <CardHeader title={t("settings.language")} />
-          <div className="p-4">
-            <Select value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
-              <option value="en">English</option>
-              <option value="tr">Türkçe</option>
-            </Select>
-          </div>
-        </Card>
+      <Section title={t("settings.preferences")} view={view}>
+        <PreferencesCard />
       </Section>
 
       <Section title={t("settings.categories")} view={view}>
@@ -277,6 +258,64 @@ function BudgetsEditor() {
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+function PreferencesCard() {
+  const { t, locale, setLocale } = useI18n();
+  const { displayCurrency, setDisplayCurrency } = useApp();
+  const repo = useRepo();
+  const settings = useUserSettings();
+  const save = useAppMutation(
+    (patch: Parameters<typeof repo.saveUserSettings>[0]) => repo.saveUserSettings(patch),
+    [KEYS.userSettings]
+  );
+
+  const dateFormat = settings.data?.dateFormat ?? DEFAULT_DATE_FORMAT;
+  const showQuickAdd = settings.data?.showQuickAdd ?? true;
+
+  return (
+    <Card>
+      <CardHeader title={t("settings.preferences")} />
+      <div className="grid gap-4 p-4 sm:grid-cols-2">
+        <Field label={t("settings.displayCurrency")} hint={t("settings.displayHint")}>
+          <Select value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value as Currency)}>
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {t(`currency.${c}`)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label={t("settings.language")}>
+          <Select value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </Select>
+        </Field>
+        <Field label={t("settings.dateFormat")} hint={`${t("settings.dateFormatHint")}: ${formatDate(DATE_FORMAT_SAMPLE, dateFormat, locale)}`}>
+          <Select value={dateFormat} onChange={(e) => save.mutate({ dateFormat: e.target.value as DateFormat })}>
+            {DATE_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {formatDate(DATE_FORMAT_SAMPLE, f, locale)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <label className="flex items-start gap-2 self-end rounded-lg bg-[var(--edge-soft)] p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-teal-600"
+            checked={showQuickAdd}
+            onChange={(e) => save.mutate({ showQuickAdd: e.target.checked })}
+          />
+          <span>
+            <span className="block text-sm font-medium">{t("settings.quickAdd")}</span>
+            <span className="block text-xs text-zinc-500">{t("settings.quickAddHint")}</span>
+          </span>
+        </label>
       </div>
     </Card>
   );
@@ -595,6 +634,7 @@ function SidebarOrderCard() {
 
 function LegacyCard() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const accounts = useAccounts();
   const categories = useCategories();
@@ -753,7 +793,7 @@ function LegacyCard() {
                         <Badge tone="zinc">{t("legacy.badge")}</Badge>
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        {acc?.name} · {tx.dueDate}
+                        {acc?.name} · {fmtDate(tx.dueDate)}
                       </div>
                     </div>
                     <span className={`text-sm font-semibold tabular-nums ${tx.direction === "income" ? "text-green-600" : "text-red-600"}`}>

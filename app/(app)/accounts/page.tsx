@@ -9,10 +9,21 @@ import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
 import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+
+/** Day-of-month as an ordinal: "15th" (en) / "15." (tr). */
+function ordinal(day: number, locale: string): string {
+  if (locale === "tr") return `${day}.`;
+  const rem100 = day % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${day}th`;
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[day % 10] ?? "th";
+  return `${day}${suffix}`;
+}
 
 export default function PortfolioPage() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const { displayCurrency } = useApp();
   const accounts = useAccounts();
@@ -101,7 +112,7 @@ export default function PortfolioPage() {
             {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
             {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
           </div>
-          <div className="text-[11px] text-zinc-400">{tx.dueDate}</div>
+          <div className="text-[11px] text-zinc-400">{fmtDate(tx.dueDate)}</div>
         </div>
         <span className={`text-sm font-semibold tabular-nums ${income ? "text-green-600" : "text-red-600"}`}>
           {income ? "+" : "−"}
@@ -168,6 +179,11 @@ export default function PortfolioPage() {
                         const converted = convert(balances.get(selected.id) ?? 0, selected.currency, displayCurrency, rates.data.usdPer);
                         return converted != null ? formatAmount(converted, displayCurrency, locale) : t("common.rateUnavailable");
                       })()}
+                    </div>
+                  ) : null}
+                  {selected.kind === "credit_card" && selected.paymentDay ? (
+                    <div className="mt-1 text-xs text-zinc-500">
+                      📅 {t("accounts.paymentDueOn", { day: ordinal(selected.paymentDay, locale) })}
                     </div>
                   ) : null}
                 </div>
@@ -269,6 +285,7 @@ function AccountModal({
   const [opening, setOpening] = useState("0");
   const [isCard, setIsCard] = useState(false);
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [paymentDay, setPaymentDay] = useState("");
   const [initialized, setInitialized] = useState<string | null>(null);
 
   // re-init form when target changes
@@ -280,6 +297,7 @@ function AccountModal({
     setOpening(String(initial?.openingBalance ?? 0));
     setIsCard(initial?.kind === "credit_card");
     setPaymentAccountId(initial?.paymentAccountId ?? "");
+    setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
   }
 
   const fiat = CURRENCY_META[currency].kind === "fiat";
@@ -294,12 +312,14 @@ function AccountModal({
         onSubmit={async (e) => {
           e.preventDefault();
           const card = fiat && isCard;
+          const day = Number(paymentDay);
           await onSave({
             name,
             currency,
             kind: card ? "credit_card" : CURRENCY_META[currency].kind,
             openingBalance: Number(opening) || 0,
             paymentAccountId: card ? paymentAccountId || null : null,
+            paymentDay: card && day >= 1 && day <= 31 ? day : null,
           });
         }}
       >
@@ -328,16 +348,29 @@ function AccountModal({
           </Field>
         ) : null}
         {fiat && isCard ? (
-          <Field label={t("accounts.paymentAccount")} hint={t("accounts.paymentAccountHint")}>
-            <Select value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
-              <option value="">{t("common.none")}</option>
-              {paymentCandidates.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.currency})
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label={t("accounts.paymentAccount")} hint={t("accounts.paymentAccountHint")}>
+              <Select value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
+                <option value="">{t("common.none")}</option>
+                {paymentCandidates.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.currency})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("accounts.paymentDay")} hint={t("accounts.paymentDayHint")}>
+              <Input
+                type="number"
+                min="1"
+                max="31"
+                inputMode="numeric"
+                placeholder="15"
+                value={paymentDay}
+                onChange={(e) => setPaymentDay(e.target.value)}
+              />
+            </Field>
+          </div>
         ) : null}
         <Field label={fiat && isCard ? `${t("accounts.openingBalance")} (0 = ${t("common.none")})` : t("accounts.openingBalance")}>
           <Input

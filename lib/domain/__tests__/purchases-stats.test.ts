@@ -21,7 +21,7 @@ function account(id: string, currency: Account["currency"], kind: Account["kind"
     kind,
     openingBalance: opening,
     archived: false,
-    paymentAccountId: null,
+    paymentAccountId: null, paymentDay: null,
     createdAt: "2026-01-01",
   };
 }

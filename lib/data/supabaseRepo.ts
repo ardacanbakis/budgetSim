@@ -44,6 +44,7 @@ const accountFromRow = (r: Row): Account => ({
   openingBalance: Number(r.opening_balance),
   archived: r.archived,
   paymentAccountId: r.payment_account_id ?? null,
+  paymentDay: r.payment_day ?? null,
   createdAt: r.created_at,
 });
 
@@ -174,6 +175,7 @@ export class SupabaseRepo implements Repo {
         kind: input.kind,
         opening_balance: input.openingBalance,
         payment_account_id: input.paymentAccountId ?? null,
+        payment_day: input.paymentDay ?? null,
       })
       .select()
       .single();
@@ -189,6 +191,7 @@ export class SupabaseRepo implements Repo {
     if (patch.openingBalance != null) row.opening_balance = patch.openingBalance;
     if (patch.archived != null) row.archived = patch.archived;
     if (patch.paymentAccountId !== undefined) row.payment_account_id = patch.paymentAccountId;
+    if (patch.paymentDay !== undefined) row.payment_day = patch.paymentDay;
     const { error } = await this.db.from("accounts").update(row).eq("id", id);
     throwIf(error);
   }
@@ -653,7 +656,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
     if (!data) {
-      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null };
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null };
     }
     return {
       dashboardLayout: data.dashboard_layout,
@@ -662,6 +665,8 @@ export class SupabaseRepo implements Repo {
       victvsAccountId: data.victvs_account_id ?? null,
       victvsDefaults: data.victvs_defaults ?? null,
       navOrder: data.nav_order ?? null,
+      dateFormat: data.date_format ?? null,
+      showQuickAdd: data.show_quick_add ?? null,
     };
   }
 
@@ -673,6 +678,8 @@ export class SupabaseRepo implements Repo {
     if (patch.victvsAccountId !== undefined) row.victvs_account_id = patch.victvsAccountId;
     if (patch.victvsDefaults !== undefined) row.victvs_defaults = patch.victvsDefaults;
     if (patch.navOrder !== undefined) row.nav_order = patch.navOrder;
+    if (patch.dateFormat !== undefined) row.date_format = patch.dateFormat;
+    if (patch.showQuickAdd !== undefined) row.show_quick_add = patch.showQuickAdd;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
     throwIf(error);
   }
@@ -906,8 +913,11 @@ export class SupabaseRepo implements Repo {
       }))
     );
     for (const a of backup.accounts) {
-      if (a.paymentAccountId) {
-        const { error } = await this.db.from("accounts").update({ payment_account_id: a.paymentAccountId }).eq("id", a.id);
+      if (a.paymentAccountId || a.paymentDay != null) {
+        const { error } = await this.db
+          .from("accounts")
+          .update({ payment_account_id: a.paymentAccountId, payment_day: a.paymentDay ?? null })
+          .eq("id", a.id);
         throwIf(error);
       }
     }
