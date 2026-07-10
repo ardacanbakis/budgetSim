@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -29,6 +30,7 @@ import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
 import { computePurchaseLiability, findDueCardPayments } from "@/lib/domain/purchases";
 import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 const tooltipStyle = {
@@ -51,6 +53,23 @@ const CARD_IDS = [
   "avg-spend",
 ] as const;
 type CardId = (typeof CARD_IDS)[number];
+
+/**
+ * Page each card drills into when clicked (outside edit mode). Goals is
+ * omitted — it's a self-contained CRUD widget with its own modal (which would
+ * bubble clicks up), and there is no dedicated goals page to open.
+ */
+const CARD_ROUTE: Partial<Record<CardId, string>> = {
+  "net-worth": "/reports",
+  "safe-to-spend": "/transactions",
+  "cc-debt": "/purchases",
+  victvs: "/victvs",
+  accounts: "/accounts",
+  upcoming: "/transactions",
+  "monthly-flow": "/reports",
+  budgets: "/reports",
+  "avg-spend": "/reports",
+};
 
 /** grid span per card on the xl 4-column dashboard grid */
 const SPAN: Record<CardId, string> = {
@@ -76,6 +95,7 @@ function normalizeLayout(saved: DashboardLayout | null): DashboardLayout {
 
 export default function DashboardPage() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const { displayCurrency } = useApp();
   const accounts = useAccounts();
@@ -310,14 +330,21 @@ export default function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{tx.description || "—"}</div>
                     <div className="text-xs text-zinc-500">
-                      {account.name} · {tx.dueDate} {overdue ? <Badge tone="red">!</Badge> : null}
+                      {account.name} · {fmtDate(tx.dueDate)} {overdue ? <Badge tone="red">!</Badge> : null}
                     </div>
                   </div>
                   <span className={`text-sm font-semibold tabular-nums ${tx.direction === "income" ? "text-emerald-600" : ""}`}>
                     {tx.direction === "income" ? "+" : "−"}
                     {formatAmount(tx.amount, account.currency, locale)}
                   </span>
-                  <Button variant="ghost" disabled={!rates.data} onClick={() => completePlanned.mutate(tx.id)}>
+                  <Button
+                    variant="ghost"
+                    disabled={!rates.data}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      completePlanned.mutate(tx.id);
+                    }}
+                  >
                     ✓ {t("dashboard.complete")}
                   </Button>
                 </li>
@@ -380,6 +407,7 @@ export default function DashboardPage() {
               <SortableCard
                 key={id}
                 id={id}
+                href={CARD_ROUTE[id]}
                 spanClass={SPAN[id]}
                 editMode={editMode}
                 isFirst={index === 0}
@@ -415,6 +443,7 @@ export default function DashboardPage() {
 
 function SortableCard({
   id,
+  href,
   spanClass,
   editMode,
   isFirst,
@@ -425,6 +454,7 @@ function SortableCard({
   children,
 }: {
   id: string;
+  href?: string;
   spanClass: string;
   editMode: boolean;
   isFirst: boolean;
@@ -435,16 +465,33 @@ function SortableCard({
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled: !editMode,
   });
 
+  // outside edit mode the whole card is a big click target for its page;
+  // inner buttons/links stopPropagation so they keep their own behavior
+  const navigable = !editMode && href;
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative ${spanClass} ${isDragging ? "z-50 opacity-80" : ""}`}
+      className={`group relative ${spanClass} ${isDragging ? "z-50 opacity-80" : ""} ${
+        navigable ? "cursor-pointer transition-transform hover:-translate-y-0.5" : ""
+      }`}
+      onClick={navigable ? () => router.push(href!) : undefined}
+      onKeyDown={
+        navigable
+          ? (e) => {
+              if (e.key === "Enter") router.push(href!);
+            }
+          : undefined
+      }
+      role={navigable ? "link" : undefined}
+      tabIndex={navigable ? 0 : undefined}
     >
       {editMode ? (
         <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">

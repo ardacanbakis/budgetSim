@@ -108,7 +108,7 @@ describe("projectCashflow", () => {
       kind: "fiat",
       openingBalance: 1000,
       archived: false,
-      paymentAccountId: null,
+      paymentAccountId: null, paymentDay: null,
       createdAt: "2026-01-01",
     },
   ];

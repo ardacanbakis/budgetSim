@@ -102,6 +102,34 @@ test("victvs v2: month groups, half-month select, new paste formats", async ({ p
   await page.screenshot({ path: "e2e/screenshots/victvs-paste-preview.png" });
 });
 
+test("wave10: date format, dashboard nav, quick-add toggle, card payment day", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  // dashboard card navigation: the VICTVS tile drills into /victvs
+  await page.getByText(/Unpaid VICTVS|Ödenmemiş/i).click();
+  await expect(page).toHaveURL(/\/victvs$/);
+
+  // date format setting reformats displayed dates (dd.mm.yyyy)
+  await page.goto("/settings");
+  const dateSelect = page.locator("select").filter({ has: page.locator("option", { hasText: /\d{2}\.\d{2}\.\d{4}/ }) });
+  await dateSelect.selectOption({ label: "09.03.2026" });
+  await page.goto("/victvs");
+  await expect(page.getByText(/\d{2}\.\d{2}\.\d{4}/).first()).toBeVisible();
+
+  // quick-add toggle hides the floating + shortcut
+  await page.goto("/settings");
+  const fab = page.getByRole("button", { name: /new transaction|yeni işlem/i });
+  await expect(fab).toBeVisible();
+  await page.getByText(/Quick-add button|Hızlı ekle/i).click();
+  await expect(fab).toHaveCount(0);
+
+  // credit card statement due day shows on the card detail
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Bonus Card/ }).click();
+  await expect(page.getByText(/Statement due|Ekstre/i)).toBeVisible();
+});
+
 test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

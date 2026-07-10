@@ -20,6 +20,7 @@ import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
 import { todayISO } from "@/lib/domain/recurrence";
 import { ParsedSession, parseVictvsPaste } from "@/lib/domain/victvsParser";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 type Filter = "unpaid" | "paid" | "all";
@@ -41,6 +42,7 @@ function typeBadgeTone(type: string): "sky" | "green" | "amber" | "zinc" {
 
 export default function VictvsPage() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const sessions = useVictvsSessions();
   const payouts = useVictvsPayouts();
@@ -270,7 +272,7 @@ export default function VictvsPage() {
                   <div>
                     <span className="font-medium text-green-600 tabular-nums">+{formatAmount(p.total, "USD", locale)}</span>
                     <span className="ml-2 text-zinc-500">
-                      {p.sessionCount} {t("victvs.sessions")} → {account?.name ?? "?"} · {p.paymentDate}
+                      {p.sessionCount} {t("victvs.sessions")} → {account?.name ?? "?"} · {fmtDate(p.paymentDate)}
                     </span>
                   </div>
                   <Button variant="ghost" onClick={() => window.confirm(t("common.confirmDelete")) && undoPayout.mutate(p.id)}>
@@ -347,6 +349,7 @@ function SessionRow({
   onDelete: () => void;
 }) {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const unpaid = session.status === "unpaid";
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
@@ -357,7 +360,7 @@ function SessionRow({
           {session.sessionNo ? <span className="font-mono text-xs text-zinc-400">#{session.sessionNo}</span> : null}
           <Badge tone={unpaid ? "amber" : "green"}>{t(`victvs.${session.status}`)}</Badge>
         </div>
-        <div className="mt-0.5 text-xs text-zinc-500">{session.date}</div>
+        <div className="mt-0.5 text-xs text-zinc-500">{fmtDate(session.date)}</div>
       </div>
       <div className="text-sm font-semibold text-green-600 tabular-nums">{formatAmount(session.amount, "USD", locale)}</div>
       {unpaid ? (

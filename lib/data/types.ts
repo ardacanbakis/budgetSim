@@ -16,6 +16,8 @@ export interface Account {
   archived: boolean;
   /** credit cards: default account the bill is paid from */
   paymentAccountId: string | null;
+  /** credit cards: day of month the statement bill is due (1–31), or null */
+  paymentDay: number | null;
   createdAt: string;
 }
 
@@ -186,4 +188,8 @@ export interface UserSettings {
   victvsDefaults: Record<string, number> | null;
   /** user-defined sidebar order (nav hrefs) */
   navOrder: string[] | null;
+  /** how yyyy-mm-dd dates are displayed across the app; null = ISO default */
+  dateFormat: import("@/lib/domain/dates").DateFormat | null;
+  /** show the floating quick-add (+) shortcut button; null = shown */
+  showQuickAdd: boolean | null;
 }

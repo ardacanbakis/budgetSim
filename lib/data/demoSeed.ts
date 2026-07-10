@@ -48,7 +48,7 @@ export function buildDemoSeed(): DemoStore {
   const nowIso = new Date().toISOString();
   const snapshot = { usdPer: FALLBACK_USD_PER, at: nowIso };
 
-  const base = { archived: false, paymentAccountId: null, createdAt: nowIso };
+  const base = { archived: false, paymentAccountId: null, paymentDay: null, createdAt: nowIso };
   const accounts: Account[] = [
     { ...base, id: uuid(), name: "Ziraat TRY", currency: "TRY", kind: "fiat", openingBalance: 260000 },
     { ...base, id: uuid(), name: "Wise USD", currency: "USD", kind: "fiat", openingBalance: 6400 },
@@ -65,6 +65,7 @@ export function buildDemoSeed(): DemoStore {
     kind: "credit_card",
     openingBalance: 0,
     paymentAccountId: tryAcc.id,
+    paymentDay: 15,
   };
   accounts.push(cardAcc);
 
@@ -274,6 +275,8 @@ export function buildDemoSeed(): DemoStore {
       victvsAccountId: usdAcc.id,
       victvsDefaults: null,
       navOrder: null,
+      dateFormat: null,
+      showQuickAdd: null,
     },
     snapshots,
   };

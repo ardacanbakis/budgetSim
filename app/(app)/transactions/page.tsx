@@ -10,10 +10,12 @@ import { Transaction, TxDirection, TxStatus } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 export default function TransactionsPage() {
   const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
   const repo = useRepo();
   const accounts = useAccounts();
   const categories = useCategories();
@@ -150,7 +152,7 @@ export default function TransactionsPage() {
                       {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
                     </div>
                     <div className="mt-0.5 text-xs text-zinc-500">
-                      {account.name} · {tx.dueDate}
+                      {account.name} · {fmtDate(tx.dueDate)}
                     </div>
                   </div>
                   <div

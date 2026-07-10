@@ -26,6 +26,7 @@ export interface NewAccount {
   kind: AccountKind;
   openingBalance: number;
   paymentAccountId?: string | null;
+  paymentDay?: number | null;
 }
 
 export interface NewPurchase {

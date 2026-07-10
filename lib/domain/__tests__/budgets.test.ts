@@ -6,7 +6,7 @@ import { UsdPerMap } from "../fx";
 const rates: UsdPerMap = { USD: 1, TRY: 0.025, EUR: 1.1, BTC: 100000, XAU_G: 75 };
 
 function account(id: string, currency: Account["currency"], kind: Account["kind"] = "fiat", opening = 0): Account {
-  return { id, name: id, currency, kind, openingBalance: opening, archived: false, paymentAccountId: null, createdAt: "2026-01-01" };
+  return { id, name: id, currency, kind, openingBalance: opening, archived: false, paymentAccountId: null, paymentDay: null, createdAt: "2026-01-01" };
 }
 
 function tx(partial: Partial<Transaction> & Pick<Transaction, "accountId" | "direction" | "amount">): Transaction {

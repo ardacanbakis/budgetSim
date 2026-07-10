@@ -84,6 +84,7 @@ export class DemoRepo implements Repo {
       createdAt: new Date().toISOString(),
       ...input,
       paymentAccountId: input.paymentAccountId ?? null,
+      paymentDay: input.paymentDay ?? null,
     };
     this.store.accounts.push(account);
     this.save();
@@ -486,6 +487,8 @@ export class DemoRepo implements Repo {
       victvsAccountId: null,
       victvsDefaults: null,
       navOrder: null,
+      dateFormat: null,
+      showQuickAdd: null,
     };
     return { ...defaults, ...(this.store.settings as Partial<UserSettings>) };
   }
