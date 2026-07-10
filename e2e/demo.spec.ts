@@ -53,6 +53,31 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
 });
 
+test("recurring: a template started in the past backfills its earlier items", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  await page.goto("/recurring");
+  await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+  await page.getByLabel(/name|ad/i).first().fill("Backfill Salary");
+  await page.getByRole("button", { name: /^income$|gelir/i }).click();
+  await page.getByLabel(/amount|tutar/i).first().fill("2000");
+
+  // start four months ago — the already-past months must materialize too
+  const now = new Date();
+  const past = new Date(now.getFullYear(), now.getMonth() - 4, 5);
+  const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, "0")}-05`;
+  await page.locator('input[type="date"]').first().fill(iso);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await page.waitForTimeout(700);
+
+  // the specific past-dated (overdue) occurrence now exists in the ledger,
+  // not just the ones from today forward
+  await page.goto("/transactions");
+  await page.waitForTimeout(500);
+  await expect(page.getByText(new RegExp(iso)).first()).toBeVisible();
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
