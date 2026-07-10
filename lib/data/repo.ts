@@ -160,7 +160,7 @@ export interface Repo {
   createTemplate(input: NewTemplate): Promise<RecurringTemplate>;
   updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void>;
   deleteTemplate(id: string, deletePlanned: boolean): Promise<void>;
-  /** create missing planned transactions for template occurrences in [today, today+monthsAhead] */
+  /** create missing planned transactions for template occurrences in [template.startDate, today+monthsAhead] */
   materializeTemplates(monthsAhead: number): Promise<number>;
   /** complete due planned items whose template has autoComplete, with given snapshot */
   autoCompleteDue(fxSnapshot: FxSnapshot): Promise<number>;
