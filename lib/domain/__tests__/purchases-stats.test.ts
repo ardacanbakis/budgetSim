@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildInstallmentPlan,
+  buildPurchaseTransactionSpecs,
   computePurchaseLiability,
   defaultFirstDue,
   findDueCardPayments,
@@ -111,6 +112,45 @@ describe("computePurchaseLiability", () => {
   });
 });
 
+describe("buildPurchaseTransactionSpecs", () => {
+  it("retroactive purchase: past installments are completed + legacy, current posts, future planned", () => {
+    // bought 3 months ago, 6 installments — logged today
+    const specs = buildPurchaseTransactionSpecs(
+      { name: "TV", amount: 6000, installmentCount: 6, purchaseDate: "2026-03-10", firstDue: "2026-04-10" },
+      "TRY",
+      "2026-06-10"
+    );
+    expect(specs.map((s) => [s.dueDate, s.status, s.legacy])).toEqual([
+      ["2026-04-10", "completed", true],
+      ["2026-05-10", "completed", true],
+      ["2026-06-10", "completed", false], // due today → posts to the card
+      ["2026-07-10", "planned", false],
+      ["2026-08-10", "planned", false],
+      ["2026-09-10", "planned", false],
+    ]);
+  });
+
+  it("an installment earlier this month posts (it's on the still-unpaid statement)", () => {
+    const specs = buildPurchaseTransactionSpecs(
+      { name: "TV", amount: 6000, installmentCount: 6, purchaseDate: "2026-05-05", firstDue: "2026-06-05" },
+      "TRY",
+      "2026-06-10"
+    );
+    // due June 5, today June 10 — completed but NOT legacy: the June statement isn't paid yet
+    expect(specs[0]).toMatchObject({ dueDate: "2026-06-05", status: "completed", legacy: false });
+  });
+
+  it("one-shots always post (never auto-legacy)", () => {
+    const [spec] = buildPurchaseTransactionSpecs(
+      { name: "Chair", amount: 900, installmentCount: 1, purchaseDate: "2026-05-01", firstDue: "2026-05-01" },
+      "TRY",
+      "2026-06-10"
+    );
+    expect(spec.status).toBe("completed");
+    expect(spec.legacy).toBe(false);
+  });
+});
+
 describe("findDueCardPayments", () => {
   const card = account("card", "TRY", "credit_card");
   const balances = new Map([["card", -5000]]);
@@ -133,6 +173,30 @@ describe("findDueCardPayments", () => {
     expect(findDueCardPayments([card], balances, fresh, "2026-06-15")).toHaveLength(0);
 
     expect(findDueCardPayments([card], new Map([["card", 0]]), paid, "2026-06-15")).toHaveLength(0);
+  });
+
+  it("statement suggestion includes planned installments due this month (and overdue)", () => {
+    const txs = [
+      tx({ accountId: "card", direction: "expense", amount: 5000, dueDate: "2026-05-20" }),
+      // this month's installment + one overdue from last month, one future
+      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-06-10", status: "planned", purchaseId: "p1", completedAt: null }),
+      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-05-10", status: "planned", purchaseId: "p1", completedAt: null }),
+      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-07-10", status: "planned", purchaseId: "p1", completedAt: null }),
+    ];
+    const due = findDueCardPayments([card], balances, txs, "2026-06-15");
+    expect(due).toHaveLength(1);
+    expect(due[0].postedDebt).toBe(5000);
+    expect(due[0].installmentsDue.map((t) => t.dueDate)).toEqual(["2026-05-10", "2026-06-10"]);
+    expect(due[0].suggestedAmount).toBe(5000 + 2800);
+  });
+
+  it("prompts on installments alone, even with no posted debt yet", () => {
+    const txs = [
+      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-06-10", status: "planned", purchaseId: "p1", completedAt: null }),
+    ];
+    const due = findDueCardPayments([card], new Map([["card", 0]]), txs, "2026-06-15");
+    expect(due).toHaveLength(1);
+    expect(due[0].suggestedAmount).toBe(1400);
   });
 });
 

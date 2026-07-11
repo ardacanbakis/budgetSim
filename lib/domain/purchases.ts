@@ -48,13 +48,20 @@ export interface PurchaseTxSpec {
   amount: number;
   dueDate: string;
   status: "planned" | "completed";
+  /** true = settled before this app was in use; excluded from balances */
+  legacy: boolean;
   description: string;
 }
 
 /**
  * The transactions a reflected purchase generates: a single completed expense
  * for one-shots, or one row per installment — rows already due (<= today)
- * completed, the rest planned. Used identically by both repos.
+ * completed, the rest planned. Installment rows from earlier calendar months
+ * are additionally flagged legacy: those statements were settled before the
+ * purchase was logged here, so they show in history and progress but never
+ * move balances. Current-month rows post normally — they belong to the still
+ * unpaid statement. One-shots always post (log an old one-shot unreflected if
+ * it shouldn't). Used identically by both repos.
  */
 export function buildPurchaseTransactionSpecs(
   purchase: Pick<Purchase, "name" | "amount" | "installmentCount" | "purchaseDate" | "firstDue">,
@@ -63,7 +70,7 @@ export function buildPurchaseTransactionSpecs(
 ): PurchaseTxSpec[] {
   if (purchase.installmentCount <= 1) {
     return [
-      { amount: purchase.amount, dueDate: purchase.purchaseDate, status: "completed", description: purchase.name },
+      { amount: purchase.amount, dueDate: purchase.purchaseDate, status: "completed", legacy: false, description: purchase.name },
     ];
   }
   return buildInstallmentPlan({
@@ -75,6 +82,7 @@ export function buildPurchaseTransactionSpecs(
     amount: row.amount,
     dueDate: row.dueDate,
     status: row.dueDate <= today ? ("completed" as const) : ("planned" as const),
+    legacy: row.dueDate.slice(0, 7) < today.slice(0, 7),
     description: `${purchase.name} (${row.n}/${purchase.installmentCount})`,
   }));
 }
@@ -132,13 +140,18 @@ export function computePurchaseLiability(
 
 export interface DueCardPayment {
   account: Account;
+  /** what the statement likely totals: posted debt + installments due by month end */
   suggestedAmount: number;
+  postedDebt: number;
+  /** planned purchase installments on the card due this month (or overdue) —
+   * recording the payment marks these completed so the statement stays in sync */
+  installmentsDue: Transaction[];
 }
 
 /**
- * Cards that look unpaid this month: posted debt (balance < 0), at least one
- * completed expense in an earlier month (a statement exists), and no incoming
- * transfer leg this calendar month.
+ * Cards that look unpaid this month: posted debt from an earlier statement
+ * (balance < 0 with an older completed expense) OR purchase installments due
+ * this month, and no incoming transfer leg this calendar month.
  */
 export function findDueCardPayments(
   accounts: Account[],
@@ -150,16 +163,34 @@ export function findDueCardPayments(
   const result: DueCardPayment[] = [];
   for (const account of accounts) {
     if (account.kind !== "credit_card" || account.archived) continue;
-    const balance = balances.get(account.id) ?? 0;
-    if (balance >= 0) continue;
-    const txs = transactions.filter((t) => t.accountId === account.id && t.status === "completed");
-    const hasOlderExpense = txs.some((t) => t.direction === "expense" && t.dueDate.slice(0, 7) < month);
-    if (!hasOlderExpense) continue;
-    const paidThisMonth = txs.some(
+    const txs = transactions.filter((t) => t.accountId === account.id);
+    const completed = txs.filter((t) => t.status === "completed");
+    const paidThisMonth = completed.some(
       (t) => t.direction === "income" && t.transferGroupId != null && t.dueDate.slice(0, 7) === month
     );
     if (paidThisMonth) continue;
-    result.push({ account, suggestedAmount: -balance });
+
+    const balance = balances.get(account.id) ?? 0;
+    const postedDebt = balance < 0 ? -balance : 0;
+    const hasOlderExpense = completed.some((t) => t.direction === "expense" && t.dueDate.slice(0, 7) < month);
+    const installmentsDue = txs
+      .filter(
+        (t) =>
+          t.status === "planned" &&
+          t.direction === "expense" &&
+          t.purchaseId != null &&
+          t.dueDate.slice(0, 7) <= month
+      )
+      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+    const installmentsTotal = installmentsDue.reduce((s, t) => s + t.amount, 0);
+
+    if (!(postedDebt > 0 && hasOlderExpense) && installmentsDue.length === 0) continue;
+    result.push({
+      account,
+      suggestedAmount: postedDebt + installmentsTotal,
+      postedDebt,
+      installmentsDue,
+    });
   }
   return result;
 }

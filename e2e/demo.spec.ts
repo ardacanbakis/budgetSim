@@ -130,6 +130,66 @@ test("wave10: date format, dashboard nav, quick-add toggle, card payment day", a
   await expect(page.getByText(/Statement due|Ekstre/i)).toBeVisible();
 });
 
+test("wave11: month groups with net, edit transaction, report category filter, settings tabs", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  // transactions grouped by year → month with an income − expense = net line
+  await page.goto("/transactions");
+  await expect(page.getByText(/^▾ 20\d\d/).first()).toBeVisible();
+  await expect(page.getByText(/=/).first()).toBeVisible();
+
+  // edit a transaction's description via the ✎ button
+  await page.getByRole("button", { name: /edit transaction|işlemi düzenle/i }).first().click();
+  const desc = page.getByLabel(/description|açıklama/i).first();
+  await desc.fill("Edited by test");
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(page.getByText("Edited by test").first()).toBeVisible();
+
+  // reports: picking a category chip filters and shows the hint
+  await page.goto("/reports");
+  await page.getByRole("button", { name: /^Groceries$/ }).click();
+  await expect(page.getByText(/1 categories selected|1 kategori seçili/)).toBeVisible();
+
+  // settings tabs switch content
+  await page.goto("/settings");
+  await expect(page.getByText(/Display currency|Görüntüleme para birimi/).first()).toBeVisible();
+  await page.getByRole("button", { name: /VICTVS$/ }).last().click();
+  await expect(page.getByText(/Default deposit account|Varsayılan yatan hesap/)).toBeVisible();
+});
+
+test("wave11: retroactive taksit goes legacy; card payment covers this month's installments", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+
+  // purchase with the first installment due the 28th of this month (planned)
+  await page.goto("/purchases");
+  await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
+  await page.getByLabel(/name|ad/i).first().fill("Fridge");
+  await page.getByLabel(/amount|tutar/i).first().fill("9000");
+  await page.getByRole("checkbox").first().check();
+  await page.getByLabel(/number of installments|taksit sayısı/i).fill("3");
+  const now = new Date();
+  const firstDue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-28`;
+  await page.getByLabel(/first installment|ilk taksit/i).fill(firstDue);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await page.waitForTimeout(700);
+
+  // the card-payment reminder's modal lists the installment in its breakdown
+  await page.goto("/");
+  await page.waitForTimeout(600);
+  await page.getByRole("button", { name: /record payment|ödemeyi kaydet/i }).first().click();
+  await expect(page.getByText(/Fridge \(1\/3\)/).first()).toBeVisible();
+
+  // confirming records the transfer AND posts the installment
+  await page.getByRole("button", { name: /^confirm$|onayla/i }).click();
+  await page.waitForTimeout(700);
+  await page.goto("/transactions");
+  const row = page.locator("li").filter({ hasText: "Fridge (1/3)" }).first();
+  await expect(row).toBeVisible();
+  expect(await row.textContent()).not.toContain("Planned");
+});
+
 test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
@@ -176,6 +236,7 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
   const before = await netWorthTile.textContent();
 
   await page.goto("/settings");
+  await page.getByRole("button", { name: /Data$|Veri$/ }).click();
   const legacySection = page.locator("text=Past incomes & expenses").locator("../..");
   await legacySection.getByLabel(/amount/i).fill("9999");
   await legacySection.getByLabel(/description/i).fill("Old salary 2024");

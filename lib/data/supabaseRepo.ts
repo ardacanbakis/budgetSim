@@ -430,7 +430,11 @@ export class SupabaseRepo implements Repo {
       recurring_template_id: template.id,
       loan_id: template.loanId,
     }));
-    const { error } = await this.db.from("transactions").insert(rows);
+    // ignoreDuplicates + the template_due unique index make concurrent runs
+    // (second tab, double bootstrap) race-safe: the loser inserts nothing
+    const { error } = await this.db
+      .from("transactions")
+      .upsert(rows, { onConflict: "user_id,recurring_template_id,due_date", ignoreDuplicates: true });
     throwIf(error);
     return missing.length;
   }
@@ -737,6 +741,7 @@ export class SupabaseRepo implements Repo {
       description: spec.description,
       fx_snapshot: spec.status === "completed" ? fxSnapshot : null,
       purchase_id: purchase.id,
+      legacy: spec.legacy,
     }));
     const { error: insertError } = await this.db.from("transactions").insert(rows);
     throwIf(insertError);

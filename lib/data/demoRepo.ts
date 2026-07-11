@@ -535,7 +535,7 @@ export class DemoRepo implements Repo {
         loanId: null,
         victvsPayoutId: null,
         purchaseId: purchase.id,
-        legacy: false,
+        legacy: spec.legacy,
         createdAt: now,
       });
     }
