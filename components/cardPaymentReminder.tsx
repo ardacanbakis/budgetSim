@@ -34,6 +34,11 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
     KEYS.transactions,
     KEYS.accounts,
   ]);
+  const completeInstallments = useAppMutation(
+    (v: { ids: string[]; snapshot: ReturnType<typeof snapshotFromTable> }) =>
+      Promise.all(v.ids.map((id) => repo.completeTransaction(id, v.snapshot))).then(() => undefined),
+    [KEYS.transactions, KEYS.accounts, KEYS.purchases]
+  );
 
   const visible = duePayments.filter(
     (d) => typeof window === "undefined" || !window.localStorage.getItem(dismissKey(d.account.id))
@@ -96,6 +101,7 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
                     convert(toAmount, payment.account.currency, from.currency, rates.data.usdPer) ?? toAmount,
                     from.currency
                   );
+            const snapshot = snapshotFromTable(rates.data);
             await createTransfer.mutateAsync({
               fromAccountId: from.id,
               toAccountId: payment.account.id,
@@ -104,8 +110,13 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
               date: todayISO(),
               description: `${payment.account.name} statement`,
               marketRate: null,
-              fxSnapshot: snapshotFromTable(rates.data),
+              fxSnapshot: snapshot,
             });
+            // the statement covered this month's installments — post them so
+            // the card balance nets out against the payment just recorded
+            if (payment.installmentsDue.length > 0) {
+              await completeInstallments.mutateAsync({ ids: payment.installmentsDue.map((t) => t.id), snapshot });
+            }
             setPaying(null);
             setAmount("");
           }}
@@ -130,6 +141,21 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
               onChange={(e) => setAmount(e.target.value)}
             />
           </Field>
+          {payment.installmentsDue.length > 0 ? (
+            <div className="rounded-lg bg-[var(--edge-soft)] p-3 text-xs text-zinc-500">
+              <div className="flex justify-between">
+                <span>{t("purchases.postedDebt")}</span>
+                <span className="tabular-nums">{formatAmount(payment.postedDebt, payment.account.currency, locale)}</span>
+              </div>
+              {payment.installmentsDue.map((tx) => (
+                <div key={tx.id} className="flex justify-between">
+                  <span className="truncate">+ {tx.description}</span>
+                  <span className="tabular-nums">{formatAmount(tx.amount, payment.account.currency, locale)}</span>
+                </div>
+              ))}
+              <p className="mt-1.5 text-[11px] text-zinc-400">{t("purchases.installmentsIncluded")}</p>
+            </div>
+          ) : null}
           {from && from.currency !== payment.account.currency && fromAmountMarket != null ? (
             <p className="text-xs text-zinc-500">
               ≈ {formatAmount(fromAmountMarket, from.currency, locale)} {t("transfer.fromAmount").toLowerCase()}

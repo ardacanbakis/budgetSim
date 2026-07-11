@@ -67,6 +67,17 @@ export default function ReportsPage() {
   const rates = useRates();
 
   const [realTry, setRealTry] = useState(false);
+  // category filter: empty = everything; otherwise only the picked categories
+  // (chips toggle independently so tags can be viewed separately or together)
+  const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
+
+  const toggleCat = (id: string) =>
+    setSelectedCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const takeSnapshot = useAppMutation(async () => {
     if (!accounts.data || !transactions.data || !rates.data) return;
@@ -122,6 +133,7 @@ export default function ReportsPage() {
 
   for (const tx of transactions.data) {
     if (tx.status !== "completed" || tx.transferGroupId) continue;
+    if (selectedCats.size > 0 && !selectedCats.has(tx.categoryId ?? "")) continue;
     const idx = monthIndex.get(tx.dueDate.slice(0, 7));
     const currency = currencyOf.get(tx.accountId);
     if (!currency) continue;
@@ -201,6 +213,38 @@ export default function ReportsPage() {
             </span>
           </span>
         </div>
+      </div>
+
+      {/* category filter chips — pick tags separately or combine them */}
+      <div className="no-print flex flex-wrap items-center gap-1.5">
+        <button
+          onClick={() => setSelectedCats(new Set())}
+          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            selectedCats.size === 0
+              ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+              : "border-[var(--edge)] text-zinc-500 hover:border-teal-500/50"
+          }`}
+        >
+          {t("common.all")}
+        </button>
+        {categories.data.map((c) => {
+          const active = selectedCats.has(c.id);
+          return (
+            <button
+              key={c.id}
+              onClick={() => toggleCat(c.id)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                active ? "text-white" : "text-zinc-500 hover:opacity-80"
+              }`}
+              style={active ? { backgroundColor: c.color, borderColor: c.color } : { borderColor: c.color }}
+            >
+              {c.name}
+            </button>
+          );
+        })}
+        {selectedCats.size > 0 ? (
+          <span className="text-xs text-zinc-400">{t("reports.filteredBy", { count: selectedCats.size })}</span>
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

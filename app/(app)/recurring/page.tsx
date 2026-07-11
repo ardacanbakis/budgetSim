@@ -144,6 +144,7 @@ function TemplateModal({
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState("");
   const [autoComplete, setAutoComplete] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
 
   const targetKey = initial?.id ?? (open ? "new" : "closed");
@@ -170,17 +171,23 @@ function TemplateModal({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
-          await onSave({
-            name,
-            accountId: effectiveAccount,
-            direction,
-            categoryId: categoryId || null,
-            amount: Number(amount),
-            frequency,
-            startDate,
-            endDate: endDate || null,
-            autoComplete,
-          });
+          if (saving) return; // double-Enter guard: one template, not two
+          setSaving(true);
+          try {
+            await onSave({
+              name,
+              accountId: effectiveAccount,
+              direction,
+              categoryId: categoryId || null,
+              amount: Number(amount),
+              frequency,
+              startDate,
+              endDate: endDate || null,
+              autoComplete,
+            });
+          } finally {
+            setSaving(false);
+          }
         }}
       >
         <Field label={t("common.name")}>
@@ -252,7 +259,7 @@ function TemplateModal({
             <Button type="button" onClick={onClose}>
               {t("common.cancel")}
             </Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" disabled={saving}>
               {t("common.save")}
             </Button>
           </div>

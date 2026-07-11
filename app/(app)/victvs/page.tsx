@@ -540,6 +540,7 @@ function AddModal({
   const [sessionType, setSessionType] = useState<string>("IWCF");
   const [sessionNo, setSessionNo] = useState("");
   const [amount, setAmount] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const effectiveAmount = amount === "" ? String(defaults[sessionType] ?? "") : amount;
 
@@ -549,9 +550,15 @@ function AddModal({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
-          await onSave({ date, sessionType, sessionNo, amount: Number(effectiveAmount), source: "manual" });
-          setSessionNo("");
-          setAmount("");
+          if (saving) return; // double-Enter guard
+          setSaving(true);
+          try {
+            await onSave({ date, sessionType, sessionNo, amount: Number(effectiveAmount), source: "manual" });
+            setSessionNo("");
+            setAmount("");
+          } finally {
+            setSaving(false);
+          }
         }}
       >
         <div className="grid grid-cols-2 gap-3">
@@ -586,7 +593,7 @@ function AddModal({
           <Button type="button" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" disabled={saving}>
             {t("common.save")}
           </Button>
         </div>
@@ -617,6 +624,7 @@ function MarkPaidModal({
   const [received, setReceived] = useState("");
   const [receivedTouched, setReceivedTouched] = useState(false);
   const [legacy, setLegacy] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const totalUsd = sumAmounts("USD", sessions.map((s) => s.amount));
   const active = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
@@ -636,11 +644,16 @@ function MarkPaidModal({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!account) return;
-          await onConfirm(account.id, paymentDate, Number(shownReceived), victvsCategory?.id ?? null, legacy);
-          setReceivedTouched(false);
-          setReceived("");
-          setLegacy(false);
+          if (!account || saving) return; // double-submit would create two payouts
+          setSaving(true);
+          try {
+            await onConfirm(account.id, paymentDate, Number(shownReceived), victvsCategory?.id ?? null, legacy);
+            setReceivedTouched(false);
+            setReceived("");
+            setLegacy(false);
+          } finally {
+            setSaving(false);
+          }
         }}
       >
         <div className="rounded-lg bg-[var(--edge-soft)] p-3 text-sm">
@@ -690,7 +703,7 @@ function MarkPaidModal({
           <Button type="button" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" variant="primary" disabled={!account || Number(shownReceived) <= 0}>
+          <Button type="submit" variant="primary" disabled={!account || saving || Number(shownReceived) <= 0}>
             {t("common.confirm")}
           </Button>
         </div>

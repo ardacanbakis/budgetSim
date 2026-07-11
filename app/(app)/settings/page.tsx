@@ -17,18 +17,15 @@ import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, form
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
 
-type SettingsView = "panels" | "compact";
-
-/** Panels = cards (default); Compact = collapsed accordion rows. */
-function Section({ title, view, children }: { title: string; view: SettingsView; children: React.ReactNode }) {
-  if (view === "panels") return <>{children}</>;
-  return (
-    <details className="rounded-lg border border-[var(--edge)] bg-[var(--surface)]">
-      <summary className="cursor-pointer px-4 py-2.5 text-sm font-semibold">{title}</summary>
-      <div className="[&>*]:border-0 [&>*]:shadow-none">{children}</div>
-    </details>
-  );
-}
+const SETTINGS_TABS = ["preferences", "categories", "victvs", "data", "account"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+const TAB_ICON: Record<SettingsTab, string> = {
+  preferences: "⚙",
+  categories: "🏷",
+  victvs: "✓",
+  data: "⇅",
+  account: "👤",
+};
 
 export default function SettingsPage() {
   const { t } = useI18n();
@@ -39,16 +36,17 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState("");
   const [newCatName, setNewCatName] = useState("");
   const [newCatDirection, setNewCatDirection] = useState<TxDirection>("expense");
-  const [view, setView] = useState<SettingsView>("panels");
+  const [tab, setTab] = useState<SettingsTab>("preferences");
 
   useEffect(() => {
     queueMicrotask(() => {
-      if (window.localStorage.getItem("renovator-settings-view") === "compact") setView("compact");
+      const saved = window.localStorage.getItem("renovator-settings-tab");
+      if (saved && (SETTINGS_TABS as readonly string[]).includes(saved)) setTab(saved as SettingsTab);
     });
   }, []);
-  const switchView = (v: SettingsView) => {
-    setView(v);
-    window.localStorage.setItem("renovator-settings-view", v);
+  const switchTab = (v: SettingsTab) => {
+    setTab(v);
+    window.localStorage.setItem("renovator-settings-tab", v);
   };
 
   const createCategory = useAppMutation(
@@ -64,29 +62,39 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{t("settings.title")}</h1>
-          <p className="text-sm text-zinc-500">{t("settings.subtitle")}</p>
-        </div>
-        <div className="flex gap-1 rounded-lg bg-[var(--edge-soft)] p-1">
-          {(["panels", "compact"] as const).map((v) => (
+      <div>
+        <h1 className="text-xl font-bold">{t("settings.title")}</h1>
+        <p className="text-sm text-zinc-500">{t("settings.subtitle")}</p>
+      </div>
+
+      {/* tab bar — scrollable on narrow screens */}
+      <div className="sticky top-14 z-30 -mx-1 overflow-x-auto bg-[var(--page)]/95 px-1 py-1 backdrop-blur md:top-16">
+        <div className="flex w-max min-w-full gap-1 rounded-xl bg-[var(--edge-soft)] p-1">
+          {SETTINGS_TABS.map((v) => (
             <button
               key={v}
-              onClick={() => switchView(v)}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${view === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500"}`}
+              onClick={() => switchTab(v)}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                tab === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
             >
-              {t(`settings.view${v === "panels" ? "Panels" : "Compact"}`)}
+              <span className="text-xs">{TAB_ICON[v]}</span>
+              {t(`settings.tab_${v}`)}
             </button>
           ))}
         </div>
       </div>
 
-      <Section title={t("settings.preferences")} view={view}>
-        <PreferencesCard />
-      </Section>
+      {tab === "preferences" ? (
+        <>
+          <PreferencesCard />
+          <AppearanceCard />
+          <SidebarOrderCard />
+        </>
+      ) : null}
 
-      <Section title={t("settings.categories")} view={view}>
+      {tab === "categories" ? (
+        <>
         <Card>
           <CardHeader title={t("settings.categories")} />
           <div className="space-y-3 p-4">
@@ -135,74 +143,61 @@ export default function SettingsPage() {
             </form>
           </div>
         </Card>
-      </Section>
-
-      <Section title={t("budgets.title")} view={view}>
         <BudgetsEditor />
-      </Section>
+        </>
+      ) : null}
 
-      <Section title={t("theme.title")} view={view}>
-        <AppearanceCard />
-      </Section>
+      {tab === "victvs" ? <VictvsSettingsCard /> : null}
 
-      <Section title={t("victvs.settingsTitle")} view={view}>
-        <VictvsSettingsCard />
-      </Section>
+      {tab === "data" ? (
+        <>
+          <ExportsCard />
+          <LegacyCard />
+        </>
+      ) : null}
 
-      <Section title={t("settings.sidebar")} view={view}>
-        <SidebarOrderCard />
-      </Section>
-
-      <Section title={t("legacy.title")} view={view}>
-        <LegacyCard />
-      </Section>
-
-      <Section title={t("exports.title")} view={view}>
-        <ExportsCard />
-      </Section>
-
-      <Section title={t("settings.account")} view={view}>
-        <Card>
-          <CardHeader title={t("settings.account")} />
-          <div className="space-y-3 p-4 text-sm">
-            {session.status === "ready" && session.email ? (
-              <p>
-                {t("settings.signedInAs")}: <span className="font-medium">{session.email}</span>
-              </p>
-            ) : null}
-            {isDemo ? (
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => resetDemo()}>{t("auth.resetDemo")}</Button>
-                <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("auth.exitDemo")}</Button>
-              </div>
-            ) : (
-              <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("nav.logout")}</Button>
-            )}
-          </div>
-        </Card>
-      </Section>
-
-      <Section title={t("settings.dangerZone")} view={view}>
-        <Card className="border-red-200 dark:border-red-900">
-          <CardHeader title={<span className="text-red-600">{t("settings.dangerZone")}</span>} />
-          <div className="space-y-3 p-4">
-            <p className="text-sm text-zinc-500">{t("settings.deleteAllConfirm")}</p>
-            <div className="flex gap-2">
-              <Input className="max-w-40" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" />
-              <Button
-                variant="danger"
-                disabled={confirmText !== "DELETE" || deleteAll.isPending}
-                onClick={async () => {
-                  await deleteAll.mutateAsync(undefined as never);
-                  setConfirmText("");
-                }}
-              >
-                {t("settings.deleteAll")}
-              </Button>
+      {tab === "account" ? (
+        <>
+          <Card>
+            <CardHeader title={t("settings.account")} />
+            <div className="space-y-3 p-4 text-sm">
+              {session.status === "ready" && session.email ? (
+                <p>
+                  {t("settings.signedInAs")}: <span className="font-medium">{session.email}</span>
+                </p>
+              ) : null}
+              {isDemo ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => resetDemo()}>{t("auth.resetDemo")}</Button>
+                  <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("auth.exitDemo")}</Button>
+                </div>
+              ) : (
+                <Button onClick={() => signOut().then(() => router.replace("/login"))}>{t("nav.logout")}</Button>
+              )}
             </div>
-          </div>
-        </Card>
-      </Section>
+          </Card>
+
+          <Card className="border-red-200 dark:border-red-900">
+            <CardHeader title={<span className="text-red-600">{t("settings.dangerZone")}</span>} />
+            <div className="space-y-3 p-4">
+              <p className="text-sm text-zinc-500">{t("settings.deleteAllConfirm")}</p>
+              <div className="flex gap-2">
+                <Input className="max-w-40" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" />
+                <Button
+                  variant="danger"
+                  disabled={confirmText !== "DELETE" || deleteAll.isPending}
+                  onClick={async () => {
+                    await deleteAll.mutateAsync(undefined as never);
+                    setConfirmText("");
+                  }}
+                >
+                  {t("settings.deleteAll")}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -99,6 +99,24 @@ export default function PortfolioPage() {
   const upcoming = history.filter((tx) => tx.status === "planned");
   const completed = history.filter((tx) => tx.status === "completed");
 
+  // completed history grouped by month with this account's monthly net
+  // (in the account's own currency; legacy records shown but not counted —
+  // they never moved the balance)
+  const completedMonths = (() => {
+    const byMonth = new Map<string, { items: Transaction[]; net: number }>();
+    for (const tx of completed) {
+      const month = tx.dueDate.slice(0, 7);
+      const bucket = byMonth.get(month) ?? { items: [], net: 0 };
+      bucket.items.push(tx);
+      if (!tx.legacy) bucket.net += tx.direction === "income" ? tx.amount : -tx.amount;
+      byMonth.set(month, bucket);
+    }
+    return [...byMonth.entries()];
+  })();
+
+  const monthLabel = (month: string) =>
+    new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", { month: "long", year: "numeric" });
+
   function historyRow(tx: Transaction) {
     if (!selected) return null;
     const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
@@ -221,14 +239,18 @@ export default function PortfolioPage() {
                       <ul className="divide-y divide-[var(--edge-soft)]">{upcoming.map(historyRow)}</ul>
                     </>
                   ) : null}
-                  {completed.length > 0 ? (
-                    <>
-                      <div className="px-4 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                        {t("tx.completed")}
+                  {completedMonths.map(([month, { items, net }]) => (
+                    <div key={month}>
+                      <div className="flex items-center justify-between px-4 pt-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{monthLabel(month)}</span>
+                        <span className={`text-[11px] font-semibold tabular-nums ${net >= 0 ? "text-green-600" : "text-red-600"}`}>
+                          {net >= 0 ? "+" : "−"}
+                          {selected ? formatAmount(Math.abs(net), selected.currency, locale) : Math.abs(net)}
+                        </span>
                       </div>
-                      <ul className="divide-y divide-[var(--edge-soft)]">{completed.map(historyRow)}</ul>
-                    </>
-                  ) : null}
+                      <ul className="divide-y divide-[var(--edge-soft)]">{items.map(historyRow)}</ul>
+                    </div>
+                  ))}
                 </div>
               )}
             </>
@@ -286,6 +308,7 @@ function AccountModal({
   const [isCard, setIsCard] = useState(false);
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [paymentDay, setPaymentDay] = useState("");
+  const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
 
   // re-init form when target changes
@@ -311,16 +334,22 @@ function AccountModal({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault();
-          const card = fiat && isCard;
-          const day = Number(paymentDay);
-          await onSave({
-            name,
-            currency,
-            kind: card ? "credit_card" : CURRENCY_META[currency].kind,
-            openingBalance: Number(opening) || 0,
-            paymentAccountId: card ? paymentAccountId || null : null,
-            paymentDay: card && day >= 1 && day <= 31 ? day : null,
-          });
+          if (saving) return; // double-Enter guard
+          setSaving(true);
+          try {
+            const card = fiat && isCard;
+            const day = Number(paymentDay);
+            await onSave({
+              name,
+              currency,
+              kind: card ? "credit_card" : CURRENCY_META[currency].kind,
+              openingBalance: Number(opening) || 0,
+              paymentAccountId: card ? paymentAccountId || null : null,
+              paymentDay: card && day >= 1 && day <= 31 ? day : null,
+            });
+          } finally {
+            setSaving(false);
+          }
         }}
       >
         <Field label={t("common.name")}>
@@ -393,7 +422,7 @@ function AccountModal({
             <Button type="button" onClick={onClose}>
               {t("common.cancel")}
             </Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" disabled={saving}>
               {t("common.save")}
             </Button>
           </div>
