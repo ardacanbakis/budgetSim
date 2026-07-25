@@ -128,7 +128,8 @@ export default function DashboardPage() {
 
   const today = todayISO();
 
-  // computed per render (cheap at personal scale); the React compiler memoizes
+  // recomputed every render: a few hundred rows of arithmetic, well under a
+  // frame at personal scale. Memoize if the ledger ever grows past ~10k rows.
   const derived = (() => {
     if (!accounts.data || !transactions.data || !rates.data) return null;
     const balances = computeBalances(accounts.data, transactions.data);

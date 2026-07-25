@@ -61,7 +61,8 @@ export default function ProjectionsPage() {
         }
       : null;
 
-  // recomputed per render (React compiler memoizes); pure + fast at this scale
+  // recomputed every render; pure and fast at this scale (24 months × a few
+  // hundred rows). Memoize only if the projection horizon or ledger explodes.
   const projection = inputs ? projectCashflow(inputs) : null;
 
   if (!projection || !inputs) return <Spinner />;
