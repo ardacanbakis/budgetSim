@@ -660,7 +660,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
     if (!data) {
-      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null };
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null, showRateTicker: null };
     }
     return {
       dashboardLayout: data.dashboard_layout,
@@ -671,6 +671,7 @@ export class SupabaseRepo implements Repo {
       navOrder: data.nav_order ?? null,
       dateFormat: data.date_format ?? null,
       showQuickAdd: data.show_quick_add ?? null,
+      showRateTicker: data.show_rate_ticker ?? null,
     };
   }
 
@@ -684,6 +685,7 @@ export class SupabaseRepo implements Repo {
     if (patch.navOrder !== undefined) row.nav_order = patch.navOrder;
     if (patch.dateFormat !== undefined) row.date_format = patch.dateFormat;
     if (patch.showQuickAdd !== undefined) row.show_quick_add = patch.showQuickAdd;
+    if (patch.showRateTicker !== undefined) row.show_rate_ticker = patch.showRateTicker;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
     throwIf(error);
   }

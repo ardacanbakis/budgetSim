@@ -190,6 +190,25 @@ test("wave11: retroactive taksit goes legacy; card payment covers this month's i
   expect(await row.textContent()).not.toContain("Planned");
 });
 
+test("wave12: rate ticker renders quotes and can be switched off in settings", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+
+  // the tape quotes pairs the way they're spoken, USD/TRY not TRY/USD
+  const tape = page.getByRole("marquee");
+  await expect(tape).toBeVisible();
+  const text = await tape.textContent();
+  expect(text).toContain("USD/TRY");
+  expect(text).toContain("BTC/USD");
+  await page.screenshot({ path: "e2e/screenshots/wave12-ticker.png" });
+
+  // opt out from Settings → Preferences
+  await page.goto("/settings");
+  await page.getByRole("checkbox").nth(1).uncheck();
+  await page.waitForTimeout(600);
+  await expect(page.getByRole("marquee")).toHaveCount(0);
+});
+
 test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

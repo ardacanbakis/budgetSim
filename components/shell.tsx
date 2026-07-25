@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { RateTicker } from "@/components/rateTicker";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -151,6 +152,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const isDemo = session.status === "ready" && session.repo.mode === "demo";
   // floating quick-add is shown unless the user turned it off in Settings (null = shown)
   const showQuickAdd = settings.data?.showQuickAdd ?? true;
+  // rate ticker is opt-in (null = hidden)
+  const showRateTicker = settings.data?.showRateTicker ?? false;
   // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
   const ratesStale = Boolean(
     rates.data &&
@@ -204,8 +207,9 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="min-w-0 flex-1">
-          {/* header */}
-          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
+          {/* header (+ optional market ticker) stay pinned together */}
+          <div className="sticky top-0 z-40">
+          <header className="flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
             <Link href="/welcome" className="text-base font-semibold md:hidden">BudgetSim</Link>
             <div className="flex flex-1 items-center justify-end gap-3">
               {rates.data ? (
@@ -232,6 +236,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               </Select>
             </div>
           </header>
+          {showRateTicker ? <RateTicker /> : null}
+          </div>
 
           <main className="px-4 py-4 pb-24 md:px-6 md:pb-8">{children}</main>
         </div>

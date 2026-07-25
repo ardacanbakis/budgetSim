@@ -15,6 +15,9 @@ export interface RateTable {
   fetchedAt: string;
   /** source per currency, e.g. { TRY: "frankfurter", BTC: "coingecko" } */
   sources: Partial<Record<Currency, string>>;
+  /** roughly 24h-old rates, when the sources could supply them — drives the
+   * ticker's change indicator; absent entries simply show no change */
+  prevUsdPer?: Partial<UsdPerMap>;
 }
 
 /** Snapshot stored on a transaction at completion time; never mutated after. */
