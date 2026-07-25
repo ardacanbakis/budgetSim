@@ -192,4 +192,6 @@ export interface UserSettings {
   dateFormat: import("@/lib/domain/dates").DateFormat | null;
   /** show the floating quick-add (+) shortcut button; null = shown */
   showQuickAdd: boolean | null;
+  /** show the scrolling market-rate ticker in the header; null = hidden */
+  showRateTicker: boolean | null;
 }

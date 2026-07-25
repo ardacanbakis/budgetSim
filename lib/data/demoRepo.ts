@@ -489,6 +489,7 @@ export class DemoRepo implements Repo {
       navOrder: null,
       dateFormat: null,
       showQuickAdd: null,
+      showRateTicker: null,
     };
     return { ...defaults, ...(this.store.settings as Partial<UserSettings>) };
   }

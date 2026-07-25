@@ -87,6 +87,31 @@ html[data-compact="true"] {
   font-size: 14px;
 }
 
+/* market ticker tape: the row is rendered twice, so translating by half the
+   track loops seamlessly */
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-track {
+  animation: ticker-scroll 40s linear infinite;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+}
+
 @media print {
   aside,
   nav,

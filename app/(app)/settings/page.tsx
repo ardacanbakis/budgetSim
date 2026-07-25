@@ -67,8 +67,9 @@ export default function SettingsPage() {
         <p className="text-sm text-zinc-500">{t("settings.subtitle")}</p>
       </div>
 
-      {/* tab bar — scrollable on narrow screens */}
-      <div className="sticky top-14 z-30 -mx-1 overflow-x-auto bg-[var(--page)]/95 px-1 py-1 backdrop-blur md:top-16">
+      {/* tab bar — scrollable on narrow screens; each panel is short enough
+          that it doesn't need to pin (and pinning would fight the ticker) */}
+      <div className="-mx-1 overflow-x-auto px-1 py-1">
         <div className="flex w-max min-w-full gap-1 rounded-xl bg-[var(--edge-soft)] p-1">
           {SETTINGS_TABS.map((v) => (
             <button
@@ -270,6 +271,7 @@ function PreferencesCard() {
 
   const dateFormat = settings.data?.dateFormat ?? DEFAULT_DATE_FORMAT;
   const showQuickAdd = settings.data?.showQuickAdd ?? true;
+  const showRateTicker = settings.data?.showRateTicker ?? false;
 
   return (
     <Card>
@@ -309,6 +311,18 @@ function PreferencesCard() {
           <span>
             <span className="block text-sm font-medium">{t("settings.quickAdd")}</span>
             <span className="block text-xs text-zinc-500">{t("settings.quickAddHint")}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3 sm:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-teal-600"
+            checked={showRateTicker}
+            onChange={(e) => save.mutate({ showRateTicker: e.target.checked })}
+          />
+          <span>
+            <span className="block text-sm font-medium">{t("settings.rateTicker")}</span>
+            <span className="block text-xs text-zinc-500">{t("settings.rateTickerHint")}</span>
           </span>
         </label>
       </div>

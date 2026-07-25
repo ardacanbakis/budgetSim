@@ -277,6 +277,7 @@ export function buildDemoSeed(): DemoStore {
       navOrder: null,
       dateFormat: null,
       showQuickAdd: null,
+      showRateTicker: true,
     },
     snapshots,
   };
