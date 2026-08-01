@@ -235,7 +235,8 @@ test("planner: what-if items and budgets move the horizon, and survive a reload"
   await page.getByLabel(/^Name$/i).fill("Mortgage");
   await page.getByRole("button", { name: /^Expense$/ }).click();
   await page.getByLabel(/Amount/i).first().fill("900");
-  await page.getByLabel(/Runs for/i).fill("120");
+  await page.locator(".fixed.inset-0 select").last().selectOption("for");
+  await page.getByLabel(/Number of months/i).fill("120");
   await page.getByRole("button", { name: /^Save$/ }).click();
   await page.waitForTimeout(400);
   expect(await horizonCard.textContent()).not.toBe(withSalary);
@@ -269,8 +270,9 @@ test("planner: per-item currency, and devaluation erodes a fixed TRY loan", asyn
   // the inflation toggle is offered only for the currency that devalues
   await expect(page.getByText("Amount rises with inflation")).toBeVisible();
   await page.getByRole("checkbox").last().uncheck();
-  await page.getByLabel(/Starts in/i).fill("6");
-  await page.getByLabel(/Runs for/i).fill("120");
+  await page.locator('.fixed.inset-0 input[type="month"]').first().fill("2027-03");
+  await page.locator(".fixed.inset-0 select").last().selectOption("for");
+  await page.getByLabel(/Number of months/i).fill("120");
   await page.getByRole("button", { name: /^Save$/ }).click();
   await page.waitForTimeout(400);
 
@@ -285,6 +287,39 @@ test("planner: per-item currency, and devaluation erodes a fixed TRY loan", asyn
   await expect(page.getByText(/the lira loses about \d+% of its value/)).toBeVisible();
   expect(await horizon.textContent()).not.toBe(withLoan);
   await page.screenshot({ path: "e2e/screenshots/planner-devaluation.png" });
+});
+
+test("planner: year jumps on the slider and expandable month detail", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/planner");
+
+  // the slider carries clickable year marks 1y…10y
+  await expect(page.getByRole("button", { name: /^\d+y$/ })).toHaveCount(10);
+  await page.getByRole("button", { name: "3y" }).click();
+  await page.waitForTimeout(400);
+  await expect(page.locator("tbody tr")).toHaveCount(36);
+
+  // months read as real dates and expand to show what makes them up
+  const firstRow = page.locator("tbody tr").first();
+  await expect(firstRow).toContainText(/\w{3} 20\d\d/);
+  await firstRow.click();
+  const detail = page.locator("tbody tr").nth(1);
+  await expect(detail).toContainText("Rent");
+  await page.screenshot({ path: "e2e/screenshots/planner-timeline.png" });
+
+  // collapsing hides it again
+  await firstRow.click();
+  await expect(page.locator("tbody tr").nth(1)).not.toContainText("Rent");
+
+  // two columns by default, with the stacked view still available
+  await expect(page.getByRole("button", { name: "Two columns" })).toBeVisible();
+  await page.getByRole("button", { name: "Single column" }).click();
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.waitForTimeout(800);
+  // the choice sticks across a reload
+  await expect(page.getByRole("button", { name: "Single column" })).toBeVisible();
 });
 
 test("projections: horizon slider replaces the 12/24 buttons and reaches 10 years", async ({ page }) => {

@@ -4,6 +4,15 @@ import { convert, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { addMonthsClamped, occurrencesBetween } from "./recurrence";
 
+/** One named contribution to a month, in the display currency at that month's rates. */
+export interface ProjectionLine {
+  label: string;
+  direction: "income" | "expense";
+  amount: number;
+  /** "" when uncategorized — lets the UI fall back to the category name */
+  categoryId: string;
+}
+
 export interface ProjectionMonth {
   /** yyyy-mm */
   month: string;
@@ -14,6 +23,9 @@ export interface ProjectionMonth {
   /** expense split by category id ("" = uncategorized), display currency.
    * Lets the planner swap a category's projected spend for a budget you set. */
   expenseByCategory: Record<string, number>;
+  /** what made up this month, aggregated by label — drives the expandable
+   * timeline rows. Sums to income and expense above. */
+  lines: ProjectionLine[];
 }
 
 export interface ProjectionResult {
@@ -31,6 +43,8 @@ interface FlowItem {
   isTransfer: boolean;
   /** "" when uncategorized */
   categoryId: string;
+  /** human name for the expandable breakdown */
+  label: string;
 }
 
 /** A hypothetical flow the planner injects, already scheduled and priced. */
@@ -42,6 +56,7 @@ export interface ExtraFlow {
   amount: number;
   currency: Currency;
   categoryId: string;
+  label: string;
 }
 
 /**
@@ -112,6 +127,7 @@ export function projectCashflow(params: {
       currency,
       isTransfer: t.transferGroupId != null,
       categoryId: t.categoryId ?? "",
+      label: t.description,
     });
   }
 
@@ -127,6 +143,7 @@ export function projectCashflow(params: {
         currency,
         isTransfer: false,
         categoryId: tpl.categoryId ?? "",
+        label: tpl.name,
       });
     }
   }
@@ -157,6 +174,7 @@ export function projectCashflow(params: {
       currency: extra.currency,
       isTransfer: false,
       categoryId: extra.categoryId,
+      label: extra.label,
     });
   }
 
@@ -183,6 +201,8 @@ export function projectCashflow(params: {
     let income = 0;
     let expense = 0;
     const expenseByCategory: Record<string, number> = {};
+    // several occurrences of the same thing read better as one line
+    const byLabel = new Map<string, ProjectionLine>();
     for (const f of buckets.get(month) ?? []) {
       const converted = convert(f.amount, f.currency, display, rates);
       if (converted == null) continue;
@@ -195,8 +215,21 @@ export function projectCashflow(params: {
         expense += converted;
         expenseByCategory[f.categoryId] = (expenseByCategory[f.categoryId] ?? 0) + converted;
       }
+      const key = `${f.direction}|${f.categoryId}|${f.label}`;
+      const line = byLabel.get(key);
+      if (line) line.amount += converted;
+      else byLabel.set(key, { label: f.label, direction: f.direction, amount: converted, categoryId: f.categoryId });
     }
-    result.push({ month, income, expense, net: income - expense, endNetWorth: valueOf(rates), expenseByCategory });
+    const lines = [...byLabel.values()].sort((a, b) => b.amount - a.amount);
+    result.push({
+      month,
+      income,
+      expense,
+      net: income - expense,
+      endNetWorth: valueOf(rates),
+      expenseByCategory,
+      lines,
+    });
   });
 
   return { startNetWorth, months: result, skippedAccountIds };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addMonthKey,
   averageMonthlyNet,
   buildRatePath,
   Devaluation,
@@ -10,6 +11,7 @@ import {
   planExtraFlows,
   planIsEmpty,
   planMilestones,
+  monthsBetween,
   planReplacedCategories,
   retentionFactor,
 } from "../planner";
@@ -20,6 +22,7 @@ import { UsdPerMap } from "../fx";
 const rates: UsdPerMap = { USD: 1, TRY: 0.025, EUR: 1.1, BTC: 100000, XAU_G: 75 };
 const off: Devaluation = { enabled: false, pctPerYear: 30 };
 const deval30: Devaluation = { enabled: true, pctPerYear: 30 };
+const FIRST = "2026-01";
 
 const item = (over: Partial<PlanItem> = {}): PlanItem => ({
   id: "i1",
@@ -28,7 +31,7 @@ const item = (over: Partial<PlanItem> = {}): PlanItem => ({
   amount: 500,
   currency: "USD",
   frequency: "monthly",
-  startMonth: 0,
+  startMonth: "2026-01",
   durationMonths: null,
   inflates: true,
   enabled: true,
@@ -54,21 +57,31 @@ const noTpl: RecurringTemplate[] = [];
 
 describe("itemHitsMonth / horizon totals", () => {
   it("respects start, duration and frequency", () => {
-    const monthly = item({ startMonth: 2, durationMonths: 3 });
-    expect([0, 1, 2, 3, 4, 5].map((i) => itemHitsMonth(monthly, i))).toEqual([
+    const monthly = item({ durationMonths: 3 });
+    expect([0, 1, 2, 3, 4, 5].map((i) => itemHitsMonth(monthly, i, 2))).toEqual([
       false, false, true, true, true, false,
     ]);
-    expect([0, 1, 2].map((i) => itemHitsMonth(item({ frequency: "once", startMonth: 1 }), i))).toEqual([
+    expect([0, 1, 2].map((i) => itemHitsMonth(item({ frequency: "once" }), i, 1))).toEqual([
       false, true, false,
     ]);
-    expect([0, 11, 12, 24].map((i) => itemHitsMonth(item({ frequency: "yearly" }), i))).toEqual([
+    expect([0, 11, 12, 24].map((i) => itemHitsMonth(item({ frequency: "yearly" }), i, 0))).toEqual([
       true, false, true, true,
     ]);
   });
 
   it("totals over the horizon, capped by duration", () => {
-    expect(itemHorizonTotal(item({ amount: 100 }), 120, off)).toBe(12_000);
-    expect(itemHorizonTotal(item({ amount: 100, durationMonths: 120 }), 60, off)).toBe(6_000);
+    expect(itemHorizonTotal(item({ amount: 100 }), 120, off, FIRST)).toBe(12_000);
+    expect(itemHorizonTotal(item({ amount: 100, durationMonths: 120 }), 60, off, FIRST)).toBe(6_000);
+  });
+
+  it("month keys convert to and from offsets", () => {
+    expect(monthsBetween("2026-01", "2026-01")).toBe(0);
+    expect(monthsBetween("2026-01", "2026-07")).toBe(6);
+    expect(monthsBetween("2026-01", "2027-03")).toBe(14);
+    expect(monthsBetween("2026-07", "2026-01")).toBe(-6);
+    expect(addMonthKey("2026-01", 0)).toBe("2026-01");
+    expect(addMonthKey("2026-11", 3)).toBe("2027-02");
+    expect(addMonthKey("2026-01", 120)).toBe("2036-01");
   });
 });
 
@@ -107,7 +120,8 @@ describe("planExtraFlows", () => {
   it("emits one flow per hit month, in the item's own currency", () => {
     const flows = planExtraFlows(
       { items: [item({ amount: 900, currency: "TRY", inflates: false, durationMonths: 2 })], budgets: [], devaluation: off },
-      6
+      6,
+      FIRST
     );
     expect(flows).toHaveLength(2);
     expect(flows[0]).toMatchObject({ monthOffset: 0, amount: 900, currency: "TRY", direction: "income" });
@@ -117,10 +131,11 @@ describe("planExtraFlows", () => {
     const flows = planExtraFlows(
       {
         items: [],
-        budgets: [{ categoryId: "groceries", monthlyAmount: 10_000, currency: "TRY", enabled: true }],
+        budgets: [{ categoryId: "groceries", label: "Groceries", monthlyAmount: 10_000, currency: "TRY", enabled: true }],
         devaluation: deval30,
       },
-      13
+      13,
+      FIRST
     );
     expect(flows).toHaveLength(13);
     expect(flows[0].amount).toBe(10_000);
@@ -132,12 +147,12 @@ describe("planExtraFlows", () => {
     const plan = {
       items: [item({ enabled: false }), item({ id: "z", amount: 0 })],
       budgets: [
-        { categoryId: "a", monthlyAmount: 100, currency: "TRY" as const, enabled: true },
-        { categoryId: "b", monthlyAmount: 0, currency: "TRY" as const, enabled: true },
+        { categoryId: "a", label: "A", monthlyAmount: 100, currency: "TRY" as const, enabled: true },
+        { categoryId: "b", label: "B", monthlyAmount: 0, currency: "TRY" as const, enabled: true },
       ],
       devaluation: off,
     };
-    expect(planExtraFlows(plan, 3)).toHaveLength(3); // only budget "a"
+    expect(planExtraFlows(plan, 3, FIRST)).toHaveLength(3); // only budget "a"
     expect([...planReplacedCategories(plan)]).toEqual(["a"]);
     expect(planIsEmpty({ items: [], budgets: [], devaluation: off })).toBe(true);
     expect(planIsEmpty({ items: [], budgets: [], devaluation: deval30 })).toBe(false);
@@ -174,12 +189,12 @@ describe("projection under devaluation", () => {
   it("an inflating TRY budget costs a steady amount in USD", () => {
     const plan = {
       items: [],
-      budgets: [{ categoryId: "groceries", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
+      budgets: [{ categoryId: "groceries", label: "Groceries", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
       devaluation: deval30,
     };
     const result = project({
       ratePath: buildRatePath(rates, deval30),
-      extraFlows: planExtraFlows(plan, 13),
+      extraFlows: planExtraFlows(plan, 13, FIRST),
       replaceCategories: planReplacedCategories(plan),
     });
     // ₺10,000 ≈ $250/mo, and it stays $250 a year later
@@ -197,7 +212,7 @@ describe("projection under devaluation", () => {
     };
     const result = project({
       ratePath: buildRatePath(rates, deval30),
-      extraFlows: planExtraFlows(plan, 13),
+      extraFlows: planExtraFlows(plan, 13, FIRST),
     });
     expect(result.months[0].expense).toBeCloseTo(500, 6); // ₺20k at 0.025
     expect(result.months[12].expense).toBeCloseTo(500 * 0.7, 6); // same lira, fewer dollars
@@ -223,12 +238,12 @@ describe("projection under devaluation", () => {
 
     const plan = {
       items: [],
-      budgets: [{ categoryId: "rent", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
+      budgets: [{ categoryId: "rent", label: "Rent", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
       devaluation: off,
     };
     const replaced = project({
       templates: [rent],
-      extraFlows: planExtraFlows(plan, 13),
+      extraFlows: planExtraFlows(plan, 13, FIRST),
       replaceCategories: planReplacedCategories(plan),
     });
     // ₺10k budget instead of the ₺40k template — not on top of it
@@ -247,6 +262,7 @@ describe("summaries", () => {
       net: 600,
       endNetWorth: 10_000 + 600 * (i + 1),
       expenseByCategory: {},
+      lines: [],
     })),
   };
 
