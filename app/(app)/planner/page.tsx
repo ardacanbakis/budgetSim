@@ -406,7 +406,6 @@ export default function PlannerPage() {
         open={adding || editing != null}
         initial={editing}
         currency={displayCurrency}
-        maxMonths={months}
         onClose={() => {
           setAdding(false);
           setEditing(null);
@@ -421,14 +420,12 @@ function PlanItemModal({
   open,
   initial,
   currency,
-  maxMonths,
   onClose,
   onSave,
 }: {
   open: boolean;
   initial: PlanItem | null;
   currency: string;
-  maxMonths: number;
   onClose: () => void;
   onSave: (item: PlanItem) => void;
 }) {
@@ -441,8 +438,10 @@ function PlanItemModal({
   const [duration, setDuration] = useState("");
   const [key, setKey] = useState<string | null>(null);
 
+  // Re-keys on close too ("closed"), so the next "Add item" starts blank
+  // instead of inheriting the item that was just created.
   const target = initial?.id ?? (open ? "new" : "closed");
-  if (open && key !== target) {
+  if (key !== target) {
     setKey(target);
     setLabel(initial?.label ?? "");
     setDirection(initial?.direction ?? "income");
@@ -496,8 +495,11 @@ function PlanItemModal({
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
+          {/* deliberately not capped to the horizon: something starting in 36
+              months is a valid plan even while you're looking at 12 — capping
+              it made the browser silently refuse to submit the form */}
           <Field label={t("planner.startMonth")} hint={t("planner.startMonthHint")}>
-            <Input type="number" step="1" min="0" max={maxMonths - 1} value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
+            <Input type="number" step="1" min="0" max="600" value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
           </Field>
           {frequency !== "once" ? (
             <Field label={t("planner.duration")} hint={t("planner.durationHint")}>
