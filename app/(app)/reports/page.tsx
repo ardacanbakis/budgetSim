@@ -438,7 +438,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm tabular-nums">
+              <table className="stack-sm w-full text-sm tabular-nums">
                 <thead>
                   <tr className="text-left text-xs text-zinc-400">
                     <th className="px-2 py-1 font-medium">{t("common.date")}</th>
@@ -451,13 +451,13 @@ export default function ReportsPage() {
                 <tbody>
                   {fx.conversions.slice(0, 20).map((c, i) => (
                     <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800">
-                      <td className="px-2 py-1.5">{c.date}</td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-1.5" data-label={t("common.date")}>{c.date}</td>
+                      <td className="px-2 py-1.5" data-label={t("reports.conversions")}>
                         {formatAmount(c.fromAmount, c.fromCurrency, locale)} → {formatAmount(c.toAmount, c.toCurrency, locale)}
                       </td>
-                      <td className="px-2 py-1.5 text-right">{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
-                      <td className="px-2 py-1.5 text-right">{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
-                      <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`}>
+                      <td className="px-2 py-1.5 text-right" data-label={t("reports.yourRate")}>{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
+                      <td className="px-2 py-1.5 text-right" data-label={t("reports.marketRate")}>{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
+                      <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`} data-label={t("transfer.spread")}>
                         {c.spread != null ? `${c.spread.toFixed(2)}%` : "—"}
                       </td>
                     </tr>
@@ -473,7 +473,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
         <div className="overflow-x-auto p-2">
-          <table className="w-full text-sm tabular-nums">
+          <table className="stack-sm w-full text-sm tabular-nums">
             <thead>
               <tr className="text-left text-xs text-zinc-400">
                 <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
@@ -485,10 +485,10 @@ export default function ReportsPage() {
             <tbody>
               {[...totals].reverse().map((row) => (
                 <tr key={row.month} className="border-t border-zinc-100 dark:border-zinc-800">
-                  <td className="px-2 py-1.5">{row.month}</td>
-                  <td className="px-2 py-1.5 text-right text-emerald-600">{fmt(row.income)}</td>
-                  <td className="px-2 py-1.5 text-right">{fmt(row.expense)}</td>
-                  <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  <td className="px-2 py-1.5 font-medium" data-label={t("projections.month")}>{row.month}</td>
+                  <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("reports.income")}>{fmt(row.income)}</td>
+                  <td className="px-2 py-1.5 text-right" data-label={t("reports.expenses")}>{fmt(row.expense)}</td>
+                  <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("reports.net")}>
                     {fmt(row.income - row.expense)}
                   </td>
                 </tr>

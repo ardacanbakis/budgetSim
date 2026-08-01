@@ -602,3 +602,58 @@ test("part2: history folding can be turned off in settings", async ({ page }) =>
   const collapsedYears = await page.getByText(/^▸ \d{4}$/).count();
   expect(collapsedYears).toBe(0);
 });
+
+test("part3: phone bar shows five targets and a More sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 }); // iPhone 16 Pro
+  await enterDemo(page);
+
+  const bar = page.locator("nav.fixed.inset-x-0.bottom-0");
+  // four destinations + More — no sideways scrolling to reach anything
+  await expect(bar.locator("a, button")).toHaveCount(5);
+  const barBox = await bar.boundingBox();
+  expect(barBox!.width).toBeLessThanOrEqual(402);
+  await expect(bar.getByRole("button", { name: /more|daha/i })).toBeVisible();
+
+  await bar.getByRole("button", { name: /more|daha/i }).click();
+  const sheet = page.locator(".fixed.inset-0").filter({ hasText: /More|Daha/ });
+  await expect(sheet.getByRole("link", { name: /planner|planlayıcı/i })).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/mobile-more-sheet.png" });
+
+  await sheet.getByRole("link", { name: /planner|planlayıcı/i }).click();
+  await expect(page).toHaveURL(/\/planner/);
+  // the page you're on stays visible in the bar even though it lives in More
+  await expect(bar.locator('a[aria-current="page"]')).toHaveCount(1);
+  await page.screenshot({ path: "e2e/screenshots/mobile-planner-nav.png" });
+});
+
+test("part3: wide tables stack into cards on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await enterDemo(page);
+  await page.goto("/reports");
+  await page.waitForTimeout(800);
+
+  const monthly = page.locator("table.stack-sm").last();
+  await expect(monthly).toBeVisible();
+  // stacked: a row is as wide as the card, and cells sit on their own lines
+  const row = monthly.locator("tbody tr").first();
+  const rowBox = await row.boundingBox();
+  const cellBox = await row.locator("td").first().boundingBox();
+  expect(cellBox!.width).toBeGreaterThan(rowBox!.width * 0.7);
+  expect(rowBox!.height).toBeGreaterThan(80);
+  await page.screenshot({ path: "e2e/screenshots/mobile-reports-stacked.png", fullPage: false });
+
+  // and nothing pushes the page sideways
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await enterDemo(page);
+  for (const path of ["/", "/accounts", "/transactions", "/purchases", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
+    await page.goto(path);
+    await page.waitForTimeout(600);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(1);
+  }
+});

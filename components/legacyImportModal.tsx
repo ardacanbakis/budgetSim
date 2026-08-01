@@ -156,7 +156,7 @@ export function LegacyImportModal({
             </div>
             {rows.length > 0 ? (
               <div className="max-h-80 overflow-auto">
-                <table className="w-full text-sm">
+                <table className="stack-sm w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-zinc-400">
                       <th className="py-1 pr-2 font-medium">{t("common.date")}</th>
@@ -173,7 +173,7 @@ export function LegacyImportModal({
                       const flagged = !r.date || !(r.amount > 0);
                       return (
                         <tr key={i} className={flagged ? "bg-amber-50/60 dark:bg-amber-950/30" : ""}>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("common.date")}>
                             <Input
                               type="date"
                               value={r.date}
@@ -181,10 +181,10 @@ export function LegacyImportModal({
                               className={!r.date ? "!border-amber-400" : ""}
                             />
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("common.description")}>
                             <Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} />
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("tx.filterDirection")}>
                             <Select
                               value={r.direction}
                               onChange={(e) => updateRow(i, { direction: e.target.value as TxDirection, categoryId: null })}
@@ -193,7 +193,7 @@ export function LegacyImportModal({
                               <option value="income">{t("tx.income")}</option>
                             </Select>
                           </td>
-                          <td className="py-1">
+                          <td className="py-1" data-label={`${t("common.amount")} (${currency})`}>
                             <Input
                               type="number"
                               step="any"

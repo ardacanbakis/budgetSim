@@ -120,3 +120,78 @@ html[data-compact="true"] {
     display: none !important;
   }
 }
+
+/*
+ * Wide tables become stacked cards on a phone. A five-column ledger is
+ * unreadable at 402px whichever way you scroll it, so below sm each row turns
+ * into its own card and every cell prints the header it belongs to — from
+ * data-label, which the markup supplies. Cells with no label (an actions
+ * column, say) just sit on their own line.
+ */
+@media (max-width: 639px) {
+  table.stack-sm,
+  table.stack-sm tbody,
+  table.stack-sm tr,
+  table.stack-sm td {
+    display: block;
+    width: 100%;
+  }
+
+  table.stack-sm thead {
+    display: none;
+  }
+
+  table.stack-sm tr {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--edge);
+    border-radius: 0.75rem;
+    padding: 0.25rem 0.75rem;
+  }
+
+  table.stack-sm td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.375rem 0;
+    text-align: right;
+  }
+
+  table.stack-sm td:not(:last-child) {
+    border-bottom: 1px solid var(--edge-soft);
+  }
+
+  table.stack-sm td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--muted, #71717a);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    text-align: left;
+    text-transform: none;
+  }
+
+  /* form cells fill the row rather than hugging the right edge */
+  table.stack-sm td:has(input, select) {
+    justify-content: stretch;
+  }
+
+  table.stack-sm td:has(input, select) > * {
+    flex: 1 1 auto;
+  }
+}
+
+/* a detail row belongs to the summary above it, not to a card of its own */
+@media (max-width: 639px) {
+  table.stack-sm tr.stack-attach {
+    margin-top: -0.5rem;
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  table.stack-sm tr.stack-attach td {
+    display: block;
+    text-align: left;
+  }
+}

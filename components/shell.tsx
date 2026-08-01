@@ -130,6 +130,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const rates = useRates();
   const settings = useUserSettings();
   const nav = orderedNav(settings.data?.navOrder);
+  // phone bar: the first four, plus More — except that the page you're on is
+  // always one of the four, so you can see where you are without opening it
+  const primaryNav = nav.slice(0, 4);
+  const overflowNav = nav.slice(4);
+  const activeOverflow = overflowNav.find((item) => item.href === pathname);
+  const barItems = activeOverflow ? [...primaryNav.slice(0, 3), activeOverflow] : primaryNav;
+  const [moreOpen, setMoreOpen] = useState(false);
   const [quickTx, setQuickTx] = useState(false);
   const [quickTransfer, setQuickTransfer] = useState(false);
   // icons-only sidebar: a property of the screen you're at, so device-local
@@ -280,7 +287,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           {showRateTicker ? <RateTicker /> : null}
           </div>
 
-          <main className="px-4 py-4 pb-24 md:px-6 md:pb-8">{children}</main>
+          <main className="px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-8">{children}</main>
         </div>
       </div>
 
@@ -297,24 +304,84 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
       <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
 
-      {/* bottom nav — mobile */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--edge)] bg-[var(--surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        {nav.map((item) => {
+      {/* bottom nav — mobile. Four fixed destinations plus More: a row that
+          scrolls sideways hides half its own targets, and a phone thumb wants
+          buttons it can hit without aiming. */}
+      <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex border-t border-[var(--edge)] bg-[var(--surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {barItems.map((item) => {
           const active = pathname === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex min-w-[4.4rem] flex-1 flex-col items-center gap-0.5 px-1 py-2 text-[10px] font-medium ${
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-11 flex-1 basis-0 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium ${
                 active ? "text-teal-600 dark:text-teal-400" : "text-zinc-500 dark:text-zinc-400"
               }`}
             >
               <span className="text-base leading-none">{item.icon}</span>
-              {t(item.key)}
+              <span className="w-full truncate text-center">{t(item.key)}</span>
             </Link>
           );
         })}
+        {overflowNav.length > 0 ? (
+          <button
+            onClick={() => setMoreOpen(true)}
+            aria-expanded={moreOpen}
+            className={`flex min-h-11 flex-1 basis-0 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium ${
+              moreOpen ? "text-teal-600 dark:text-teal-400" : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            <span className="text-base leading-none">⋯</span>
+            <span className="w-full truncate text-center">{t("nav.more")}</span>
+          </button>
+        ) : null}
       </nav>
+
+      {/* the rest of the nav, as a sheet */}
+      {moreOpen ? (
+        <div className="no-print fixed inset-0 z-50 flex items-end bg-black/40 md:hidden" onClick={() => setMoreOpen(false)}>
+          <div
+            className="w-full rounded-t-2xl bg-[var(--surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold">{t("nav.more")}</h3>
+              <button onClick={() => setMoreOpen(false)} aria-label={t("common.close")} className="rounded-md p-1 text-zinc-400">
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {overflowNav.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreOpen(false)}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-xl border border-[var(--edge)] px-2 py-3 text-xs font-medium ${
+                      active
+                        ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                        : "text-zinc-600 dark:text-zinc-300"
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{item.icon}</span>
+                    <span className="text-center">{t(item.key)}</span>
+                  </Link>
+                );
+              })}
+              <button
+                onClick={() => signOut().then(() => router.replace("/login"))}
+                className="flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-xl border border-[var(--edge)] px-2 py-3 text-xs font-medium text-zinc-500"
+              >
+                <span className="text-lg leading-none">⏻</span>
+                <span className="text-center">{t("nav.logout")}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

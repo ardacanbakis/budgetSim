@@ -502,7 +502,7 @@ function PasteModal({
             {blankRows > 0 ? <p className="text-xs text-zinc-400">{t("victvs.fillHint")}</p> : null}
             {rows.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="stack-sm w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-zinc-400">
                       <th className="py-1 pr-2 font-medium">{t("common.date")}</th>
@@ -517,10 +517,10 @@ function PasteModal({
                       const needsAttention = !r.date || !r.sessionType;
                       return (
                         <tr key={i} className={needsAttention ? "bg-amber-50/60 dark:bg-amber-950/30" : ""}>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("common.date")}>
                             <Input type="date" value={r.date} onChange={(e) => updateRow(i, { date: e.target.value })} className={!r.date ? "!border-amber-400" : ""} />
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("victvs.sessionType")}>
                             <Select
                               value={r.sessionType}
                               onChange={(e) =>
@@ -539,10 +539,10 @@ function PasteModal({
                               ))}
                             </Select>
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("victvs.sessionNo")}>
                             <Input value={r.sessionNo} onChange={(e) => updateRow(i, { sessionNo: e.target.value })} className="!w-28 font-mono" />
                           </td>
-                          <td className="py-1">
+                          <td className="py-1" data-label={`${t("common.amount")} ($)`}>
                             <Input
                               type="number"
                               step="any"
