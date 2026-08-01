@@ -169,7 +169,9 @@ export default function DashboardPage() {
     }
     const currencyOf = new Map(accounts.data.map((a) => [a.id, a.currency] as const));
     for (const tx of transactions.data) {
-      if (tx.status !== "completed" || tx.transferGroupId) continue;
+      // legacy = imported history, usually stamped with the import date; it
+      // would pile onto whichever month you happened to import in
+      if (tx.status !== "completed" || tx.transferGroupId || tx.legacy) continue;
       const bucket = byMonth.get(tx.dueDate.slice(0, 7));
       const currency = currencyOf.get(tx.accountId);
       if (!bucket || !currency) continue;
