@@ -34,7 +34,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "purchases", "accounts", "loans", "reports", "projections"] as const) {
+    for (const route of ["victvs", "transactions", "purchases", "accounts", "loans", "reports", "planner"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(700);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
@@ -322,14 +322,68 @@ test("planner: year jumps on the slider and expandable month detail", async ({ p
   await expect(page.getByRole("button", { name: "Single column" })).toBeVisible();
 });
 
-test("projections: horizon slider replaces the 12/24 buttons and reaches 10 years", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
+test("part1: current month first, history collapsed, legacy shown apart", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await enterDemo(page);
-  await page.goto("/projections");
-  await page.getByRole("button", { name: "10y" }).click();
+
+  // the ledger opens on now, with other years folded away
+  await page.goto("/transactions");
   await page.waitForTimeout(500);
-  // 120 monthly rows in the table
-  await expect(page.locator("tbody tr")).toHaveCount(120);
+  const heads = await page.getByText(/^[\u25b8\u25be] 20\d\d$/).allTextContents();
+  expect(heads[0]).toMatch(/\u25be/); // current year expanded
+  expect(heads.slice(1).every((h) => h.startsWith("\u25b8"))).toBe(true);
+  const thisMonth = new Date().toLocaleDateString("en-US", { month: "long" });
+  await expect(page.getByText(thisMonth).first()).toBeVisible();
+
+  // an imported record is summarised separately from the real net
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Data$/ }).click();
+  const legacySection = page.locator("text=Past incomes & expenses").locator("../..");
+  await legacySection.getByLabel(/amount/i).fill("4321");
+  await legacySection.getByLabel(/description/i).fill("Old payout");
+  await legacySection.getByRole("button", { name: /add legacy record/i }).click();
+  await page.waitForTimeout(600);
+  await page.goto("/transactions");
+  await page.waitForTimeout(500);
+  await expect(page.getByText(/Legacy \+/).first()).toBeVisible();
+});
+
+test("part1: victvs payouts group by year and month", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/victvs");
+
+  // create a payout from one unpaid session
+  await page.getByRole("button", { name: /^Unpaid$/ }).first().click();
+  await page.getByRole("checkbox").first().check();
+  await page.getByRole("button", { name: /Mark paid/i }).click();
+  await page.getByRole("button", { name: /^Confirm$/ }).click();
+  await page.waitForTimeout(700);
+  await page.getByRole("button", { name: /^All$/ }).first().click();
+  await page.waitForTimeout(400);
+
+  // it lands under a year → month heading rather than a flat row
+  const payouts = page.getByText("Payouts").locator("../..");
+  const thisMonth = new Date().toLocaleDateString("en-US", { month: "long" });
+  await expect(payouts).toContainText(String(new Date().getFullYear()));
+  await expect(payouts).toContainText(thisMonth);
+});
+
+test("part1: planner models a lost income source", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  const horizon = page.locator("text=Net worth at horizon").locator("..");
+  const before = (await horizon.textContent()) ?? "";
+  await page.getByRole("button", { name: /^VICTVS$/ }).first().click();
+  await page.waitForTimeout(500);
+  expect(await horizon.textContent()).not.toBe(before);
+});
+
+test("part1: the projections page is gone", async ({ page }) => {
+  await enterDemo(page);
+  const res = await page.goto("/projections");
+  expect(res?.status()).toBe(404);
 });
 
 test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
@@ -355,16 +409,11 @@ test("victvs bulk delete: appears on multi-select, confirms, removes rows", asyn
   expect(rowsAfter).toBeLessThan(rowsBefore);
 });
 
-test("scenario overlay and quick-add shortcut", async ({ page }) => {
+test("quick-add keyboard shortcut opens the transaction modal", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
-
-  await page.goto("/projections");
-  await page.getByText(/TRY devaluation|TL devalüasyonu/).click();
-  await page.waitForTimeout(600);
-  await expect(page.getByText(/TRY −25%/)).toBeVisible();
-
-  await page.locator("h1").click();
+  await page.goto("/transactions");
+  await page.locator("h1").first().click(); // move focus off any input
   await page.keyboard.press("n");
   await expect(page.getByRole("heading", { name: /new transaction|yeni işlem/i })).toBeVisible();
   await page.keyboard.press("Escape");

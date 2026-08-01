@@ -25,7 +25,6 @@ export const NAV = [
   { href: "/recurring", key: "nav.recurring", icon: "↻" },
   { href: "/loans", key: "nav.loans", icon: "⌂" },
   { href: "/reports", key: "nav.reports", icon: "◔" },
-  { href: "/projections", key: "nav.projections", icon: "↗" },
   { href: "/planner", key: "nav.planner", icon: "◈" },
   { href: "/settings", key: "nav.settings", icon: "⚙" },
 ] as const;

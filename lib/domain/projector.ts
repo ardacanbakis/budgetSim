@@ -86,6 +86,8 @@ export function projectCashflow(params: {
   extraFlows?: ExtraFlow[];
   /** expense categories whose ledger-projected flows are replaced by a budget */
   replaceCategories?: ReadonlySet<string>;
+  /** income categories to drop entirely — "what if I lost this income" */
+  dropIncomeCategories?: ReadonlySet<string>;
 }): ProjectionResult {
   const {
     accounts,
@@ -98,6 +100,7 @@ export function projectCashflow(params: {
     ratePath,
     extraFlows,
     replaceCategories,
+    dropIncomeCategories,
   } = params;
   const ratesAt = ratePath ?? (() => usdPer);
   const horizonEnd = addMonthsClamped(fromDate, months);
@@ -162,6 +165,8 @@ export function projectCashflow(params: {
     // a category with a budget is modelled by that budget instead of by
     // whatever the ledger happens to project for it — no double counting
     if (f.direction === "expense" && replaceCategories?.has(f.categoryId)) continue;
+    // "lose this income": the category stops arriving altogether
+    if (f.direction === "income" && dropIncomeCategories?.has(f.categoryId)) continue;
     buckets.get(f.date.slice(0, 7))?.push(f);
   }
   for (const extra of extraFlows ?? []) {

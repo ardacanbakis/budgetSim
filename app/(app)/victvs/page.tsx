@@ -93,11 +93,48 @@ export default function VictvsPage() {
     return [...byYear.entries()].sort((a, b) => (latestFirst ? (a[0] < b[0] ? 1 : -1) : a[0] > b[0] ? 1 : -1));
   }, [sessions.data, filter, latestFirst]);
 
+  // payouts grouped year → month, mirroring the sessions above them
+  const payoutGroups = useMemo(() => {
+    const byMonth = new Map<string, typeof list>();
+    type Payout = (typeof list)[number];
+    const list = payouts.data ?? [];
+    for (const p of list) {
+      const key = p.paymentDate.slice(0, 7);
+      byMonth.set(key, [...(byMonth.get(key) ?? []), p] as Payout[]);
+    }
+    const months = [...byMonth.entries()]
+      .map(([month, items]) => ({
+        month,
+        items: [...items].sort((a, b) => (latestFirst ? (a.paymentDate < b.paymentDate ? 1 : -1) : a.paymentDate > b.paymentDate ? 1 : -1)),
+        total: sumAmounts("USD", items.map((p) => p.total)),
+      }))
+      .sort((a, b) => (latestFirst ? (a.month < b.month ? 1 : -1) : a.month > b.month ? 1 : -1));
+    const byYear = new Map<string, typeof months>();
+    for (const m of months) {
+      const year = m.month.slice(0, 4);
+      byYear.set(year, [...(byYear.get(year) ?? []), m]);
+    }
+    return [...byYear.entries()].sort((a, b) => (latestFirst ? (a[0] < b[0] ? 1 : -1) : a[0] > b[0] ? 1 : -1));
+  }, [payouts.data, latestFirst]);
+
   const unpaidTotal = sumAmounts("USD", (sessions.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount));
   const selectedSessions = (sessions.data ?? []).filter((s) => selected.has(s.id));
   const selectedUnpaid = selectedSessions.filter((s) => s.status === "unpaid");
   const selectedPaid = selectedSessions.filter((s) => s.status === "paid");
   const selectedTotal = sumAmounts("USD", selectedUnpaid.map((s) => s.amount));
+
+  // history collapses by default: only the current year is open on arrival
+  const currentYear = todayISO().slice(0, 4);
+  const [collapseInit, setCollapseInit] = useState(false);
+  if (!collapseInit && (groups.length > 0 || payoutGroups.length > 0)) {
+    setCollapseInit(true);
+    setCollapsed(
+      new Set([
+        ...groups.map(([year]) => year).filter((year) => year !== currentYear),
+        ...payoutGroups.map(([year]) => `payouts-${year}`).filter((k) => k !== `payouts-${currentYear}`),
+      ])
+    );
+  }
 
   if (sessions.isLoading || accounts.isLoading || settings.isLoading) return <Spinner />;
 
@@ -261,27 +298,52 @@ export default function VictvsPage() {
         })
       )}
 
-      {(payouts.data ?? []).length > 0 ? (
+      {payoutGroups.length > 0 ? (
         <Card>
           <CardHeader title={t("victvs.payouts")} />
-          <ul className="divide-y divide-[var(--edge-soft)]">
-            {(payouts.data ?? []).map((p) => {
-              const account = (accounts.data ?? []).find((a) => a.id === p.accountId);
+          <div className="space-y-2 p-2">
+            {payoutGroups.map(([year, months]) => {
+              const key = `payouts-${year}`;
+              const yearCollapsed = collapsed.has(key);
+              const yearTotal = sumAmounts("USD", months.flatMap((m) => m.items.map((p) => p.total)));
               return (
-                <li key={p.id} className="flex items-center justify-between gap-2 px-4 py-3 text-sm">
-                  <div>
-                    <span className="font-medium text-green-600 tabular-nums">+{formatAmount(p.total, "USD", locale)}</span>
-                    <span className="ml-2 text-zinc-500">
-                      {p.sessionCount} {t("victvs.sessions")} → {account?.name ?? "?"} · {fmtDate(p.paymentDate)}
-                    </span>
-                  </div>
-                  <Button variant="ghost" onClick={() => window.confirm(t("common.confirmDelete")) && undoPayout.mutate(p.id)}>
-                    {t("victvs.undoPayout")}
-                  </Button>
-                </li>
+                <div key={key}>
+                  <button onClick={() => toggleCollapsed(key)} className="flex w-full items-center gap-2 px-2 py-1.5 text-left">
+                    <span className="text-sm font-bold">{yearCollapsed ? "▸" : "▾"} {year}</span>
+                    <span className="text-xs text-zinc-400 tabular-nums">{formatAmount(yearTotal, "USD", locale)}</span>
+                  </button>
+                  {yearCollapsed
+                    ? null
+                    : months.map(({ month, items, total }) => (
+                        <div key={month} className="ml-3 border-l border-[var(--edge-soft)] pl-2">
+                          <div className="flex items-center gap-2 px-2 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                            {monthLabel(month)}
+                            <span className="font-normal normal-case tabular-nums">{formatAmount(total, "USD", locale)}</span>
+                          </div>
+                          <ul className="divide-y divide-[var(--edge-soft)]">
+                            {items.map((p) => {
+                              const account = (accounts.data ?? []).find((a) => a.id === p.accountId);
+                              return (
+                                <li key={p.id} className="flex items-center justify-between gap-2 px-2 py-2.5 text-sm">
+                                  <div>
+                                    <span className="font-medium text-green-600 tabular-nums">+{formatAmount(p.total, "USD", locale)}</span>
+                                    <span className="ml-2 text-zinc-500">
+                                      {p.sessionCount} {t("victvs.sessions")} → {account?.name ?? "?"} · {fmtDate(p.paymentDate)}
+                                    </span>
+                                  </div>
+                                  <Button variant="ghost" onClick={() => window.confirm(t("common.confirmDelete")) && undoPayout.mutate(p.id)}>
+                                    {t("victvs.undoPayout")}
+                                  </Button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                </div>
               );
             })}
-          </ul>
+          </div>
         </Card>
       ) : null}
 
