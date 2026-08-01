@@ -22,9 +22,10 @@ export interface SpendStats {
 
 /**
  * Average monthly spending over the last N months (including the current
- * month), from completed expense transactions, transfers excluded. Each
- * transaction converts to the display currency via its own fx snapshot
- * (falling back to current rates) — the same no-drift rule as the charts.
+ * month), from completed expense transactions — transfers and legacy imports
+ * excluded. Each transaction converts to the display currency via its own fx
+ * snapshot (falling back to current rates) — the same no-drift rule as the
+ * charts.
  */
 export function averageMonthlySpend(params: {
   transactions: Transaction[];
@@ -46,7 +47,11 @@ export function averageMonthlySpend(params: {
   let total = 0;
 
   for (const t of transactions) {
-    if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null) continue;
+    // legacy rows are imported history, often stamped with the import date —
+    // counting them would inflate "what I spend now"
+    if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null || t.legacy) {
+      continue;
+    }
     const month = t.dueDate.slice(0, 7);
     if (month < firstMonth || month > currentMonth) continue;
     const currency = currencyOf.get(t.accountId);

@@ -67,6 +67,7 @@ export default function ReportsPage() {
   const rates = useRates();
 
   const [realTry, setRealTry] = useState(false);
+  const [includeLegacy, setIncludeLegacy] = useState(false);
   // category filter: empty = everything; otherwise only the picked categories
   // (chips toggle independently so tags can be viewed separately or together)
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
@@ -100,6 +101,7 @@ export default function ReportsPage() {
   const fmt = (v: number) => formatAmount(v, displayCurrency, locale);
   const currencyOf = new Map(accounts.data.map((a) => [a.id, a.currency] as const));
   const categoryById = new Map(categories.data.map((c) => [c.id, c]));
+  const hasLegacy = transactions.data.some((tx) => tx.legacy);
 
   // ---- net-worth history (snapshots are stored in USD; shown in display currency at current rates)
   const historyData = (snapshots.data ?? []).map((s) => ({
@@ -133,6 +135,11 @@ export default function ReportsPage() {
 
   for (const tx of transactions.data) {
     if (tx.status !== "completed" || tx.transferGroupId) continue;
+    // Legacy rows are history you imported, and they carry the date you
+    // imported them rather than when the money moved — a year of back-dated
+    // VICTVS payouts all land in one month and swamp the real figures. Off by
+    // default; the toggle is there when you do want the whole record.
+    if (tx.legacy && !includeLegacy) continue;
     if (selectedCats.size > 0 && !selectedCats.has(tx.categoryId ?? "")) continue;
     const idx = monthIndex.get(tx.dueDate.slice(0, 7));
     const currency = currencyOf.get(tx.accountId);
@@ -200,6 +207,17 @@ export default function ReportsPage() {
             <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs">
               <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={realTry} onChange={(e) => setRealTry(e.target.checked)} />
               {t("reports.realTry")}
+            </label>
+          ) : null}
+          {hasLegacy ? (
+            <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs" title={t("reports.includeLegacyHint")}>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-teal-600"
+                checked={includeLegacy}
+                onChange={(e) => setIncludeLegacy(e.target.checked)}
+              />
+              {t("reports.includeLegacy")}
             </label>
           ) : null}
           <Button variant="ghost" className="no-print" onClick={() => window.print()}>

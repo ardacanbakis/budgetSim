@@ -232,6 +232,26 @@ describe("averageMonthlySpend", () => {
     expect(stats.byAccount.get("try")).toBe(500);
   });
 
+  it("ignores imported legacy history, which carries the import date", () => {
+    const txs = [
+      tx({ accountId: "try", direction: "expense", amount: 1500, categoryId: "bills", dueDate: "2026-06-01" }),
+      // a back-dated import stamped with the day it was loaded — counting it
+      // would make this month look like a spending disaster
+      tx({ accountId: "try", direction: "expense", amount: 90_000, categoryId: "groc", dueDate: "2026-06-10", legacy: true }),
+    ];
+    const stats = averageMonthlySpend({
+      transactions: txs,
+      accounts,
+      categories,
+      usdPer: rates,
+      display: "TRY",
+      windowMonths: 3,
+      today: "2026-06-15",
+    });
+    expect(stats.totalMonthlyAverage).toBe(500); // 1500/3, the legacy row excluded
+    expect(stats.categories.some((c) => c.name === "Groceries")).toBe(false);
+  });
+
   it("uses each transaction's fx snapshot for conversion", () => {
     const oldSnapshot = { usdPer: { ...rates, TRY: 0.05 }, at: "2026-05-01" }; // 20 TRY per USD back then
     const txs = [

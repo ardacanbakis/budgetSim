@@ -364,6 +364,8 @@ export const en = {
     expenses: "Expenses",
     net: "Net",
     realTry: "Real TRY (inflation-adjusted)",
+    includeLegacy: "Include imported history",
+    includeLegacyHint: "Legacy records carry the date you imported them, not when the money moved — including them piles a whole backlog onto one month.",
   },
   debt: {
     totalDebt: "Total debt",
@@ -895,6 +897,8 @@ export const tr: Dictionary = {
     expenses: "Gider",
     net: "Net",
     realTry: "Reel TL (enflasyon düzeltmeli)",
+    includeLegacy: "İçe aktarılan geçmişi dahil et",
+    includeLegacyHint: "Geçmiş kayıtlar paranın hareket ettiği tarihi değil, içe aktardığın tarihi taşır — dahil etmek tüm birikimi tek aya yığar.",
   },
   debt: {
     totalDebt: "Toplam borç",
