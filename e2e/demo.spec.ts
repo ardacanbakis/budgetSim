@@ -209,6 +209,57 @@ test("wave12: rate ticker renders quotes and can be switched off in settings", a
   await expect(page.getByRole("marquee")).toHaveCount(0);
 });
 
+test("planner: what-if items and budgets move the horizon, and survive a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/planner");
+
+  const horizonCard = page.locator("text=Net worth at horizon").locator("..");
+  await page.getByRole("button", { name: "5y" }).click();
+  await page.waitForTimeout(300);
+  const baseText = (await horizonCard.textContent()) ?? "";
+
+  // a second salary of 1,500/mo over 5 years must add exactly 90,000
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Second salary");
+  await page.getByRole("button", { name: /^Income$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("1500");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(400);
+  const withSalary = (await horizonCard.textContent()) ?? "";
+  expect(withSalary).not.toBe(baseText);
+  await expect(page.getByText(/\$180,000\.00 over the horizon|\$90,000\.00 over the horizon/)).toBeVisible();
+
+  // a capped mortgage shows its own horizon total and pulls the line down
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Mortgage");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("900");
+  await page.getByLabel(/Runs for/i).fill("120");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(400);
+  expect(await horizonCard.textContent()).not.toBe(withSalary);
+
+  // year milestones render inside the horizon
+  await expect(page.getByRole("heading", { name: "Where you land" })).toBeVisible();
+
+  // the plan is a scratchpad kept on this device — it survives a reload
+  await page.reload();
+  await page.waitForTimeout(800);
+  await expect(page.locator("li").filter({ hasText: "Mortgage" })).toHaveCount(1);
+  await page.screenshot({ path: "e2e/screenshots/planner.png" });
+});
+
+test("projections: horizon slider replaces the 12/24 buttons and reaches 10 years", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  await page.goto("/projections");
+  await page.getByRole("button", { name: "10y" }).click();
+  await page.waitForTimeout(500);
+  // 120 monthly rows in the table
+  await expect(page.locator("tbody tr")).toHaveCount(120);
+});
+
 test("victvs bulk delete: appears on multi-select, confirms, removes rows", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

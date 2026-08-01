@@ -13,7 +13,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button, Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
+import { HorizonSlider } from "@/components/horizonSlider";
+import { Card, CardHeader, Field, Input, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { formatAmount } from "@/lib/domain/currencies";
@@ -37,7 +38,7 @@ export default function ProjectionsPage() {
   const templates = useTemplates();
   const rates = useRates();
   const categories = useCategories();
-  const [months, setMonths] = useState<12 | 24>(12);
+  const [months, setMonths] = useState(12);
 
   // scenario controls (session-only; no persistence needed)
   const [loseIncomeOn, setLoseIncomeOn] = useState(false);
@@ -115,20 +116,14 @@ export default function ProjectionsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{t("projections.title")}</h1>
-          <p className="text-sm text-zinc-500">{t("projections.hint")}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant={months === 12 ? "primary" : "secondary"} onClick={() => setMonths(12)}>
-            {t("projections.months12")}
-          </Button>
-          <Button variant={months === 24 ? "primary" : "secondary"} onClick={() => setMonths(24)}>
-            {t("projections.months24")}
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-xl font-bold">{t("projections.title")}</h1>
+        <p className="text-sm text-zinc-500">{t("projections.hint")}</p>
       </div>
+
+      <Card className="p-4">
+        <HorizonSlider months={months} onChange={setMonths} />
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Card className="p-4">
@@ -206,7 +201,7 @@ export default function ProjectionsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
                 <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} interval="preserveStartEnd" minTickGap={28} />
                 <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
                   tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
@@ -237,7 +232,7 @@ export default function ProjectionsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }} barGap={2}>
                 <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} interval="preserveStartEnd" minTickGap={28} />
                 <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
                   tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} cursor={{ fill: "var(--viz-grid)", opacity: 0.4 }} />
