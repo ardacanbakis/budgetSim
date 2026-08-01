@@ -71,35 +71,65 @@ export default function TransactionsPage() {
     );
   }, [transactions.data, filterAccount, filterStatus, filterDirection, latestFirst]);
 
-  // year → month grouping (like VICTVS) with a per-month outcome in the
-  // display currency: income − expense = net over the visible items,
-  // transfers and legacy records excluded, converted via each tx's snapshot
+  const thisMonth = todayISO().slice(0, 7);
+
+  // Year → month grouping with a per-month outcome in the display currency:
+  // income − expense = net, transfers excluded and legacy kept in its own
+  // running total so imported history is visible without skewing the real one.
   const groups = useMemo(() => {
     const currencyOf = new Map((accounts.data ?? []).map((a) => [a.id, a.currency] as const));
-    const byMonth = new Map<string, { items: Transaction[]; income: number; expense: number }>();
+    const byMonth = new Map<
+      string,
+      { items: Transaction[]; income: number; expense: number; legacyIncome: number; legacyExpense: number }
+    >();
     for (const tx of filtered) {
       const month = tx.dueDate.slice(0, 7);
-      const bucket = byMonth.get(month) ?? { items: [], income: 0, expense: 0 };
+      const bucket =
+        byMonth.get(month) ?? { items: [], income: 0, expense: 0, legacyIncome: 0, legacyExpense: 0 };
       bucket.items.push(tx);
-      if (!tx.transferGroupId && !tx.legacy) {
+      if (!tx.transferGroupId) {
         const currency = currencyOf.get(tx.accountId);
         const usdPer = tx.fxSnapshot?.usdPer ?? rates.data?.usdPer;
         const converted = currency && usdPer ? convert(tx.amount, currency, displayCurrency, usdPer) : null;
         if (converted != null) {
-          if (tx.direction === "income") bucket.income += converted;
+          if (tx.legacy) {
+            if (tx.direction === "income") bucket.legacyIncome += converted;
+            else bucket.legacyExpense += converted;
+          } else if (tx.direction === "income") bucket.income += converted;
           else bucket.expense += converted;
         }
       }
       byMonth.set(month, bucket);
     }
     const months = [...byMonth.entries()].map(([month, b]) => ({ month, ...b, net: b.income - b.expense }));
+
+    // "now" first, then recent history, with the future after it — landing on
+    // a ledger full of next year's planned rows helps nobody
+    const rank = (month: string) => (month === thisMonth ? 0 : month < thisMonth ? 1 : 2);
+    months.sort((a, b) => {
+      const ra = rank(a.month);
+      const rb = rank(b.month);
+      if (ra !== rb) return ra - rb;
+      // past: nearest first; future: nearest first
+      return ra === 2 ? (a.month < b.month ? -1 : 1) : a.month < b.month ? 1 : -1;
+    });
+
     const byYear = new Map<string, typeof months>();
     for (const m of months) {
       const year = m.month.slice(0, 4);
       byYear.set(year, [...(byYear.get(year) ?? []), m]);
     }
-    return [...byYear.entries()].sort((a, b) => (latestFirst ? (a[0] < b[0] ? 1 : -1) : a[0] > b[0] ? 1 : -1));
-  }, [filtered, accounts.data, rates.data, displayCurrency, latestFirst]);
+    // years inherit the order their first month landed in
+    return [...byYear.entries()];
+  }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth]);
+
+  // history collapses by default: only the current year is open on arrival
+  const currentYear = thisMonth.slice(0, 4);
+  const [collapseInit, setCollapseInit] = useState(false);
+  if (!collapseInit && groups.length > 0) {
+    setCollapseInit(true);
+    setCollapsed(new Set(groups.map(([year]) => year).filter((year) => year !== currentYear)));
+  }
 
   const toggleCollapsed = (key: string) =>
     setCollapsed((prev) => {
@@ -178,6 +208,7 @@ export default function TransactionsPage() {
         groups.map(([year, months]) => {
           const yearCollapsed = collapsed.has(year);
           const yearNet = months.reduce((s, m) => s + m.net, 0);
+          const yearLegacy = months.reduce((s, m) => s + m.legacyIncome - m.legacyExpense, 0);
           return (
             <div key={year} className="space-y-3">
               <button onClick={() => toggleCollapsed(year)} className="flex w-full flex-wrap items-center gap-2 text-left">
@@ -185,10 +216,16 @@ export default function TransactionsPage() {
                 <span className={`text-sm font-semibold tabular-nums ${yearNet >= 0 ? "text-green-600" : "text-red-600"}`}>
                   {yearNet >= 0 ? "+" : "−"}{formatAmount(Math.abs(yearNet), displayCurrency, locale)}
                 </span>
+                {yearLegacy !== 0 ? (
+                  <Badge tone="zinc">
+                    {t("legacy.badge")} {yearLegacy >= 0 ? "+" : "−"}
+                    {formatAmount(Math.abs(yearLegacy), displayCurrency, locale)}
+                  </Badge>
+                ) : null}
               </button>
               {yearCollapsed
                 ? null
-                : months.map(({ month, items, income, expense, net }) => {
+                : months.map(({ month, items, income, expense, net, legacyIncome, legacyExpense }) => {
                     const monthCollapsed = collapsed.has(month);
                     return (
                       <Card key={month}>
@@ -209,6 +246,16 @@ export default function TransactionsPage() {
                             <span className={`font-semibold ${net >= 0 ? "text-green-600" : "text-red-600"}`}>
                               {net >= 0 ? "+" : "−"}{formatAmount(Math.abs(net), displayCurrency, locale)}
                             </span>
+                            {legacyIncome !== 0 || legacyExpense !== 0 ? (
+                              // imported history is kept out of the net above, so it gets
+                              // its own line rather than silently disappearing
+                              <span className="ml-2 text-zinc-400">
+                                · {t("legacy.badge")}{" "}
+                                {legacyIncome !== 0 ? `+${formatAmount(legacyIncome, displayCurrency, locale)}` : ""}
+                                {legacyIncome !== 0 && legacyExpense !== 0 ? " / " : ""}
+                                {legacyExpense !== 0 ? `−${formatAmount(legacyExpense, displayCurrency, locale)}` : ""}
+                              </span>
+                            ) : null}
                           </span>
                         </button>
                         {monthCollapsed ? null : (

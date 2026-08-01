@@ -22,6 +22,7 @@ import {
   planIsEmpty,
   planMilestones,
   monthsBetween,
+  planDroppedIncome,
   planReplacedCategories,
   retentionFactor,
 } from "@/lib/domain/planner";
@@ -89,6 +90,7 @@ export default function PlannerPage() {
             // older saved plans predate per-entry currency and devaluation
             setPlan({
               devaluation: saved.devaluation ?? EMPTY_PLAN.devaluation,
+              lostIncome: saved.lostIncome ?? [],
               items: saved.items.map((i) => ({
                 ...i,
                 currency: i.currency ?? "USD",
@@ -154,6 +156,7 @@ export default function PlannerPage() {
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
     extraFlows: planExtraFlows(plan, months, firstMonth),
     replaceCategories: planReplacedCategories(plan),
+    dropIncomeCategories: planDroppedIncome(plan),
   });
 
   // pre-fill suggestions from what the user actually spends
@@ -171,6 +174,7 @@ export default function PlannerPage() {
   const fmt = (v: number) => formatAmount(v, displayCurrency, locale);
   const categoryName = (id: string) => categories.data?.find((c) => c.id === id)?.name ?? "";
   const expenseCategories = categories.data.filter((c) => c.direction === "expense");
+  const incomeCategories = categories.data.filter((c) => c.direction === "income");
   const budgetByCategory = new Map(plan.budgets.map((b) => [b.categoryId, b]));
 
   const baseEnd = base.months[base.months.length - 1]?.endNetWorth ?? base.startNetWorth;
@@ -305,6 +309,38 @@ export default function PlannerPage() {
                 </p>
               </>
             ) : null}
+          </div>
+        </Card>
+
+        {/* what if an income source stops */}
+        <Card>
+          <CardHeader title={t("planner.lostIncomeTitle")} />
+          <div className="space-y-2 p-4">
+            <p className="text-xs text-zinc-500">{t("planner.lostIncomeHint")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {incomeCategories.map((c) => {
+                const lost = plan.lostIncome.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() =>
+                      persist({
+                        ...plan,
+                        lostIncome: lost
+                          ? plan.lostIncome.filter((id) => id !== c.id)
+                          : [...plan.lostIncome, c.id],
+                      })
+                    }
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                      lost ? "border-red-500 bg-red-500 text-white line-through" : "text-zinc-500 hover:opacity-80"
+                    }`}
+                    style={lost ? undefined : { borderColor: c.color }}
+                  >
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </Card>
 

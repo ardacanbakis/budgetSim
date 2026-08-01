@@ -66,10 +66,12 @@ export interface Plan {
   items: PlanItem[];
   budgets: CategoryBudget[];
   devaluation: Devaluation;
+  /** income category ids to model as lost — "what if the VICTVS work dried up" */
+  lostIncome: string[];
 }
 
 export const NO_DEVALUATION: Devaluation = { enabled: false, pctPerYear: 25 };
-export const EMPTY_PLAN: Plan = { items: [], budgets: [], devaluation: NO_DEVALUATION };
+export const EMPTY_PLAN: Plan = { items: [], budgets: [], devaluation: NO_DEVALUATION, lostIncome: [] };
 
 /** The currency that devalues. Everything else is treated as stable. */
 const SOFT_CURRENCY: Currency = "TRY";
@@ -203,6 +205,11 @@ export function planExtraFlows(plan: Plan, months: number, firstMonth: string): 
   return flows;
 }
 
+/** Income categories the plan assumes stop arriving. */
+export function planDroppedIncome(plan: Plan): Set<string> {
+  return new Set(plan.lostIncome ?? []);
+}
+
 /** Categories whose ledger projection a budget takes over. */
 export function planReplacedCategories(plan: Plan): Set<string> {
   return new Set(
@@ -214,6 +221,7 @@ export function planIsEmpty(plan: Plan): boolean {
   return (
     !plan.items.some((i) => i.enabled && i.amount > 0) &&
     !plan.budgets.some((b) => b.enabled && b.monthlyAmount > 0) &&
+    (plan.lostIncome ?? []).length === 0 &&
     activeRate(plan.devaluation) === 0
   );
 }
