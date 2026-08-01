@@ -202,10 +202,10 @@ test("wave12: rate ticker renders quotes and can be switched off in settings", a
   expect(text).toContain("BTC/USD");
   await page.screenshot({ path: "e2e/screenshots/wave12-ticker.png" });
 
-  // opt out from Settings → Preferences
+  // opt out from Settings → Preferences (click the label; asserting on the
+  // resulting UI is steadier than uncheck(), which races the re-render)
   await page.goto("/settings");
-  await page.getByRole("checkbox").nth(1).uncheck();
-  await page.waitForTimeout(600);
+  await page.getByText("Market rate ticker").click();
   await expect(page.getByRole("marquee")).toHaveCount(0);
 });
 
@@ -248,6 +248,43 @@ test("planner: what-if items and budgets move the horizon, and survive a reload"
   await page.waitForTimeout(800);
   await expect(page.locator("li").filter({ hasText: "Mortgage" })).toHaveCount(1);
   await page.screenshot({ path: "e2e/screenshots/planner.png" });
+});
+
+test("planner: per-item currency, and devaluation erodes a fixed TRY loan", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.getByRole("button", { name: "10y" }).click();
+  await page.waitForTimeout(400);
+
+  const horizon = page.locator("text=Net worth at horizon").locator("..");
+  const before = (await horizon.textContent()) ?? "";
+
+  // a fixed-rate lira mortgage, entered in TRY rather than the display currency
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("TRY mortgage");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("30000");
+  await page.locator(".fixed.inset-0 select").first().selectOption("TRY");
+  // the inflation toggle is offered only for the currency that devalues
+  await expect(page.getByText("Amount rises with inflation")).toBeVisible();
+  await page.getByRole("checkbox").last().uncheck();
+  await page.getByLabel(/Starts in/i).fill("6");
+  await page.getByLabel(/Runs for/i).fill("120");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(400);
+
+  // the item keeps its own currency in the list
+  await expect(page.locator("li").filter({ hasText: "TRY mortgage" })).toContainText("₺");
+  const withLoan = (await horizon.textContent()) ?? "";
+  expect(withLoan).not.toBe(before);
+
+  // switching devaluation on makes the fixed lira debt cheaper in dollars
+  await page.getByText("Model a steadily weakening lira").click();
+  await page.waitForTimeout(600);
+  await expect(page.getByText(/the lira loses about \d+% of its value/)).toBeVisible();
+  expect(await horizon.textContent()).not.toBe(withLoan);
+  await page.screenshot({ path: "e2e/screenshots/planner-devaluation.png" });
 });
 
 test("projections: horizon slider replaces the 12/24 buttons and reaches 10 years", async ({ page }) => {

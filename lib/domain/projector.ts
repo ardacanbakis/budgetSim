@@ -33,13 +33,29 @@ interface FlowItem {
   categoryId: string;
 }
 
+/** A hypothetical flow the planner injects, already scheduled and priced. */
+export interface ExtraFlow {
+  /** 0 = the first projected month */
+  monthOffset: number;
+  direction: "income" | "expense";
+  /** in `currency`, nominal for that month */
+  amount: number;
+  currency: Currency;
+  categoryId: string;
+}
+
 /**
  * Cashflow projection over an arbitrary horizon (1–120 months) in the display
- * currency, using current rates (documented simplification — no FX
- * forecasting). Sources of flow:
- * planned transactions, plus recurring-template occurrences that have no
- * materialized planned transaction yet (deduped by template+date).
- * Transfer legs cancel out in a single net-worth view and are excluded.
+ * currency. Sources of flow: planned transactions, plus recurring-template
+ * occurrences that have no materialized planned transaction yet (deduped by
+ * template+date). Transfer legs cancel out in a single net-worth view and are
+ * excluded.
+ *
+ * Holdings are carried per currency rather than as one running total, so an
+ * optional `ratePath` (the planner's devaluation assumption) revalues what you
+ * already hold as well as what flows in — a lira balance really does lose
+ * value over ten years. With no ratePath the rates are constant and the result
+ * is identical to summing the monthly nets.
  */
 export function projectCashflow(params: {
   accounts: Account[];
@@ -49,8 +65,26 @@ export function projectCashflow(params: {
   display: Currency;
   fromDate: string; // yyyy-mm-dd
   months: number;
+  /** rates for month `offset` (0 = first projected month); defaults to constant */
+  ratePath?: (offset: number) => UsdPerMap;
+  /** hypothetical flows from the planner */
+  extraFlows?: ExtraFlow[];
+  /** expense categories whose ledger-projected flows are replaced by a budget */
+  replaceCategories?: ReadonlySet<string>;
 }): ProjectionResult {
-  const { accounts, transactions, templates, usdPer, display, fromDate, months } = params;
+  const {
+    accounts,
+    transactions,
+    templates,
+    usdPer,
+    display,
+    fromDate,
+    months,
+    ratePath,
+    extraFlows,
+    replaceCategories,
+  } = params;
+  const ratesAt = ratePath ?? (() => usdPer);
   const horizonEnd = addMonthsClamped(fromDate, months);
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
 
@@ -97,30 +131,73 @@ export function projectCashflow(params: {
     }
   }
 
-  const buckets = new Map<string, { income: number; expense: number; expenseByCategory: Record<string, number> }>();
+  // flows grouped by month, kept in their native currency so each month can be
+  // valued at that month's rates
+  const monthKeys: string[] = [];
+  const buckets = new Map<string, FlowItem[]>();
   for (let i = 0; i < months; i++) {
-    buckets.set(addMonthsClamped(fromDate, i).slice(0, 7), { income: 0, expense: 0, expenseByCategory: {} });
+    const key = addMonthsClamped(fromDate, i).slice(0, 7);
+    monthKeys.push(key);
+    buckets.set(key, []);
   }
   for (const f of flows) {
     if (f.isTransfer) continue;
-    const bucket = buckets.get(f.date.slice(0, 7));
-    if (!bucket) continue;
-    const converted = convert(f.amount, f.currency, display, usdPer);
-    if (converted == null) continue;
-    if (f.direction === "income") bucket.income += converted;
-    else {
-      bucket.expense += converted;
-      bucket.expenseByCategory[f.categoryId] = (bucket.expenseByCategory[f.categoryId] ?? 0) + converted;
-    }
+    // a category with a budget is modelled by that budget instead of by
+    // whatever the ledger happens to project for it — no double counting
+    if (f.direction === "expense" && replaceCategories?.has(f.categoryId)) continue;
+    buckets.get(f.date.slice(0, 7))?.push(f);
+  }
+  for (const extra of extraFlows ?? []) {
+    const key = monthKeys[extra.monthOffset];
+    if (key == null) continue;
+    buckets.get(key)?.push({
+      date: key,
+      direction: extra.direction,
+      amount: extra.amount,
+      currency: extra.currency,
+      isTransfer: false,
+      categoryId: extra.categoryId,
+    });
   }
 
-  let running = startNetWorth;
-  const result: ProjectionMonth[] = [];
-  for (const [month, { income, expense, expenseByCategory }] of buckets) {
-    const net = income - expense;
-    running += net;
-    result.push({ month, income, expense, net, endNetWorth: running, expenseByCategory });
+  // what you already hold, per currency — this is what devaluation revalues
+  const holdings = new Map<Currency, number>();
+  const skipped = new Set(skippedAccountIds);
+  for (const a of accounts) {
+    if (a.archived || skipped.has(a.id)) continue;
+    holdings.set(a.currency, (holdings.get(a.currency) ?? 0) + (balances.get(a.id) ?? 0));
   }
+
+  const valueOf = (rates: UsdPerMap): number => {
+    let total = 0;
+    for (const [currency, amount] of holdings) {
+      const converted = convert(amount, currency, display, rates);
+      if (converted != null) total += converted;
+    }
+    return total;
+  };
+
+  const result: ProjectionMonth[] = [];
+  monthKeys.forEach((month, offset) => {
+    const rates = ratesAt(offset);
+    let income = 0;
+    let expense = 0;
+    const expenseByCategory: Record<string, number> = {};
+    for (const f of buckets.get(month) ?? []) {
+      const converted = convert(f.amount, f.currency, display, rates);
+      if (converted == null) continue;
+      holdings.set(
+        f.currency,
+        (holdings.get(f.currency) ?? 0) + (f.direction === "income" ? f.amount : -f.amount)
+      );
+      if (f.direction === "income") income += converted;
+      else {
+        expense += converted;
+        expenseByCategory[f.categoryId] = (expenseByCategory[f.categoryId] ?? 0) + converted;
+      }
+    }
+    result.push({ month, income, expense, net: income - expense, endNetWorth: valueOf(rates), expenseByCategory });
+  });
 
   return { startNetWorth, months: result, skippedAccountIds };
 }
