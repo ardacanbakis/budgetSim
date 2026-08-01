@@ -7,16 +7,21 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Selec
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { TxDirection } from "@/lib/data/types";
-import { formatAmount } from "@/lib/domain/currencies";
+import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import {
-  applyPlan,
   averageMonthlyNet,
+  buildRatePath,
   CategoryBudget,
+  EMPTY_PLAN,
   itemHorizonTotal,
   Plan,
   PlanFrequency,
   PlanItem,
+  planExtraFlows,
+  planIsEmpty,
   planMilestones,
+  planReplacedCategories,
+  retentionFactor,
 } from "@/lib/domain/planner";
 import { projectCashflow } from "@/lib/domain/projector";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -46,7 +51,7 @@ export default function PlannerPage() {
   const rates = useRates();
 
   const [months, setMonths] = useState(60);
-  const [plan, setPlan] = useState<Plan>({ items: [], budgets: [] });
+  const [plan, setPlan] = useState<Plan>(EMPTY_PLAN);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<PlanItem | null>(null);
   const [adding, setAdding] = useState(false);
@@ -58,7 +63,14 @@ export default function PlannerPage() {
         const raw = window.localStorage.getItem(PLAN_KEY);
         if (raw) {
           const saved = JSON.parse(raw) as Plan;
-          if (Array.isArray(saved.items) && Array.isArray(saved.budgets)) setPlan(saved);
+          if (Array.isArray(saved.items) && Array.isArray(saved.budgets)) {
+            // older saved plans predate per-entry currency and devaluation
+            setPlan({
+              devaluation: saved.devaluation ?? EMPTY_PLAN.devaluation,
+              items: saved.items.map((i) => ({ ...i, currency: i.currency ?? "USD", inflates: i.inflates ?? true })),
+              budgets: saved.budgets.map((b) => ({ ...b, currency: b.currency ?? "USD" })),
+            });
+          }
         }
         const savedHorizon = Number(window.localStorage.getItem(HORIZON_KEY));
         if (savedHorizon >= 1 && savedHorizon <= 120) setMonths(savedHorizon);
@@ -91,7 +103,20 @@ export default function PlannerPage() {
     fromDate: todayISO(),
     months,
   });
-  const planned = applyPlan(base, plan);
+  // the plan re-runs the same engine with its own rate path and flows, so the
+  // two lines differ only by the assumptions themselves
+  const planned = projectCashflow({
+    accounts: accounts.data,
+    transactions: transactions.data,
+    templates: templates.data,
+    usdPer: rates.data.usdPer,
+    display: displayCurrency,
+    fromDate: todayISO(),
+    months,
+    ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
+    extraFlows: planExtraFlows(plan, months),
+    replaceCategories: planReplacedCategories(plan),
+  });
 
   // pre-fill suggestions from what the user actually spends
   const spend = averageMonthlySpend({
@@ -112,7 +137,7 @@ export default function PlannerPage() {
   const baseEnd = base.months[base.months.length - 1]?.endNetWorth ?? base.startNetWorth;
   const planEnd = planned.months[planned.months.length - 1]?.endNetWorth ?? planned.startNetWorth;
   const delta = planEnd - baseEnd;
-  const hasPlan = plan.items.some((i) => i.enabled) || plan.budgets.some((b) => b.enabled);
+  const hasPlan = !planIsEmpty(plan);
 
   const chartData = planned.months.map((m, i) => ({
     month: m.month,
@@ -127,7 +152,7 @@ export default function PlannerPage() {
     const existing = budgetByCategory.get(categoryId);
     const next = existing
       ? plan.budgets.map((b) => (b.categoryId === categoryId ? { ...b, ...patch } : b))
-      : [...plan.budgets, { categoryId, monthlyAmount: 0, enabled: true, ...patch }];
+      : [...plan.budgets, { categoryId, monthlyAmount: 0, currency: displayCurrency, enabled: true, ...patch }];
     persist({ ...plan, budgets: next });
   };
 
@@ -150,6 +175,52 @@ export default function PlannerPage() {
 
       <Card className="p-4">
         <HorizonSlider months={months} onChange={setHorizon} />
+      </Card>
+
+      {/* the assumption that dominates a 10-year view from Turkey */}
+      <Card>
+        <CardHeader title={t("planner.devalTitle")} />
+        <div className="space-y-3 p-4">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-teal-600"
+              checked={plan.devaluation.enabled}
+              onChange={(e) => persist({ ...plan, devaluation: { ...plan.devaluation, enabled: e.target.checked } })}
+            />
+            <span>
+              <span className="block text-sm font-medium">{t("planner.devalEnable")}</span>
+              <span className="block text-xs text-zinc-500">{t("planner.devalHint")}</span>
+            </span>
+          </label>
+          {plan.devaluation.enabled ? (
+            <>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value={plan.devaluation.pctPerYear}
+                  onChange={(e) =>
+                    persist({ ...plan, devaluation: { ...plan.devaluation, pctPerYear: Number(e.target.value) } })
+                  }
+                  className="flex-1 accent-teal-600"
+                  aria-label={t("planner.devalRate")}
+                />
+                <span className="w-28 text-right text-sm font-semibold tabular-nums">
+                  −{plan.devaluation.pctPerYear}% {t("planner.perYear")}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500">
+                {t("planner.devalExplain", {
+                  years: Math.max(1, Math.round(months / 12)),
+                  pct: Math.round((1 - retentionFactor(plan.devaluation, months)) * 100),
+                })}
+              </p>
+            </>
+          ) : null}
+        </div>
       </Card>
 
       {/* headline: where you land, with and without the plan */}
@@ -244,12 +315,12 @@ export default function PlannerPage() {
                       ? ` · ${item.durationMonths != null ? t("planner.forMonths", { count: item.durationMonths }) : t("planner.ongoing")}`
                       : ""}
                     {" · "}
-                    {t("planner.horizonTotal", { amount: fmt(itemHorizonTotal(item, months)) })}
+                    {t("planner.horizonTotal", { amount: formatAmount(itemHorizonTotal(item, months, plan.devaluation), item.currency, locale) })}
                   </div>
                 </div>
                 <span className={`text-sm font-semibold tabular-nums ${item.direction === "income" ? "text-green-600" : "text-red-600"}`}>
                   {item.direction === "income" ? "+" : "−"}
-                  {fmt(item.amount)}
+                  {formatAmount(item.amount, item.currency, locale)}
                 </span>
                 <Button variant="ghost" aria-label={t("common.edit")} onClick={() => setEditing(item)}>
                   ✎
@@ -296,7 +367,15 @@ export default function PlannerPage() {
                   </label>
                   {average > 0 ? (
                     <button
-                      onClick={() => setBudget(c.id, { enabled: true, monthlyAmount: Math.round(average) })}
+                      onClick={() =>
+                        // the average is computed in the display currency, so
+                        // adopt that currency along with the number
+                        setBudget(c.id, {
+                          enabled: true,
+                          monthlyAmount: Math.round(average),
+                          currency: displayCurrency,
+                        })
+                      }
                       className="text-[11px] text-teal-600 hover:underline"
                       title={t("planner.useAverageHint")}
                     >
@@ -313,7 +392,18 @@ export default function PlannerPage() {
                     value={budget ? String(budget.monthlyAmount) : ""}
                     onChange={(e) => setBudget(c.id, { monthlyAmount: Number(e.target.value) || 0, enabled: true })}
                   />
-                  <span className="w-10 text-xs text-zinc-400">{displayCurrency}</span>
+                  <Select
+                    className="!w-24"
+                    aria-label={`${c.name} ${t("common.currency")}`}
+                    value={budget?.currency ?? displayCurrency}
+                    onChange={(e) => setBudget(c.id, { currency: e.target.value as Currency })}
+                  >
+                    {CURRENCIES.map((cur) => (
+                      <option key={cur} value={cur}>
+                        {cur === "XAU_G" ? "GOLD" : cur}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
               );
             })}
@@ -425,7 +515,7 @@ function PlanItemModal({
 }: {
   open: boolean;
   initial: PlanItem | null;
-  currency: string;
+  currency: Currency;
   onClose: () => void;
   onSave: (item: PlanItem) => void;
 }) {
@@ -433,6 +523,8 @@ function PlanItemModal({
   const [label, setLabel] = useState("");
   const [direction, setDirection] = useState<TxDirection>("income");
   const [amount, setAmount] = useState("");
+  const [itemCurrency, setItemCurrency] = useState<Currency>(currency);
+  const [inflates, setInflates] = useState(true);
   const [frequency, setFrequency] = useState<PlanFrequency>("monthly");
   const [startMonth, setStartMonth] = useState("0");
   const [duration, setDuration] = useState("");
@@ -446,6 +538,8 @@ function PlanItemModal({
     setLabel(initial?.label ?? "");
     setDirection(initial?.direction ?? "income");
     setAmount(initial ? String(initial.amount) : "");
+    setItemCurrency(initial?.currency ?? currency);
+    setInflates(initial?.inflates ?? true);
     setFrequency(initial?.frequency ?? "monthly");
     setStartMonth(String(initial?.startMonth ?? 0));
     setDuration(initial?.durationMonths != null ? String(initial.durationMonths) : "");
@@ -464,6 +558,8 @@ function PlanItemModal({
             label: label.trim() || t("planner.untitled"),
             direction,
             amount: value,
+            currency: itemCurrency,
+            inflates,
             frequency,
             startMonth: Math.max(0, Math.floor(Number(startMonth) || 0)),
             durationMonths: duration.trim() === "" ? null : Math.max(1, Math.floor(Number(duration))),
@@ -482,9 +578,18 @@ function PlanItemModal({
             {t("tx.expense")}
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={`${t("common.amount")} (${currency})`}>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label={t("common.amount")}>
             <Input type="number" step="any" min="0" required inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </Field>
+          <Field label={t("common.currency")}>
+            <Select value={itemCurrency} onChange={(e) => setItemCurrency(e.target.value as Currency)}>
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c === "XAU_G" ? "GOLD g" : c}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label={t("recurring.frequency")}>
             <Select value={frequency} onChange={(e) => setFrequency(e.target.value as PlanFrequency)}>
@@ -494,6 +599,20 @@ function PlanItemModal({
             </Select>
           </Field>
         </div>
+        {itemCurrency === "TRY" ? (
+          <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-teal-600"
+              checked={inflates}
+              onChange={(e) => setInflates(e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-medium">{t("planner.inflates")}</span>
+              <span className="block text-xs text-zinc-500">{t("planner.inflatesHint")}</span>
+            </span>
+          </label>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           {/* deliberately not capped to the horizon: something starting in 36
               months is a valid plan even while you're looking at 12 — capping
