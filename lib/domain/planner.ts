@@ -23,8 +23,9 @@ export interface PlanItem {
   amount: number;
   currency: Currency;
   frequency: PlanFrequency;
-  /** months from the projection start; 0 = the first projected month */
-  startMonth: number;
+  /** absolute start month, "yyyy-MM" — stored as a real date so a plan still
+   * means the same thing when you open it again next month */
+  startMonth: string;
   /** how many months it runs; null = until the end of the horizon.
    * Ignored for "once". A 120-month mortgage is durationMonths: 120. */
   durationMonths: number | null;
@@ -47,6 +48,8 @@ export interface PlanItem {
  */
 export interface CategoryBudget {
   categoryId: string;
+  /** the category's name, carried so the timeline can label the line */
+  label: string;
   monthlyAmount: number;
   currency: Currency;
   enabled: boolean;
@@ -117,10 +120,27 @@ export function nominalAmountAt(
   return retained > 0 ? amount / retained : amount;
 }
 
-/** Does a repeating item land in the month at `offset` from the start? */
-export function itemHitsMonth(item: PlanItem, offset: number): boolean {
-  if (offset < item.startMonth) return false;
-  const elapsed = offset - item.startMonth;
+/** Whole months from `from` to `to`, both "yyyy-MM". Negative when `to` is earlier. */
+export function monthsBetween(from: string, to: string): number {
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  return (ty - fy) * 12 + (tm - fm);
+}
+
+/** Add months to a "yyyy-MM" key. */
+export function addMonthKey(month: string, n: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const total = y * 12 + (m - 1) + n;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Does a repeating item land in the month at `offset` from the projection
+ * start? `startOffset` is where the item's own start month falls on that axis.
+ */
+export function itemHitsMonth(item: PlanItem, offset: number, startOffset: number): boolean {
+  if (offset < startOffset) return false;
+  const elapsed = offset - startOffset;
   if (item.frequency === "once") return elapsed === 0;
   if (item.durationMonths != null && elapsed >= item.durationMonths) return false;
   if (item.frequency === "yearly") return elapsed % 12 === 0;
@@ -128,10 +148,16 @@ export function itemHitsMonth(item: PlanItem, offset: number): boolean {
 }
 
 /** Total a plan item contributes across the horizon, in its own currency. */
-export function itemHorizonTotal(item: PlanItem, months: number, deval: Devaluation): number {
+export function itemHorizonTotal(
+  item: PlanItem,
+  months: number,
+  deval: Devaluation,
+  firstMonth: string
+): number {
+  const startOffset = monthsBetween(firstMonth, item.startMonth);
   let total = 0;
   for (let i = 0; i < months; i++) {
-    if (itemHitsMonth(item, i)) {
+    if (itemHitsMonth(item, i, startOffset)) {
       total += nominalAmountAt(item.amount, item.currency, item.inflates, deval, i);
     }
   }
@@ -139,20 +165,22 @@ export function itemHorizonTotal(item: PlanItem, months: number, deval: Devaluat
 }
 
 /** Every hypothetical flow the plan implies, ready for the projector. */
-export function planExtraFlows(plan: Plan, months: number): ExtraFlow[] {
+export function planExtraFlows(plan: Plan, months: number, firstMonth: string): ExtraFlow[] {
   const flows: ExtraFlow[] = [];
   const deval = plan.devaluation;
 
   for (const item of plan.items) {
     if (!item.enabled || !(item.amount > 0)) continue;
+    const startOffset = monthsBetween(firstMonth, item.startMonth);
     for (let offset = 0; offset < months; offset++) {
-      if (!itemHitsMonth(item, offset)) continue;
+      if (!itemHitsMonth(item, offset, startOffset)) continue;
       flows.push({
         monthOffset: offset,
         direction: item.direction,
         amount: nominalAmountAt(item.amount, item.currency, item.inflates, deval, offset),
         currency: item.currency,
         categoryId: "",
+        label: item.label,
       });
     }
   }
@@ -167,6 +195,7 @@ export function planExtraFlows(plan: Plan, months: number): ExtraFlow[] {
         amount: nominalAmountAt(budget.monthlyAmount, budget.currency, true, deval, offset),
         currency: budget.currency,
         categoryId: budget.categoryId,
+        label: budget.label,
       });
     }
   }
