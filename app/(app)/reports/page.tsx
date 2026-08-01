@@ -32,6 +32,7 @@ import { computeFxInsights } from "@/lib/domain/fxInsights";
 import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, useColumns } from "@/components/columns";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -68,6 +69,8 @@ export default function ReportsPage() {
 
   const [realTry, setRealTry] = useState(false);
   const [includeLegacy, setIncludeLegacy] = useState(false);
+  // reports default to the two-up grid they already shipped with
+  const { columns, setColumns } = useColumns("renovator-cols-reports", 2);
   // category filter: empty = everything; otherwise only the picked categories
   // (chips toggle independently so tags can be viewed separately or together)
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
@@ -199,10 +202,11 @@ export default function ReportsPage() {
   const fx = computeFxInsights({ transactions: transactions.data, accounts: accounts.data, usdPer, display: displayCurrency });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
+    <div className={`mx-auto space-y-4 ${columns === 3 ? "max-w-none" : "max-w-6xl 3xl:max-w-[1700px]"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("reports.title")}</h1>
         <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+          <ColumnsToggle columns={columns} onChange={setColumns} />
           {displayCurrency === "TRY" ? (
             <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs">
               <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={realTry} onChange={(e) => setRealTry(e.target.checked)} />
@@ -265,7 +269,15 @@ export default function ReportsPage() {
         ) : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div
+        className={
+          columns === 3
+            ? "grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+            : columns === 2
+              ? "grid items-start gap-4 xl:grid-cols-2"
+              : "space-y-4"
+        }
+      >
         {/* net worth history */}
         <Card>
           <CardHeader

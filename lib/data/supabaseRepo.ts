@@ -265,6 +265,13 @@ export class SupabaseRepo implements Repo {
     return txFromRow(data!);
   }
 
+  async createTransactions(inputs: NewTransaction[]): Promise<number> {
+    if (!inputs.length) return 0;
+    const { error } = await this.db.from("transactions").insert(inputs.map((i) => this.txInsertRow(i)));
+    throwIf(error);
+    return inputs.length;
+  }
+
   async updateTransaction(
     id: string,
     patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>

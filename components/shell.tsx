@@ -16,6 +16,8 @@ import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
+const SIDEBAR_KEY = "renovator-sidebar";
+
 export const NAV = [
   { href: "/", key: "nav.dashboard", icon: "◧" },
   { href: "/accounts", key: "nav.accounts", icon: "▤" },
@@ -130,6 +132,19 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const nav = orderedNav(settings.data?.navOrder);
   const [quickTx, setQuickTx] = useState(false);
   const [quickTransfer, setQuickTransfer] = useState(false);
+  // icons-only sidebar: a property of the screen you're at, so device-local
+  const [railed, setRailed] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => setRailed(window.localStorage.getItem(SIDEBAR_KEY) === "rail"));
+  }, []);
+
+  function toggleRail() {
+    setRailed((prev) => {
+      window.localStorage.setItem(SIDEBAR_KEY, prev ? "full" : "rail");
+      return !prev;
+    });
+  }
 
   // desktop shortcuts: n = new transaction, t = transfer (unless typing)
   useEffect(() => {
@@ -175,9 +190,19 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
 
       <div className="flex w-full">
         {/* sidebar — desktop & ultrawide */}
-        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[var(--edge)] px-3 py-4 md:flex">
-          <Link href="/welcome" className="mb-6 px-2 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400">
-            BudgetSim
+        <aside
+          className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[var(--edge)] py-4 md:flex ${
+            railed ? "w-16 px-2" : "w-56 px-3"
+          }`}
+        >
+          <Link
+            href="/welcome"
+            className={`mb-6 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400 ${
+              railed ? "text-center" : "px-2"
+            }`}
+            title="BudgetSim"
+          >
+            {railed ? "B" : "BudgetSim"}
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
             {nav.map((item) => {
@@ -186,23 +211,39 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
+                  title={railed ? t(item.key) : undefined}
+                  className={`flex items-center rounded-lg py-2 text-sm font-medium transition-colors ${
+                    railed ? "justify-center px-0" : "gap-2.5 px-2.5"
+                  } ${
                     active
                       ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
                       : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   }`}
                 >
                   <span className="w-4 text-center">{item.icon}</span>
-                  {t(item.key)}
+                  {railed ? <span className="sr-only">{t(item.key)}</span> : t(item.key)}
                 </Link>
               );
             })}
           </nav>
           <button
-            onClick={() => signOut().then(() => router.replace("/login"))}
-            className="rounded-lg px-2.5 py-2 text-left text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            onClick={toggleRail}
+            aria-label={railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+            title={railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+            className={`rounded-lg py-2 text-sm text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+              railed ? "text-center" : "px-2.5 text-left"
+            }`}
           >
-            {t("nav.logout")}
+            {railed ? "»" : `« ${t("nav.collapseSidebar")}`}
+          </button>
+          <button
+            onClick={() => signOut().then(() => router.replace("/login"))}
+            title={railed ? t("nav.logout") : undefined}
+            className={`rounded-lg py-2 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+              railed ? "text-center" : "px-2.5 text-left"
+            }`}
+          >
+            {railed ? "⏻" : t("nav.logout")}
           </button>
         </aside>
 

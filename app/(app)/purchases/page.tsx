@@ -28,6 +28,7 @@ import { averageMonthlySpend } from "@/lib/domain/stats";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
 
@@ -42,6 +43,7 @@ export default function PurchasesPage() {
   const categories = useCategories();
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
+  const { columns, setColumns } = useColumns("renovator-cols-purchases");
 
   const setReflected = useAppMutation(
     (v: { id: string; reflected: boolean }) =>
@@ -161,16 +163,20 @@ export default function PurchasesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 3xl:max-w-7xl">
-      <div className="flex items-center justify-between">
+    <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-5xl 3xl:max-w-7xl" : "max-w-none"}`}>
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("purchases.title")}</h1>
-        <Button variant="primary" onClick={() => setModalOpen(true)}>
-          + {t("purchases.newPurchase")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
+          <Button variant="primary" onClick={() => setModalOpen(true)}>
+            + {t("purchases.newPurchase")}
+          </Button>
+        </div>
       </div>
 
       {(purchases.data ?? []).length === 0 && cards.length === 0 ? <EmptyState>{t("purchases.empty")}</EmptyState> : null}
 
+      <div className={columnClass(columns)}>
       {cards.map((card) => {
         const cardPurchases = byAccount.get(card.id) ?? [];
         const debt = balances.get(card.id) ?? 0;
@@ -213,6 +219,7 @@ export default function PurchasesPage() {
           </Card>
         );
       })}
+      </div>
 
       {nonCardPurchases.length > 0 ? (
         <Card>

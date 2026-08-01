@@ -1,5 +1,7 @@
 export const en = {
   common: {
+    columns: "Columns",
+    columnsN: "{count} columns",
     save: "Save",
     cancel: "Cancel",
     delete: "Delete",
@@ -45,6 +47,8 @@ export const en = {
     planner: "Planner",
     settings: "Settings",
     logout: "Log out",
+    collapseSidebar: "Collapse",
+    expandSidebar: "Expand sidebar",
   },
   welcome: {
     slogan: "Multi-currency budgeting that travels with you",
@@ -383,6 +387,12 @@ export const en = {
     victvsHint: "Same paste formats as the VICTVS page; everything lands as already-paid sessions with no payout transaction.",
     txTitle: "Past incomes & expenses",
     txHint: "Salaries, big purchases, anything settled long ago. Saved as completed + legacy on the account you pick.",
+    importTitle: "Bulk import past movements",
+    importOpen: "Paste a statement",
+    importHint: "Paste rows from a card statement or spreadsheet. Everything lands as legacy, so your balances stay untouched — check the preview before saving.",
+    importFormats: "One row per line: date, description, amount. Tabs, multiple spaces, 1.250,50 and 1,250.50 all work.",
+    importSplitSign: "Negative amounts go the other way (refunds become income)",
+    importSave: "Import {count} as legacy",
     added: "{count} legacy records added.",
     listTitle: "Legacy transactions",
     empty: "No legacy records yet.",
@@ -467,6 +477,8 @@ export const en = {
     dark: "Dark",
     compact: "Compact mode",
     compactHint: "Denser cards and rows — more on screen, especially on desktop.",
+    collapseHistory: "Fold past years by default",
+    collapseHistoryHint: "Transactions and VICTVS open on the current year; older ones stay one click away.",
   },
   projections: {
     title: "Projections",
@@ -524,6 +536,8 @@ export type Dictionary = typeof en;
 
 export const tr: Dictionary = {
   common: {
+    columns: "Sütun",
+    columnsN: "{count} sütun",
     save: "Kaydet",
     cancel: "Vazgeç",
     delete: "Sil",
@@ -569,6 +583,8 @@ export const tr: Dictionary = {
     planner: "Planlayıcı",
     settings: "Ayarlar",
     logout: "Çıkış",
+    collapseSidebar: "Daralt",
+    expandSidebar: "Kenar çubuğunu genişlet",
   },
   welcome: {
     slogan: "Seninle seyahat eden çoklu para birimli bütçe",
@@ -907,6 +923,12 @@ export const tr: Dictionary = {
     victvsHint: "VICTVS sayfasındaki yapıştırma formatlarının aynısı; hepsi ödeme işlemi oluşturmadan ödendi olarak kaydedilir.",
     txTitle: "Geçmiş gelir ve giderler",
     txHint: "Maaşlar, büyük alımlar, uzun süre önce kapanmış her şey. Seçtiğin hesapta tamamlanmış + eski kayıt olarak saklanır.",
+    importTitle: "Geçmiş hareketleri toplu içe aktar",
+    importOpen: "Ekstre yapıştır",
+    importHint: "Kart ekstresinden veya tablodan satırları yapıştır. Hepsi eski kayıt olarak eklenir, bakiyelerin değişmez — kaydetmeden önce önizlemeyi kontrol et.",
+    importFormats: "Her satırda bir hareket: tarih, açıklama, tutar. Sekme, çoklu boşluk, 1.250,50 ve 1,250.50 hepsi çalışır.",
+    importSplitSign: "Eksi tutarlar ters yöne gitsin (iadeler gelir olur)",
+    importSave: "{count} kaydı eski olarak aktar",
     added: "{count} eski kayıt eklendi.",
     listTitle: "Eski işlemler",
     empty: "Henüz eski kayıt yok.",
@@ -991,6 +1013,8 @@ export const tr: Dictionary = {
     dark: "Koyu",
     compact: "Sıkışık mod",
     compactHint: "Daha yoğun kart ve satırlar — ekranda daha çok bilgi, özellikle masaüstünde.",
+    collapseHistory: "Geçmiş yılları kapalı aç",
+    collapseHistoryHint: "İşlemler ve VICTVS bu yılla açılır; eski yıllar tek tık uzakta kalır.",
   },
   projections: {
     title: "Projeksiyon",

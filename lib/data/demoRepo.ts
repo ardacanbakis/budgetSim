@@ -159,6 +159,11 @@ export class DemoRepo implements Repo {
     return tx;
   }
 
+  async createTransactions(inputs: NewTransaction[]): Promise<number> {
+    for (const input of inputs) await this.createTransaction(input);
+    return inputs.length;
+  }
+
   async updateTransaction(
     id: string,
     patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>
