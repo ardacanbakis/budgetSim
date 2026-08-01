@@ -11,6 +11,9 @@ export interface ProjectionMonth {
   expense: number;
   net: number;
   endNetWorth: number;
+  /** expense split by category id ("" = uncategorized), display currency.
+   * Lets the planner swap a category's projected spend for a budget you set. */
+  expenseByCategory: Record<string, number>;
 }
 
 export interface ProjectionResult {
@@ -26,11 +29,14 @@ interface FlowItem {
   amount: number;
   currency: Currency;
   isTransfer: boolean;
+  /** "" when uncategorized */
+  categoryId: string;
 }
 
 /**
- * 12–24 month cashflow projection in the display currency, using current
- * rates (documented simplification — no FX forecasting). Sources of flow:
+ * Cashflow projection over an arbitrary horizon (1–120 months) in the display
+ * currency, using current rates (documented simplification — no FX
+ * forecasting). Sources of flow:
  * planned transactions, plus recurring-template occurrences that have no
  * materialized planned transaction yet (deduped by template+date).
  * Transfer legs cancel out in a single net-worth view and are excluded.
@@ -71,6 +77,7 @@ export function projectCashflow(params: {
       amount: t.amount,
       currency,
       isTransfer: t.transferGroupId != null,
+      categoryId: t.categoryId ?? "",
     });
   }
 
@@ -79,13 +86,20 @@ export function projectCashflow(params: {
     if (!currency) continue;
     for (const date of occurrencesBetween(tpl, fromDate, horizonEnd)) {
       if (materialized.has(`${tpl.id}|${date}`)) continue;
-      flows.push({ date, direction: tpl.direction, amount: tpl.amount, currency, isTransfer: false });
+      flows.push({
+        date,
+        direction: tpl.direction,
+        amount: tpl.amount,
+        currency,
+        isTransfer: false,
+        categoryId: tpl.categoryId ?? "",
+      });
     }
   }
 
-  const buckets = new Map<string, { income: number; expense: number }>();
+  const buckets = new Map<string, { income: number; expense: number; expenseByCategory: Record<string, number> }>();
   for (let i = 0; i < months; i++) {
-    buckets.set(addMonthsClamped(fromDate, i).slice(0, 7), { income: 0, expense: 0 });
+    buckets.set(addMonthsClamped(fromDate, i).slice(0, 7), { income: 0, expense: 0, expenseByCategory: {} });
   }
   for (const f of flows) {
     if (f.isTransfer) continue;
@@ -94,15 +108,18 @@ export function projectCashflow(params: {
     const converted = convert(f.amount, f.currency, display, usdPer);
     if (converted == null) continue;
     if (f.direction === "income") bucket.income += converted;
-    else bucket.expense += converted;
+    else {
+      bucket.expense += converted;
+      bucket.expenseByCategory[f.categoryId] = (bucket.expenseByCategory[f.categoryId] ?? 0) + converted;
+    }
   }
 
   let running = startNetWorth;
   const result: ProjectionMonth[] = [];
-  for (const [month, { income, expense }] of buckets) {
+  for (const [month, { income, expense, expenseByCategory }] of buckets) {
     const net = income - expense;
     running += net;
-    result.push({ month, income, expense, net, endNetWorth: running });
+    result.push({ month, income, expense, net, endNetWorth: running, expenseByCategory });
   }
 
   return { startNetWorth, months: result, skippedAccountIds };
