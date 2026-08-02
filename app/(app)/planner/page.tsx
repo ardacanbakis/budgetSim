@@ -569,7 +569,7 @@ export default function PlannerPage() {
         <Card>
           <CardHeader title={t("projections.title")} />
           <div className="max-h-[28rem] overflow-auto p-2">
-            <table className="w-full text-sm tabular-nums">
+            <table className="stack-sm w-full text-sm tabular-nums">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-left text-xs text-zinc-400">
                   <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
@@ -598,16 +598,16 @@ export default function PlannerPage() {
                             {monthLabelOf(m.month, locale)}
                           </button>
                         </td>
-                        <td className="px-2 py-1.5 text-right text-emerald-600">{fmt(m.income)}</td>
-                        <td className="px-2 py-1.5 text-right">{fmt(m.expense)}</td>
-                        <td className={`px-2 py-1.5 text-right font-medium ${m.net >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("dashboard.income")}>{fmt(m.income)}</td>
+                        <td className="px-2 py-1.5 text-right" data-label={t("dashboard.expense")}>{fmt(m.expense)}</td>
+                        <td className={`px-2 py-1.5 text-right font-medium ${m.net >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("dashboard.net")}>
                           {m.net >= 0 ? "+" : ""}
                           {fmt(m.net)}
                         </td>
-                        <td className="px-2 py-1.5 text-right font-semibold">{fmt(m.endNetWorth)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold" data-label={t("projections.endOfMonth")}>{fmt(m.endNetWorth)}</td>
                       </tr>
                       {open ? (
-                        <tr className="border-t border-zinc-100 bg-[var(--edge-soft)]/60 dark:border-zinc-800">
+                        <tr className="stack-attach border-t border-zinc-100 bg-[var(--edge-soft)]/60 dark:border-zinc-800">
                           <td colSpan={5} className="px-2 py-2">
                             {m.lines.length === 0 ? (
                               <p className="px-4 text-xs text-zinc-400">{t("planner.monthEmpty")}</p>

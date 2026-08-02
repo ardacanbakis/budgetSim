@@ -142,6 +142,8 @@ export interface Repo {
 
   listTransactions(): Promise<Transaction[]>;
   createTransaction(input: NewTransaction): Promise<Transaction>;
+  /** insert many at once (bulk paste import); returns count */
+  createTransactions(inputs: NewTransaction[]): Promise<number>;
   updateTransaction(
     id: string,
     patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>

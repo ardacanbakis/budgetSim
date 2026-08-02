@@ -13,6 +13,8 @@ import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useApp } from "@/lib/data/provider";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 
 export default function TransactionsPage() {
   const { t, locale } = useI18n();
@@ -33,6 +35,8 @@ export default function TransactionsPage() {
   const [completing, setCompleting] = useState<Transaction | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { columns, setColumns } = useColumns("renovator-cols-transactions");
+  const collapseHistory = useLocalToggle(COLLAPSE_HISTORY_KEY, true);
 
   const invalidate = [KEYS.transactions, KEYS.accounts];
   const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), invalidate);
@@ -126,9 +130,11 @@ export default function TransactionsPage() {
   // history collapses by default: only the current year is open on arrival
   const currentYear = thisMonth.slice(0, 4);
   const [collapseInit, setCollapseInit] = useState(false);
-  if (!collapseInit && groups.length > 0) {
+  if (!collapseInit && collapseHistory.loaded && groups.length > 0) {
     setCollapseInit(true);
-    setCollapsed(new Set(groups.map(([year]) => year).filter((year) => year !== currentYear)));
+    if (collapseHistory.value) {
+      setCollapsed(new Set(groups.map(([year]) => year).filter((year) => year !== currentYear)));
+    }
   }
 
   const toggleCollapsed = (key: string) =>
@@ -145,10 +151,11 @@ export default function TransactionsPage() {
   if (accounts.isLoading || transactions.isLoading || categories.isLoading) return <Spinner />;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 3xl:max-w-7xl">
+    <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-5xl 3xl:max-w-7xl" : "max-w-none"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("tx.title")}</h1>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ColumnsToggle columns={columns} onChange={setColumns} />
           <Button onClick={() => setTransferModal(true)}>⇄ {t("tx.newTransfer")}</Button>
           <Button variant="primary" onClick={() => setTxModal(true)}>
             + {t("tx.newTransaction")}
@@ -223,9 +230,9 @@ export default function TransactionsPage() {
                   </Badge>
                 ) : null}
               </button>
-              {yearCollapsed
-                ? null
-                : months.map(({ month, items, income, expense, net, legacyIncome, legacyExpense }) => {
+              {yearCollapsed ? null : (
+                <div className={columnClass(columns)}>
+                  {months.map(({ month, items, income, expense, net, legacyIncome, legacyExpense }) => {
                     const monthCollapsed = collapsed.has(month);
                     return (
                       <Card key={month}>
@@ -280,6 +287,8 @@ export default function TransactionsPage() {
                       </Card>
                     );
                   })}
+                </div>
+              )}
             </div>
           );
         })

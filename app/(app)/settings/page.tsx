@@ -9,6 +9,8 @@ import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates,
 import { isBackupFile } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
 import { NAV, orderedNav } from "@/components/shell";
+import { LegacyImportModal } from "@/components/legacyImportModal";
+import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -333,6 +335,7 @@ function PreferencesCard() {
 function AppearanceCard() {
   const { t } = useI18n();
   const { theme, setTheme, compact, setCompact } = useApp();
+  const collapseHistory = useLocalToggle(COLLAPSE_HISTORY_KEY, true);
   return (
     <Card>
       <CardHeader title={t("theme.title")} />
@@ -369,6 +372,18 @@ function AppearanceCard() {
           <span>
             <span className="block text-sm font-medium">{t("theme.compact")}</span>
             <span className="block text-xs text-zinc-500">{t("theme.compactHint")}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-teal-600"
+            checked={collapseHistory.value}
+            onChange={(e) => collapseHistory.setValue(e.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium">{t("theme.collapseHistory")}</span>
+            <span className="block text-xs text-zinc-500">{t("theme.collapseHistoryHint")}</span>
           </span>
         </label>
       </div>
@@ -652,6 +667,7 @@ function LegacyCard() {
   const rates = useRates();
 
   const [pasteText, setPasteText] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [direction, setDirection] = useState<TxDirection>("income");
   const [accountId, setAccountId] = useState("");
@@ -666,6 +682,10 @@ function LegacyCard() {
   );
   const addLegacyTx = useAppMutation(
     (input: Parameters<typeof repo.createTransaction>[0]) => repo.createTransaction(input),
+    [KEYS.transactions]
+  );
+  const importLegacyTxs = useAppMutation(
+    (inputs: Parameters<typeof repo.createTransactions>[0]) => repo.createTransactions(inputs),
     [KEYS.transactions]
   );
   const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), [KEYS.transactions]);
@@ -720,7 +740,12 @@ function LegacyCard() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--edge-soft)] pt-4">
-          <p className="text-xs font-medium text-zinc-500">{t("legacy.txTitle")}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-zinc-500">{t("legacy.txTitle")}</p>
+            <Button onClick={() => setImportOpen(true)} disabled={active.length === 0}>
+              {t("legacy.importOpen")}
+            </Button>
+          </div>
           <form
             className="grid grid-cols-2 gap-2 sm:grid-cols-3"
             onSubmit={async (e) => {
@@ -819,6 +844,32 @@ function LegacyCard() {
           )}
         </div>
       </div>
+
+      <LegacyImportModal
+        open={importOpen}
+        accounts={active}
+        categories={categories.data ?? []}
+        saving={importLegacyTxs.isPending}
+        onClose={() => setImportOpen(false)}
+        onSave={async (importAccountId, rows) => {
+          const snapshot = rates.data ? snapshotFromTable(rates.data) : null;
+          await importLegacyTxs.mutateAsync(
+            rows.map((r) => ({
+              accountId: importAccountId,
+              direction: r.direction,
+              categoryId: r.categoryId,
+              amount: r.amount,
+              status: "completed" as const,
+              dueDate: r.date,
+              description: r.description,
+              fxSnapshot: snapshot,
+              legacy: true,
+            }))
+          );
+          setImportOpen(false);
+          setMessage(t("legacy.added", { count: rows.length }));
+        }}
+      />
     </Card>
   );
 }

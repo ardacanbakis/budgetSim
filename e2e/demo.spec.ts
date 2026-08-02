@@ -511,3 +511,149 @@ test("themes: mocha applies tinted surfaces", async ({ page }) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: "e2e/screenshots/theme-mocha.png" });
 });
+
+test("part2: bulk paste imports a card statement as legacy expenses", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await enterDemo(page);
+
+  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const before = await netWorthTile.textContent();
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Data$|Veri$/ }).click();
+  await page.getByRole("button", { name: /paste a statement/i }).click();
+
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Bulk import past movements/i });
+  // Turkish decimal convention, tab-separated, with a refund on the last row
+  await modal.locator("textarea").fill(
+    ["15.03.2025\tAKBANK KREDI KARTI ODEME\t12.500,00", "02.04.2025\tMigros\t1.250,50", "05.04.2025\tIade\t-300,00"].join("\n")
+  );
+  await modal.getByRole("button", { name: /^Preview$|^Önizle$/i }).click();
+
+  // three rows, dates read day-first, the minus row flipped to income
+  await expect(modal.locator("tbody tr")).toHaveCount(3);
+  await expect(modal.locator("tbody tr").first().locator("input[type=date]")).toHaveValue("2025-03-15");
+  await expect(modal.locator("tbody tr").nth(1).locator("input[type=number]")).toHaveValue("1250.5");
+  await expect(modal.locator("tbody tr").nth(2).locator("select")).toHaveValue("income");
+  await page.screenshot({ path: "e2e/screenshots/legacy-bulk-import.png" });
+
+  await modal.getByRole("button", { name: /import 3 as legacy/i }).click();
+  await page.waitForTimeout(600);
+  await expect(page.getByText("AKBANK KREDI KARTI ODEME")).toBeVisible();
+
+  // imported as legacy, so balances are untouched
+  await page.goto("/transactions");
+  await expect(page.getByText("Migros")).toBeVisible();
+  await page.goto("/");
+  await page.waitForTimeout(800);
+  expect(await netWorthTile.textContent()).toBe(before);
+});
+
+test("part2: column switch spreads transaction months side by side", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/transactions");
+
+  const toggle = page.getByRole("group", { name: /columns/i });
+  await expect(toggle).toBeVisible();
+  const monthCards = page.locator("[class*='grid'] > div").filter({ hasText: /^\s*[▾▸]/ });
+
+  await toggle.getByRole("button", { name: "2" }).click();
+  await expect(toggle.getByRole("button", { name: "2" })).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({ path: "e2e/screenshots/transactions-two-column.png" });
+
+  // the choice survives a reload — it's a property of this screen
+  await page.reload();
+  await expect(page.getByRole("group", { name: /columns/i }).getByRole("button", { name: "2" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  expect(await monthCards.count()).toBeGreaterThan(0);
+});
+
+test("part2: the sidebar collapses to icons and stays that way", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  const sidebar = page.locator("aside");
+  await expect(sidebar).toHaveClass(/w-56/);
+  await sidebar.getByRole("button", { name: /collapse/i }).click();
+  await expect(sidebar).toHaveClass(/w-16/);
+  await page.screenshot({ path: "e2e/screenshots/sidebar-rail.png" });
+
+  await page.reload();
+  await expect(page.locator("aside")).toHaveClass(/w-16/);
+  // links still navigate from the rail
+  await page.locator("aside").getByRole("link", { name: /transactions|işlemler/i }).click();
+  await expect(page.getByRole("heading", { name: /transactions|işlemler/i })).toBeVisible();
+});
+
+test("part2: history folding can be turned off in settings", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+
+  await page.goto("/settings");
+  await page.getByText("Fold past years by default").click();
+  await page.waitForTimeout(200);
+
+  await page.goto("/transactions");
+  await page.waitForTimeout(500);
+  // with folding off, every year header opens expanded
+  const collapsedYears = await page.getByText(/^▸ \d{4}$/).count();
+  expect(collapsedYears).toBe(0);
+});
+
+test("part3: phone bar shows five targets and a More sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 }); // iPhone 16 Pro
+  await enterDemo(page);
+
+  const bar = page.locator("nav.fixed.inset-x-0.bottom-0");
+  // four destinations + More — no sideways scrolling to reach anything
+  await expect(bar.locator("a, button")).toHaveCount(5);
+  const barBox = await bar.boundingBox();
+  expect(barBox!.width).toBeLessThanOrEqual(402);
+  await expect(bar.getByRole("button", { name: /more|daha/i })).toBeVisible();
+
+  await bar.getByRole("button", { name: /more|daha/i }).click();
+  const sheet = page.locator(".fixed.inset-0").filter({ hasText: /More|Daha/ });
+  await expect(sheet.getByRole("link", { name: /planner|planlayıcı/i })).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/mobile-more-sheet.png" });
+
+  await sheet.getByRole("link", { name: /planner|planlayıcı/i }).click();
+  await expect(page).toHaveURL(/\/planner/);
+  // the page you're on stays visible in the bar even though it lives in More
+  await expect(bar.locator('a[aria-current="page"]')).toHaveCount(1);
+  await page.screenshot({ path: "e2e/screenshots/mobile-planner-nav.png" });
+});
+
+test("part3: wide tables stack into cards on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await enterDemo(page);
+  await page.goto("/reports");
+  await page.waitForTimeout(800);
+
+  const monthly = page.locator("table.stack-sm").last();
+  await expect(monthly).toBeVisible();
+  // stacked: a row is as wide as the card, and cells sit on their own lines
+  const row = monthly.locator("tbody tr").first();
+  const rowBox = await row.boundingBox();
+  const cellBox = await row.locator("td").first().boundingBox();
+  expect(cellBox!.width).toBeGreaterThan(rowBox!.width * 0.7);
+  expect(rowBox!.height).toBeGreaterThan(80);
+  await page.screenshot({ path: "e2e/screenshots/mobile-reports-stacked.png", fullPage: false });
+
+  // and nothing pushes the page sideways
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await enterDemo(page);
+  for (const path of ["/", "/accounts", "/transactions", "/purchases", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
+    await page.goto(path);
+    await page.waitForTimeout(600);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(1);
+  }
+});

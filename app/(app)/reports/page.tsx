@@ -32,6 +32,7 @@ import { computeFxInsights } from "@/lib/domain/fxInsights";
 import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, useColumns } from "@/components/columns";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -68,6 +69,8 @@ export default function ReportsPage() {
 
   const [realTry, setRealTry] = useState(false);
   const [includeLegacy, setIncludeLegacy] = useState(false);
+  // reports default to the two-up grid they already shipped with
+  const { columns, setColumns } = useColumns("renovator-cols-reports", 2);
   // category filter: empty = everything; otherwise only the picked categories
   // (chips toggle independently so tags can be viewed separately or together)
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
@@ -199,10 +202,11 @@ export default function ReportsPage() {
   const fx = computeFxInsights({ transactions: transactions.data, accounts: accounts.data, usdPer, display: displayCurrency });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
+    <div className={`mx-auto space-y-4 ${columns === 3 ? "max-w-none" : "max-w-6xl 3xl:max-w-[1700px]"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("reports.title")}</h1>
         <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+          <ColumnsToggle columns={columns} onChange={setColumns} />
           {displayCurrency === "TRY" ? (
             <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs">
               <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={realTry} onChange={(e) => setRealTry(e.target.checked)} />
@@ -265,7 +269,15 @@ export default function ReportsPage() {
         ) : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div
+        className={
+          columns === 3
+            ? "grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+            : columns === 2
+              ? "grid items-start gap-4 xl:grid-cols-2"
+              : "space-y-4"
+        }
+      >
         {/* net worth history */}
         <Card>
           <CardHeader
@@ -426,7 +438,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm tabular-nums">
+              <table className="stack-sm w-full text-sm tabular-nums">
                 <thead>
                   <tr className="text-left text-xs text-zinc-400">
                     <th className="px-2 py-1 font-medium">{t("common.date")}</th>
@@ -439,13 +451,13 @@ export default function ReportsPage() {
                 <tbody>
                   {fx.conversions.slice(0, 20).map((c, i) => (
                     <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800">
-                      <td className="px-2 py-1.5">{c.date}</td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-1.5" data-label={t("common.date")}>{c.date}</td>
+                      <td className="px-2 py-1.5" data-label={t("reports.conversions")}>
                         {formatAmount(c.fromAmount, c.fromCurrency, locale)} → {formatAmount(c.toAmount, c.toCurrency, locale)}
                       </td>
-                      <td className="px-2 py-1.5 text-right">{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
-                      <td className="px-2 py-1.5 text-right">{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
-                      <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`}>
+                      <td className="px-2 py-1.5 text-right" data-label={t("reports.yourRate")}>{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
+                      <td className="px-2 py-1.5 text-right" data-label={t("reports.marketRate")}>{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
+                      <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`} data-label={t("transfer.spread")}>
                         {c.spread != null ? `${c.spread.toFixed(2)}%` : "—"}
                       </td>
                     </tr>
@@ -461,7 +473,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
         <div className="overflow-x-auto p-2">
-          <table className="w-full text-sm tabular-nums">
+          <table className="stack-sm w-full text-sm tabular-nums">
             <thead>
               <tr className="text-left text-xs text-zinc-400">
                 <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
@@ -473,10 +485,10 @@ export default function ReportsPage() {
             <tbody>
               {[...totals].reverse().map((row) => (
                 <tr key={row.month} className="border-t border-zinc-100 dark:border-zinc-800">
-                  <td className="px-2 py-1.5">{row.month}</td>
-                  <td className="px-2 py-1.5 text-right text-emerald-600">{fmt(row.income)}</td>
-                  <td className="px-2 py-1.5 text-right">{fmt(row.expense)}</td>
-                  <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  <td className="px-2 py-1.5 font-medium" data-label={t("projections.month")}>{row.month}</td>
+                  <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("reports.income")}>{fmt(row.income)}</td>
+                  <td className="px-2 py-1.5 text-right" data-label={t("reports.expenses")}>{fmt(row.expense)}</td>
+                  <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("reports.net")}>
                     {fmt(row.income - row.expense)}
                   </td>
                 </tr>

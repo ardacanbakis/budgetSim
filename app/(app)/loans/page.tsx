@@ -177,7 +177,7 @@ export default function LoansPage() {
                 <details>
                   <summary className="cursor-pointer text-sm text-zinc-500">{t("loans.schedule")}</summary>
                   <div className="mt-2 max-h-64 overflow-y-auto">
-                    <table className="w-full text-xs tabular-nums">
+                    <table className="stack-sm w-full text-xs tabular-nums">
                       <thead className="sticky top-0 bg-white dark:bg-zinc-900">
                         <tr className="text-left text-zinc-400">
                           <th className="py-1 pr-2 font-medium">#</th>
@@ -190,11 +190,11 @@ export default function LoansPage() {
                       <tbody>
                         {sim.rows.map((row) => (
                           <tr key={row.n} className="border-t border-zinc-100 dark:border-zinc-800">
-                            <td className="py-1 pr-2">{row.n}</td>
-                            <td className="py-1 pr-2">{row.date}</td>
-                            <td className="py-1 pr-2 text-right">{row.payment.toLocaleString(locale)}</td>
-                            <td className="py-1 pr-2 text-right">{row.interest.toLocaleString(locale)}</td>
-                            <td className="py-1 text-right">{row.remaining.toLocaleString(locale)}</td>
+                            <td className="py-1 pr-2" data-label="#">{row.n}</td>
+                            <td className="py-1 pr-2" data-label={t("common.date")}>{row.date}</td>
+                            <td className="py-1 pr-2 text-right" data-label={t("loans.installment")}>{row.payment.toLocaleString(locale)}</td>
+                            <td className="py-1 pr-2 text-right" data-label={t("loans.totalInterest")}>{row.interest.toLocaleString(locale)}</td>
+                            <td className="py-1 text-right" data-label={t("loans.remaining")}>{row.remaining.toLocaleString(locale)}</td>
                           </tr>
                         ))}
                       </tbody>

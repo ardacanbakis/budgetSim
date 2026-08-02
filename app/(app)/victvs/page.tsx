@@ -22,6 +22,8 @@ import { todayISO } from "@/lib/domain/recurrence";
 import { ParsedSession, parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 
 type Filter = "unpaid" | "paid" | "all";
 
@@ -53,6 +55,8 @@ export default function VictvsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { columns, setColumns } = useColumns("renovator-cols-victvs");
+  const collapseHistory = useLocalToggle(COLLAPSE_HISTORY_KEY, true);
   const [latestFirst, setLatestFirst] = useState(true);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -126,14 +130,16 @@ export default function VictvsPage() {
   // history collapses by default: only the current year is open on arrival
   const currentYear = todayISO().slice(0, 4);
   const [collapseInit, setCollapseInit] = useState(false);
-  if (!collapseInit && (groups.length > 0 || payoutGroups.length > 0)) {
+  if (!collapseInit && collapseHistory.loaded && (groups.length > 0 || payoutGroups.length > 0)) {
     setCollapseInit(true);
-    setCollapsed(
-      new Set([
-        ...groups.map(([year]) => year).filter((year) => year !== currentYear),
-        ...payoutGroups.map(([year]) => `payouts-${year}`).filter((k) => k !== `payouts-${currentYear}`),
-      ])
-    );
+    if (collapseHistory.value) {
+      setCollapsed(
+        new Set([
+          ...groups.map(([year]) => year).filter((year) => year !== currentYear),
+          ...payoutGroups.map(([year]) => `payouts-${year}`).filter((k) => k !== `payouts-${currentYear}`),
+        ])
+      );
+    }
   }
 
   if (sessions.isLoading || accounts.isLoading || settings.isLoading) return <Spinner />;
@@ -175,7 +181,7 @@ export default function VictvsPage() {
     new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", { month: "long" });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 3xl:max-w-7xl">
+    <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-5xl 3xl:max-w-7xl" : "max-w-none"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold">{t("victvs.title")}</h1>
@@ -183,7 +189,8 @@ export default function VictvsPage() {
             {t("victvs.unpaid")}: <span className="font-semibold text-green-600 tabular-nums">{formatAmount(unpaidTotal, "USD", locale)}</span>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ColumnsToggle columns={columns} onChange={setColumns} />
           <Button onClick={() => setAddOpen(true)}>+ {t("victvs.addSession")}</Button>
           <Button variant="primary" onClick={() => setPasteOpen(true)}>
             ⎘ {t("victvs.pasteButton")}
@@ -252,9 +259,9 @@ export default function VictvsPage() {
                 <span className="text-lg font-bold">{yearCollapsed ? "▸" : "▾"} {year}</span>
                 <span className="text-sm text-zinc-400 tabular-nums">{formatAmount(yearTotal, "USD", locale)}</span>
               </button>
-              {yearCollapsed
-                ? null
-                : months.map(({ month, items }) => {
+              {yearCollapsed ? null : (
+                <div className={columnClass(columns)}>
+                  {months.map(({ month, items }) => {
                     const monthCollapsed = collapsed.has(month);
                     const monthTotal = sumAmounts("USD", items.map((s) => s.amount));
                     const monthUnpaid = items.filter((s) => s.status === "unpaid");
@@ -293,6 +300,8 @@ export default function VictvsPage() {
                       </Card>
                     );
                   })}
+                </div>
+              )}
             </div>
           );
         })
@@ -493,7 +502,7 @@ function PasteModal({
             {blankRows > 0 ? <p className="text-xs text-zinc-400">{t("victvs.fillHint")}</p> : null}
             {rows.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="stack-sm w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-zinc-400">
                       <th className="py-1 pr-2 font-medium">{t("common.date")}</th>
@@ -508,10 +517,10 @@ function PasteModal({
                       const needsAttention = !r.date || !r.sessionType;
                       return (
                         <tr key={i} className={needsAttention ? "bg-amber-50/60 dark:bg-amber-950/30" : ""}>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("common.date")}>
                             <Input type="date" value={r.date} onChange={(e) => updateRow(i, { date: e.target.value })} className={!r.date ? "!border-amber-400" : ""} />
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("victvs.sessionType")}>
                             <Select
                               value={r.sessionType}
                               onChange={(e) =>
@@ -530,10 +539,10 @@ function PasteModal({
                               ))}
                             </Select>
                           </td>
-                          <td className="py-1 pr-2">
+                          <td className="py-1 pr-2" data-label={t("victvs.sessionNo")}>
                             <Input value={r.sessionNo} onChange={(e) => updateRow(i, { sessionNo: e.target.value })} className="!w-28 font-mono" />
                           </td>
-                          <td className="py-1">
+                          <td className="py-1" data-label={`${t("common.amount")} ($)`}>
                             <Input
                               type="number"
                               step="any"
