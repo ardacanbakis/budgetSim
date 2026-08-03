@@ -13,6 +13,16 @@ export interface ProjectionLine {
   categoryId: string;
 }
 
+/** An asset sold during a month to keep that month's bills paid. */
+export interface FundingDraw {
+  accountId: string;
+  currency: Currency;
+  /** taken out, in the account's own currency */
+  amount: number;
+  /** what that was worth in the display currency, at this month's rates */
+  value: number;
+}
+
 export interface ProjectionMonth {
   /** yyyy-mm */
   month: string;
@@ -20,6 +30,14 @@ export interface ProjectionMonth {
   expense: number;
   net: number;
   endNetWorth: number;
+  /** what this month's bills came up short by before selling anything, display currency */
+  shortfall: number;
+  /** the assets sold to close that gap */
+  draws: FundingDraw[];
+  /** still short after selling everything you allowed, display currency */
+  uncovered: number;
+  /** end-of-month balance of each funding source, in its own currency */
+  sourceBalances: Record<string, number>;
   /** expense split by category id ("" = uncategorized), display currency.
    * Lets the planner swap a category's projected spend for a budget you set. */
   expenseByCategory: Record<string, number>;
@@ -37,6 +55,8 @@ export interface ProjectionResult {
 
 interface FlowItem {
   date: string;
+  /** the real account it lands on; absent for the planner's hypothetical flows */
+  accountId?: string;
   direction: "income" | "expense";
   amount: number;
   currency: Currency;
@@ -88,6 +108,17 @@ export function projectCashflow(params: {
   replaceCategories?: ReadonlySet<string>;
   /** income categories to drop entirely — "what if I lost this income" */
   dropIncomeCategories?: ReadonlySet<string>;
+  /**
+   * Which assets may be sold to cover a month that doesn't pay for itself, and
+   * in what order. Without this a currency simply goes negative and stays
+   * there; with it, the projection sells the way you actually would.
+   */
+  funding?: {
+    /** account ids, highest priority first */
+    order: string[];
+    /** month key ("yyyy-MM") → account to raid first, overriding the order */
+    overrides?: Record<string, string>;
+  };
 }): ProjectionResult {
   const {
     accounts,
@@ -101,6 +132,7 @@ export function projectCashflow(params: {
     extraFlows,
     replaceCategories,
     dropIncomeCategories,
+    funding,
   } = params;
   const ratesAt = ratePath ?? (() => usdPer);
   const horizonEnd = addMonthsClamped(fromDate, months);
@@ -125,6 +157,7 @@ export function projectCashflow(params: {
     if (t.recurringTemplateId) materialized.add(`${t.recurringTemplateId}|${t.dueDate}`);
     flows.push({
       date: t.dueDate,
+      accountId: t.accountId,
       direction: t.direction,
       amount: t.amount,
       currency,
@@ -141,6 +174,7 @@ export function projectCashflow(params: {
       if (materialized.has(`${tpl.id}|${date}`)) continue;
       flows.push({
         date,
+        accountId: tpl.accountId,
         direction: tpl.direction,
         amount: tpl.amount,
         currency,
@@ -200,21 +234,44 @@ export function projectCashflow(params: {
     return total;
   };
 
+  // Funding sources, tracked per account so the timeline can say *which* asset
+  // paid. A source can never give up more than its own currency pool holds —
+  // the pool is the truth, the per-account figure just attributes it.
+  const sourceOrder = (funding?.order ?? []).filter((id) => {
+    const a = accounts.find((acc) => acc.id === id);
+    return a != null && !a.archived && !skipped.has(id) && a.kind !== "credit_card";
+  });
+  const sourceBalance = new Map<string, number>(
+    sourceOrder.map((id) => [id, balances.get(id) ?? 0])
+  );
+  const sourceCurrency = new Map<string, Currency>(
+    sourceOrder.map((id) => [id, currencyOf.get(id)!])
+  );
+
   const result: ProjectionMonth[] = [];
   monthKeys.forEach((month, offset) => {
     const rates = ratesAt(offset);
     let income = 0;
     let expense = 0;
     const expenseByCategory: Record<string, number> = {};
+    // what each currency took in minus what it paid out this month — the
+    // deficit that has to come from somewhere
+    const monthFlow = new Map<Currency, number>();
     // several occurrences of the same thing read better as one line
     const byLabel = new Map<string, ProjectionLine>();
     for (const f of buckets.get(month) ?? []) {
       const converted = convert(f.amount, f.currency, display, rates);
       if (converted == null) continue;
-      holdings.set(
-        f.currency,
-        (holdings.get(f.currency) ?? 0) + (f.direction === "income" ? f.amount : -f.amount)
-      );
+      const signed = f.direction === "income" ? f.amount : -f.amount;
+      holdings.set(f.currency, (holdings.get(f.currency) ?? 0) + signed);
+      monthFlow.set(f.currency, (monthFlow.get(f.currency) ?? 0) + signed);
+      // a source account also grows and shrinks with what actually lands on
+      // it; a hypothetical flow lands on the first source in its currency
+      const target =
+        f.accountId != null && sourceBalance.has(f.accountId)
+          ? f.accountId
+          : sourceOrder.find((id) => sourceCurrency.get(id) === f.currency);
+      if (target != null) sourceBalance.set(target, (sourceBalance.get(target) ?? 0) + signed);
       if (f.direction === "income") income += converted;
       else {
         expense += converted;
@@ -226,12 +283,77 @@ export function projectCashflow(params: {
       else byLabel.set(key, { label: f.label, direction: f.direction, amount: converted, categoryId: f.categoryId });
     }
     const lines = [...byLabel.values()].sort((a, b) => b.amount - a.amount);
+
+    // A month that takes in less than it spends has to be paid for out of
+    // something you already hold. Each currency that ran a deficit is covered
+    // from the assets you allowed, in the order you set — paying out of a lira
+    // account just draws that account down, while paying out of gold or
+    // dollars also shifts what you're holding, which is what really matters
+    // once the lira is sliding. Selling never changes what you're worth.
+    const draws: FundingDraw[] = [];
+    let shortfall = 0;
+    let uncovered = 0;
+    const first = funding?.overrides?.[month];
+    const tryOrder =
+      first && sourceOrder.includes(first)
+        ? [first, ...sourceOrder.filter((id) => id !== first)]
+        : sourceOrder;
+
+    // Only a month that ends down needs funding. A month that takes in more
+    // than it spends pays for itself, even if one currency ran dry and another
+    // piled up — that's a conversion you'd make without thinking about it.
+    shortfall = Math.max(0, expense - income);
+    if (shortfall > 1e-9) {
+      // the deficit currencies, and how much of the gap each one accounts for
+      const gaps: { currency: Currency; share: number }[] = [];
+      let gapTotal = 0;
+      for (const [currency, flow] of monthFlow) {
+        if (flow >= 0) continue;
+        const value = convert(-flow, currency, display, rates);
+        if (value == null || value <= 0) continue;
+        gaps.push({ currency, share: value });
+        gapTotal += value;
+      }
+
+      let remaining = shortfall; // still to be found, in the display currency
+      for (const id of tryOrder) {
+        if (remaining <= 1e-9) break;
+        const from = sourceCurrency.get(id)!;
+        const available = sourceBalance.get(id) ?? 0;
+        if (available <= 0) continue;
+        const needed = convert(remaining, display, from, rates);
+        if (needed == null || needed <= 0) continue;
+        const take = Math.min(available, needed);
+        const value = convert(take, from, display, rates);
+        if (value == null || value <= 0) continue;
+
+        sourceBalance.set(id, available - take);
+        holdings.set(from, (holdings.get(from) ?? 0) - take);
+        // the money lands back in whatever ran short, so what you're worth is
+        // unchanged by the sale — only what you're holding moves
+        for (const gap of gaps) {
+          const slice = gapTotal > 0 ? (value * gap.share) / gapTotal : value;
+          const inGapCurrency = convert(slice, display, gap.currency, rates);
+          if (inGapCurrency != null) {
+            holdings.set(gap.currency, (holdings.get(gap.currency) ?? 0) + inGapCurrency);
+          }
+        }
+        remaining -= value;
+        draws.push({ accountId: id, currency: from, amount: take, value });
+      }
+      uncovered = Math.max(0, remaining);
+    }
+
     result.push({
       month,
       income,
       expense,
       net: income - expense,
       endNetWorth: valueOf(rates),
+      shortfall,
+      draws,
+      uncovered,
+      sourceBalances: Object.fromEntries(sourceBalance),
       expenseByCategory,
       lines,
     });

@@ -18,12 +18,18 @@ export const KEYS = {
   goals: ["goals"] as const,
   userSettings: ["user-settings"] as const,
   snapshots: ["snapshots"] as const,
+  plans: ["plans"] as const,
   rates: ["rates"] as const,
 };
 
 export function useAccounts() {
   const repo = useRepo();
   return useQuery({ queryKey: KEYS.accounts, queryFn: () => repo.listAccounts() });
+}
+
+export function usePlans() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.plans, queryFn: () => repo.listPlans() });
 }
 
 export function useCategories() {

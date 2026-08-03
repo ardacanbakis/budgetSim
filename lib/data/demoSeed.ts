@@ -9,6 +9,7 @@ import {
   Goal,
   Loan,
   NetWorthSnapshot,
+  PlanRecord,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -30,6 +31,8 @@ export interface DemoStore {
   goals: Goal[];
   settings: UserSettings;
   snapshots: NetWorthSnapshot[];
+  /** saved planner scenarios (absent in older sandboxes) */
+  plans?: PlanRecord[];
 }
 
 const uuid = () =>

@@ -13,9 +13,7 @@ import {
   averageMonthlyNet,
   buildRatePath,
   CategoryBudget,
-  EMPTY_PLAN,
   itemHorizonTotal,
-  Plan,
   PlanFrequency,
   PlanItem,
   planExtraFlows,
@@ -24,8 +22,14 @@ import {
   monthsBetween,
   planDroppedIncome,
   planReplacedCategories,
+  planFundingOrder,
+  normalizePlan,
+  firstUncoveredMonth,
+  totalDrawn,
   retentionFactor,
 } from "@/lib/domain/planner";
+import { usePlanScenarios } from "@/lib/usePlanScenarios";
+import { ScenarioBar } from "@/components/scenarioBar";
 import { projectCashflow } from "@/lib/domain/projector";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
@@ -38,9 +42,9 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-// device-local: a plan is a scratchpad, not shared data
-const PLAN_KEY = "renovator-plan-v1";
+// device-local: how this screen is set up. The plan itself lives server-side.
 const HORIZON_KEY = "renovator-plan-horizon";
+const COMPARE_KEY = "renovator-plan-compare";
 const LAYOUT_KEY = "renovator-plan-layout";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -62,8 +66,10 @@ export default function PlannerPage() {
   const categories = useCategories();
   const rates = useRates();
 
+  const scenarios = usePlanScenarios();
+  const plan = scenarios.plan;
   const [months, setMonths] = useState(60);
-  const [plan, setPlan] = useState<Plan>(EMPTY_PLAN);
+  const [compareId, setCompareId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<PlanItem | null>(null);
   const [adding, setAdding] = useState(false);
@@ -79,45 +85,22 @@ export default function PlannerPage() {
       return next;
     });
 
-  // deferred: restore the saved plan after hydration
+  // deferred: restore how this screen was left
   useEffect(() => {
     queueMicrotask(() => {
-      try {
-        const raw = window.localStorage.getItem(PLAN_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw) as Plan;
-          if (Array.isArray(saved.items) && Array.isArray(saved.budgets)) {
-            // older saved plans predate per-entry currency and devaluation
-            setPlan({
-              devaluation: saved.devaluation ?? EMPTY_PLAN.devaluation,
-              lostIncome: saved.lostIncome ?? [],
-              items: saved.items.map((i) => ({
-                ...i,
-                currency: i.currency ?? "USD",
-                inflates: i.inflates ?? true,
-                // plans saved before start months were real dates stored an offset
-                startMonth:
-                  typeof i.startMonth === "number"
-                    ? addMonthKey(todayISO().slice(0, 7), i.startMonth)
-                    : i.startMonth,
-              })),
-              budgets: saved.budgets.map((b) => ({ ...b, currency: b.currency ?? "USD", label: b.label ?? "" })),
-            });
-          }
-        }
-        const savedHorizon = Number(window.localStorage.getItem(HORIZON_KEY));
-        if (savedHorizon >= 1 && savedHorizon <= 120) setMonths(savedHorizon);
-        if (window.localStorage.getItem(LAYOUT_KEY) === "single") setTwoColumn(false);
-      } catch {
-        // corrupted → start empty
-      }
+      const savedHorizon = Number(window.localStorage.getItem(HORIZON_KEY));
+      if (savedHorizon >= 1 && savedHorizon <= 120) setMonths(savedHorizon);
+      if (window.localStorage.getItem(LAYOUT_KEY) === "single") setTwoColumn(false);
+      setCompareId(window.localStorage.getItem(COMPARE_KEY));
       setLoaded(true);
     });
   }, []);
 
-  const persist = (next: Plan) => {
-    setPlan(next);
-    window.localStorage.setItem(PLAN_KEY, JSON.stringify(next));
+  const persist = scenarios.update;
+  const setCompare = (id: string | null) => {
+    setCompareId(id);
+    if (id) window.localStorage.setItem(COMPARE_KEY, id);
+    else window.localStorage.removeItem(COMPARE_KEY);
   };
   const setHorizon = (m: number) => {
     setMonths(m);
@@ -128,11 +111,23 @@ export default function PlannerPage() {
     window.localStorage.setItem(LAYOUT_KEY, two ? "two" : "single");
   };
 
-  if (!accounts.data || !transactions.data || !templates.data || !categories.data || !rates.data || !loaded) {
+  if (
+    !accounts.data ||
+    !transactions.data ||
+    !templates.data ||
+    !categories.data ||
+    !rates.data ||
+    !loaded ||
+    !scenarios.ready
+  ) {
     return <Spinner />;
   }
 
   const firstMonth = todayISO().slice(0, 7);
+  // anything that isn't a credit card can be sold to get through a bad month
+  const drawable = accounts.data.filter((a) => !a.archived && a.kind !== "credit_card");
+  const fundingOrder = planFundingOrder(plan, drawable.map((a) => a.id));
+  const fundingArg = { order: fundingOrder, overrides: plan.funding?.overrides ?? {} };
 
   const base = projectCashflow({
     accounts: accounts.data,
@@ -157,7 +152,37 @@ export default function PlannerPage() {
     extraFlows: planExtraFlows(plan, months, firstMonth),
     replaceCategories: planReplacedCategories(plan),
     dropIncomeCategories: planDroppedIncome(plan),
+    funding: fundingArg,
   });
+
+  // an optional second scenario, drawn alongside so two futures can be read
+  // against each other rather than remembered
+  const comparePlan =
+    compareId && compareId !== scenarios.selectedId
+      ? scenarios.scenarios.find((p) => p.id === compareId)
+      : undefined;
+  const compareNormalized = comparePlan
+    ? normalizePlan(comparePlan.body, firstMonth)
+    : null;
+  const compared = compareNormalized
+    ? projectCashflow({
+        accounts: accounts.data,
+        transactions: transactions.data,
+        templates: templates.data,
+        usdPer: rates.data.usdPer,
+        display: displayCurrency,
+        fromDate: todayISO(),
+        months,
+        ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
+        extraFlows: planExtraFlows(compareNormalized, months, firstMonth),
+        replaceCategories: planReplacedCategories(compareNormalized),
+        dropIncomeCategories: planDroppedIncome(compareNormalized),
+        funding: {
+          order: planFundingOrder(compareNormalized, drawable.map((a) => a.id)),
+          overrides: compareNormalized.funding?.overrides ?? {},
+        },
+      })
+    : null;
 
   // pre-fill suggestions from what the user actually spends
   const spend = averageMonthlySpend({
@@ -186,7 +211,29 @@ export default function PlannerPage() {
     month: m.month,
     plan: Math.round(m.endNetWorth * 100) / 100,
     base: Math.round(base.months[i].endNetWorth * 100) / 100,
+    ...(compared ? { compare: Math.round((compared.months[i]?.endNetWorth ?? 0) * 100) / 100 } : {}),
   }));
+
+  // your ranking first, then anything you haven't ranked — including accounts
+  // you've switched off, which stay listed so you can switch them back on
+  const rankedIds = [
+    ...(plan.funding?.order ?? []).filter((id) => drawable.some((a) => a.id === id)),
+    ...drawable.map((a) => a.id).filter((id) => !(plan.funding?.order ?? []).includes(id)),
+  ];
+  const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
+
+  const moveSource = (index: number, delta: number) => {
+    const next = [...rankedIds];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    persist({ ...plan, funding: { ...plan.funding, order: next } });
+  };
+
+  const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? id;
+  const accountCurrency = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? "USD";
+  const brokeMonth = firstUncoveredMonth(planned);
+  const drawnTotal = totalDrawn(planned);
 
   const milestones = planMilestones(planned);
   const baseMilestones = new Map(planMilestones(base).map((m) => [m.months, m.netWorth]));
@@ -232,6 +279,19 @@ export default function PlannerPage() {
         </div>
       </div>
 
+      <ScenarioBar
+        scenarios={scenarios.scenarios}
+        selectedId={scenarios.selectedId}
+        compareId={compareId}
+        saving={scenarios.saving}
+        onSelect={scenarios.select}
+        onCompare={setCompare}
+        onCreate={(name) => scenarios.create(name)}
+        onDuplicate={(name) => scenarios.create(name, plan)}
+        onRename={scenarios.rename}
+        onDelete={scenarios.remove}
+      />
+
       {/* headline: where you land, with and without the plan */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
@@ -254,10 +314,27 @@ export default function PlannerPage() {
           <div className="mt-0.5 text-xs text-zinc-400">{t("planner.vsBaseHint")}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs text-zinc-500">{t("planner.avgMonthly")}</div>
-          <div className={`mt-1 text-2xl font-bold ${averageMonthlyNet(planned) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-            {fmt(averageMonthlyNet(planned))}
-          </div>
+          {drawnTotal > 0 || brokeMonth ? (
+            <>
+              <div className="text-xs text-zinc-500">{t("planner.soldToGetBy")}</div>
+              <div className={`mt-1 text-2xl font-bold ${brokeMonth ? "text-red-600" : "text-amber-600"}`}>
+                {fmt(drawnTotal)}
+              </div>
+              <div className="mt-0.5 text-xs text-zinc-400">
+                {brokeMonth
+                  ? t("planner.runsOutIn", { month: monthLabelOf(brokeMonth, locale) })
+                  : t("planner.coveredThroughout")}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-zinc-500">{t("planner.avgMonthly")}</div>
+              <div className={`mt-1 text-2xl font-bold ${averageMonthlyNet(planned) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {fmt(averageMonthlyNet(planned))}
+              </div>
+              <div className="mt-0.5 text-xs text-zinc-400">{t("planner.everyMonthPays")}</div>
+            </>
+          )}
         </Card>
       </div>
 
@@ -341,6 +418,88 @@ export default function PlannerPage() {
                 );
               })}
             </div>
+          </div>
+        </Card>
+
+        {/* which assets pay for a month that doesn't pay for itself */}
+        <Card>
+          <CardHeader
+            title={t("planner.fundingTitle")}
+            action={
+              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-teal-600"
+                  checked={plan.funding?.enabled ?? true}
+                  onChange={(e) =>
+                    persist({ ...plan, funding: { ...plan.funding, enabled: e.target.checked } })
+                  }
+                />
+                {t("planner.fundingEnabled")}
+              </label>
+            }
+          />
+          <div className="space-y-2 p-4">
+            <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
+            {drawable.length === 0 ? (
+              <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
+            ) : (
+              <ul className="divide-y divide-[var(--edge-soft)]">
+                {fundingRows.map((account, i) => {
+                  const off = (plan.funding?.disabled ?? []).includes(account.id);
+                  const left = planned.months[planned.months.length - 1]?.sourceBalances?.[account.id];
+                  return (
+                    <li key={account.id} className="flex items-center gap-2 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={account.name}
+                        className="h-4 w-4 accent-teal-600"
+                        checked={!off}
+                        onChange={() =>
+                          persist({
+                            ...plan,
+                            funding: {
+                              ...plan.funding,
+                              disabled: off
+                                ? (plan.funding?.disabled ?? []).filter((id) => id !== account.id)
+                                : [...(plan.funding?.disabled ?? []), account.id],
+                            },
+                          })
+                        }
+                      />
+                      <span className="w-5 text-center text-xs text-zinc-400 tabular-nums">{i + 1}</span>
+                      <span className={`min-w-0 flex-1 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
+                        {account.name}
+                      </span>
+                      {!off && left != null ? (
+                        <span
+                          className={`text-xs tabular-nums ${left <= 0.005 ? "text-red-500" : "text-zinc-400"}`}
+                          title={t("planner.leftAtEnd")}
+                        >
+                          {formatAmount(Math.max(0, left), account.currency, locale)}
+                        </span>
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        aria-label={t("layout.moveUp")}
+                        disabled={i === 0}
+                        onClick={() => moveSource(i, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={t("layout.moveDown")}
+                        disabled={i === fundingRows.length - 1}
+                        onClick={() => moveSource(i, 1)}
+                      >
+                        ↓
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </Card>
 
@@ -536,6 +695,18 @@ export default function PlannerPage() {
                   isAnimationActive={false}
                   activeDot={{ r: 4 }}
                 />
+                {compared ? (
+                  <Line
+                    type="monotone"
+                    dataKey="compare"
+                    name={comparePlan?.name ?? t("planner.compareLine")}
+                    stroke="var(--viz-series-3)"
+                    strokeWidth={2}
+                    strokeDasharray="2 3"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                ) : null}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -604,11 +775,73 @@ export default function PlannerPage() {
                           {m.net >= 0 ? "+" : ""}
                           {fmt(m.net)}
                         </td>
-                        <td className="px-2 py-1.5 text-right font-semibold" data-label={t("projections.endOfMonth")}>{fmt(m.endNetWorth)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold" data-label={t("projections.endOfMonth")}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {m.uncovered > 0.005 ? (
+                              <Badge tone="red">{t("planner.short")}</Badge>
+                            ) : m.draws.length > 0 ? (
+                              <Badge tone="amber">{t("planner.sold")}</Badge>
+                            ) : null}
+                            {fmt(m.endNetWorth)}
+                          </span>
+                        </td>
                       </tr>
                       {open ? (
                         <tr className="stack-attach border-t border-zinc-100 bg-[var(--edge-soft)]/60 dark:border-zinc-800">
                           <td colSpan={5} className="px-2 py-2">
+                            {m.shortfall > 0.005 ? (
+                              <div className="mb-2 space-y-1 rounded-lg border border-[var(--edge)] px-4 py-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <span className="font-medium">
+                                    {t("planner.monthShort", { amount: fmt(m.shortfall) })}
+                                  </span>
+                                  <label
+                                    className="flex items-center gap-1.5 text-zinc-500"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {t("planner.payFrom")}
+                                    <Select
+                                      aria-label={t("planner.payFrom")}
+                                      className="!w-auto"
+                                      value={plan.funding?.overrides?.[m.month] ?? ""}
+                                      onChange={(e) => {
+                                        const overrides = { ...(plan.funding?.overrides ?? {}) };
+                                        if (e.target.value) overrides[m.month] = e.target.value;
+                                        else delete overrides[m.month];
+                                        persist({ ...plan, funding: { ...plan.funding, overrides } });
+                                      }}
+                                    >
+                                      <option value="">{t("planner.inOrder")}</option>
+                                      {fundingRows
+                                        .filter((a) => !(plan.funding?.disabled ?? []).includes(a.id))
+                                        .map((a) => (
+                                          <option key={a.id} value={a.id}>
+                                            {a.name}
+                                          </option>
+                                        ))}
+                                    </Select>
+                                  </label>
+                                </div>
+                                {m.draws.map((d, i) => (
+                                  <div key={i} className="flex items-center gap-2 text-xs">
+                                    <span className="flex-1 truncate text-zinc-600 dark:text-zinc-300">
+                                      {accountName(d.accountId)}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-400">
+                                      −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
+                                    </span>
+                                    <span className="w-28 text-right tabular-nums text-amber-600">
+                                      −{fmt(d.value)}
+                                    </span>
+                                  </div>
+                                ))}
+                                {m.uncovered > 0.005 ? (
+                                  <p className="text-xs font-medium text-red-600">
+                                    {t("planner.uncovered", { amount: fmt(m.uncovered) })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {m.lines.length === 0 ? (
                               <p className="px-4 text-xs text-zinc-400">{t("planner.monthEmpty")}</p>
                             ) : (

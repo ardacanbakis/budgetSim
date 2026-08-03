@@ -10,6 +10,7 @@ import {
   Loan,
   LoanKind,
   NetWorthSnapshot,
+  PlanRecord,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -139,6 +140,12 @@ export interface Repo {
   deleteCategory(id: string): Promise<void>;
   /** idempotent: creates the default category set if the user has none */
   seedDefaultCategories(): Promise<void>;
+
+  /** saved planner scenarios, most recently touched first */
+  listPlans(): Promise<PlanRecord[]>;
+  createPlan(name: string, body: unknown): Promise<PlanRecord>;
+  updatePlan(id: string, patch: { name?: string; body?: unknown }): Promise<void>;
+  deletePlan(id: string): Promise<void>;
 
   listTransactions(): Promise<Transaction[]>;
   createTransaction(input: NewTransaction): Promise<Transaction>;
