@@ -21,6 +21,18 @@ export interface Account {
   createdAt: string;
 }
 
+/**
+ * A saved planner scenario. The body is the plan itself, kept opaque here so
+ * the planner can evolve its shape without a migration every time.
+ */
+export interface PlanRecord {
+  id: string;
+  name: string;
+  body: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Category {
   id: string;
   name: string;

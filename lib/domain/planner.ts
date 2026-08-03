@@ -62,16 +62,39 @@ export interface Devaluation {
   pctPerYear: number;
 }
 
+/**
+ * Which assets you're willing to sell to get through a month that doesn't pay
+ * for itself, and in what order. Bills don't wait for the average to work out:
+ * a bad January has to be paid for in January, out of something you hold.
+ */
+export interface Funding {
+  enabled: boolean;
+  /** account ids you'd draw on, highest priority first */
+  order: string[];
+  /** the subset that's actually allowed — untick the emergency fund */
+  disabled: string[];
+  /** month ("yyyy-MM") → account to raid first, just for that month */
+  overrides: Record<string, string>;
+}
+
 export interface Plan {
   items: PlanItem[];
   budgets: CategoryBudget[];
   devaluation: Devaluation;
   /** income category ids to model as lost — "what if the VICTVS work dried up" */
   lostIncome: string[];
+  funding: Funding;
 }
 
 export const NO_DEVALUATION: Devaluation = { enabled: false, pctPerYear: 25 };
-export const EMPTY_PLAN: Plan = { items: [], budgets: [], devaluation: NO_DEVALUATION, lostIncome: [] };
+export const NO_FUNDING: Funding = { enabled: true, order: [], disabled: [], overrides: {} };
+export const EMPTY_PLAN: Plan = {
+  items: [],
+  budgets: [],
+  devaluation: NO_DEVALUATION,
+  lostIncome: [],
+  funding: NO_FUNDING,
+};
 
 /** The currency that devalues. Everything else is treated as stable. */
 const SOFT_CURRENCY: Currency = "TRY";
@@ -243,6 +266,60 @@ export function planMilestones(result: ProjectionResult): PlanMilestone[] {
     out.push({ months, label: `${months / 12}y`, netWorth: row.endNetWorth });
   }
   return out;
+}
+
+/**
+ * Read a plan out of whatever was stored — an old localStorage scratchpad, a
+ * row saved by a previous version, or nothing at all. Plans are a scratchpad
+ * whose shape keeps growing, so every field is defaulted rather than trusted.
+ */
+export function normalizePlan(raw: unknown, thisMonth: string): Plan {
+  const saved = raw as Partial<Plan> | null;
+  if (!saved || !Array.isArray(saved.items) || !Array.isArray(saved.budgets)) return EMPTY_PLAN;
+  return {
+    devaluation: saved.devaluation ?? EMPTY_PLAN.devaluation,
+    lostIncome: saved.lostIncome ?? [],
+    funding: {
+      enabled: saved.funding?.enabled ?? true,
+      order: saved.funding?.order ?? [],
+      disabled: saved.funding?.disabled ?? [],
+      overrides: saved.funding?.overrides ?? {},
+    },
+    items: saved.items.map((i) => ({
+      ...i,
+      currency: i.currency ?? "USD",
+      inflates: i.inflates ?? true,
+      // plans saved before start months were real dates stored an offset
+      startMonth:
+        typeof i.startMonth === "number" ? addMonthKey(thisMonth, i.startMonth) : i.startMonth,
+    })),
+    budgets: saved.budgets.map((b) => ({ ...b, currency: b.currency ?? "USD", label: b.label ?? "" })),
+  };
+}
+
+/**
+ * The drain order handed to the projector: enabled sources in your order,
+ * then any account you own that isn't in the list yet. A newly opened account
+ * is available without you having to go and add it.
+ */
+export function planFundingOrder(plan: Plan, drawableIds: string[]): string[] {
+  const funding = plan.funding ?? NO_FUNDING;
+  if (!funding.enabled) return [];
+  const off = new Set(funding.disabled ?? []);
+  const drawable = new Set(drawableIds);
+  const ordered = (funding.order ?? []).filter((id) => drawable.has(id));
+  const rest = drawableIds.filter((id) => !ordered.includes(id));
+  return [...ordered, ...rest].filter((id) => !off.has(id));
+}
+
+/** The first month the plan can't pay for itself, or null if it always can. */
+export function firstUncoveredMonth(result: ProjectionResult): string | null {
+  return result.months.find((m) => m.uncovered > 0.005)?.month ?? null;
+}
+
+/** Total sold out of assets across the horizon, in the display currency. */
+export function totalDrawn(result: ProjectionResult): number {
+  return result.months.reduce((s, m) => s + m.draws.reduce((d, x) => d + x.value, 0), 0);
 }
 
 /** Average monthly surplus (or shortfall) across the horizon. */

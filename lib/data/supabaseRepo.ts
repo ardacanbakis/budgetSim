@@ -21,6 +21,7 @@ import {
   Goal,
   Loan,
   NetWorthSnapshot,
+  PlanRecord,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -142,6 +143,14 @@ const loanFromRow = (r: Row): Loan => ({
   createdAt: r.created_at,
 });
 
+const planFromRow = (r: Row): PlanRecord => ({
+  id: r.id,
+  name: r.name,
+  body: r.body,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
 function throwIf(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
 }
@@ -224,6 +233,38 @@ export class SupabaseRepo implements Repo {
 
   async seedDefaultCategories(): Promise<void> {
     const { error } = await this.db.rpc("seed_default_categories");
+    throwIf(error);
+  }
+
+  async listPlans(): Promise<PlanRecord[]> {
+    const { data, error } = await this.db
+      .from("plans")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    throwIf(error);
+    return (data ?? []).map(planFromRow);
+  }
+
+  async createPlan(name: string, body: unknown): Promise<PlanRecord> {
+    const { data, error } = await this.db
+      .from("plans")
+      .insert({ user_id: this.userId, name, body })
+      .select()
+      .single();
+    throwIf(error);
+    return planFromRow(data!);
+  }
+
+  async updatePlan(id: string, patch: { name?: string; body?: unknown }): Promise<void> {
+    const row: Row = { updated_at: new Date().toISOString() };
+    if (patch.name != null) row.name = patch.name;
+    if (patch.body !== undefined) row.body = patch.body;
+    const { error } = await this.db.from("plans").update(row).eq("id", id);
+    throwIf(error);
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    const { error } = await this.db.from("plans").delete().eq("id", id);
     throwIf(error);
   }
 

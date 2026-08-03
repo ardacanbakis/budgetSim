@@ -24,6 +24,7 @@ import {
   Goal,
   Loan,
   NetWorthSnapshot,
+  PlanRecord,
   Purchase,
   RecurringTemplate,
   Transaction,
@@ -127,6 +128,33 @@ export class DemoRepo implements Repo {
 
   async seedDefaultCategories(): Promise<void> {
     // demo store is seeded at construction
+  }
+
+  async listPlans(): Promise<PlanRecord[]> {
+    return [...(this.store.plans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  }
+
+  async createPlan(name: string, body: unknown): Promise<PlanRecord> {
+    const now = new Date().toISOString();
+    const plan: PlanRecord = { id: uuid(), name, body, createdAt: now, updatedAt: now };
+    this.store.plans = [...(this.store.plans ?? []), plan];
+    this.save();
+    return plan;
+  }
+
+  async updatePlan(id: string, patch: { name?: string; body?: unknown }): Promise<void> {
+    const plan = (this.store.plans ?? []).find((p) => p.id === id);
+    if (plan) {
+      if (patch.name != null) plan.name = patch.name;
+      if (patch.body !== undefined) plan.body = patch.body;
+      plan.updatedAt = new Date().toISOString();
+    }
+    this.save();
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    this.store.plans = (this.store.plans ?? []).filter((p) => p.id !== id);
+    this.save();
   }
 
   async listTransactions(): Promise<Transaction[]> {

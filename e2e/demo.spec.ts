@@ -244,9 +244,9 @@ test("planner: what-if items and budgets move the horizon, and survive a reload"
   // year milestones render inside the horizon
   await expect(page.getByRole("heading", { name: "Where you land" })).toBeVisible();
 
-  // the plan is a scratchpad kept on this device — it survives a reload
+  // the plan is saved as a named scenario — it survives a reload
   await page.reload();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1400);
   await expect(page.locator("li").filter({ hasText: "Mortgage" })).toHaveCount(1);
   await page.screenshot({ path: "e2e/screenshots/planner.png" });
 });
@@ -656,4 +656,89 @@ test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(1);
   }
+});
+
+test("scenarios: named plans save, reload and compare", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await expect(page.getByRole("heading", { name: /planner|planlayıcı/i })).toBeVisible();
+
+  // the plan that was device-local is now a named scenario
+  const picker = page.getByLabel(/^Scenario$/i);
+  await expect(picker).toHaveValue(/.+/);
+
+  // a second scenario starts empty and is independent of the first
+  await page.getByRole("button", { name: /new scenario/i }).click();
+  const dialog = page.locator(".fixed.inset-0").filter({ hasText: /New scenario/i });
+  await dialog.getByRole("textbox").fill("Mortgage");
+  await dialog.getByRole("button", { name: /^save$/i }).click();
+  await page.waitForTimeout(600);
+  await expect(page.locator("option", { hasText: "Mortgage" })).toHaveCount(1);
+
+  // add a what-if item to Mortgage only
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Mortgage payment");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("2000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1400); // debounced save
+
+  await expect(page.locator("li").filter({ hasText: "Mortgage payment" })).toHaveCount(1);
+
+  // it survives a reload — proof it went to the repo, not just localStorage
+  await page.reload();
+  await page.waitForTimeout(1400);
+  await expect(page.locator("li").filter({ hasText: "Mortgage payment" })).toHaveCount(1);
+
+  // switching back to the first scenario doesn't show the other's item
+  const options = await page.getByLabel(/^Scenario$/i).locator("option").allTextContents();
+  const other = options.find((o) => o !== "Mortgage")!;
+  await page.getByLabel(/^Scenario$/i).selectOption({ label: other });
+  await page.waitForTimeout(800);
+  await expect(page.locator("li").filter({ hasText: "Mortgage payment" })).toHaveCount(0);
+
+  // and the two can be drawn against each other
+  await page.getByLabel(/compare with/i).selectOption({ label: "Mortgage" });
+  await page.waitForTimeout(600);
+  // the comparison scenario joins the chart legend under its own name
+  await expect(page.locator(".recharts-legend-item-text", { hasText: "Mortgage" })).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-scenarios.png" });
+});
+
+test("funding: a short month is paid from an asset you choose", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(800);
+
+  // spend far more than comes in, so every month is short
+  const fundingCard = page.locator("div").filter({ hasText: /^Cover a short month from/ }).first();
+  await expect(fundingCard).toBeVisible();
+
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Runaway spending");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("9000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1200);
+
+  // the headline reports what had to be sold, and when it runs out
+  await expect(page.getByText(/Sold to get by/i)).toBeVisible();
+  await expect(page.getByText(/Runs out in/i)).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-funding.png" });
+
+  // the timeline names the asset that paid, and lets one month use another
+  const firstRow = page.locator("table.stack-sm tbody tr").first();
+  await firstRow.click();
+  await page.waitForTimeout(300);
+  await expect(page.getByText(/This month is .* short/i).first()).toBeVisible();
+  const payFrom = page.getByLabel(/^Pay from$/i).first();
+  await expect(payFrom).toBeVisible();
+  const choices = await payFrom.locator("option").allTextContents();
+  expect(choices.length).toBeGreaterThan(1);
+  await payFrom.selectOption({ index: 1 });
+  await page.waitForTimeout(1000);
+  await expect(page.getByText(/This month is .* short/i).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-funding-month.png" });
 });
