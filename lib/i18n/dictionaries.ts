@@ -422,6 +422,7 @@ export const en = {
     resetConfirm: "Discard the custom arrangement and go back to two columns?",
   },
   planner: {
+    groupByType: "Group by type",
     salesTitle: "Everything sold",
     salesEmpty: "Nothing has had to be sold across this horizon.",
     routine: "routine",
@@ -1012,6 +1013,7 @@ export const tr: Dictionary = {
     resetConfirm: "Özel düzen silinip iki sütuna dönülsün mü?",
   },
   planner: {
+    groupByType: "Türe göre grupla",
     salesTitle: "Satılan her şey",
     salesEmpty: "Bu vade boyunca hiçbir şey satılmak zorunda kalmadı.",
     routine: "rutin",
