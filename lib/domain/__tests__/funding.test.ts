@@ -52,29 +52,39 @@ const run = (
     funding,
   });
 
-describe("paying for a month that doesn't pay for itself", () => {
+describe("paying for a month that overdraws an account", () => {
   const lira = account("lira", "TRY", 40_000); // $1,000
   const gold = account("gold", "XAU_G", 50); // $5,000
-  // ₺40k/mo rent, no income at all — every month is short $1,000
+  // ₺40k/mo rent out of the lira account, no income at all
   const templates = [rent("lira", 40_000)];
 
-  it("reports the shortfall and leaves it uncovered when nothing may be sold", () => {
-    const r = run([lira, gold], templates, 3);
+  it("sells nothing while the account paying the bills still has money in it", () => {
+    const r = run([lira, gold], templates, 2, { order: ["gold", "lira"] });
+    // the first month's rent comes straight out of the ₺40k that was there
     expect(r.months[0].shortfall).toBeCloseTo(1000, 6);
     expect(r.months[0].draws).toEqual([]);
-    expect(r.months[0].uncovered).toBeCloseTo(1000, 6);
+    expect(r.months[0].uncovered).toBe(0);
+    expect(r.months[0].sourceBalances.lira).toBeCloseTo(0, 6);
+    expect(r.months[0].sourceBalances.gold).toBeCloseTo(50, 6);
   });
 
   it("draws on the first source that has something in it", () => {
     const r = run([lira, gold], templates, 3, { order: ["gold", "lira"] });
-    const first = r.months[0];
-    expect(first.uncovered).toBe(0);
-    expect(first.draws).toHaveLength(1);
-    expect(first.draws[0].accountId).toBe("gold");
+    // by the second month the lira account is empty, so gold has to go
+    const second = r.months[1];
+    expect(second.uncovered).toBe(0);
+    expect(second.draws).toHaveLength(1);
+    expect(second.draws[0].accountId).toBe("gold");
     // $1,000 of rent at $100/g = 10 grams, leaving 40
-    expect(first.draws[0].amount).toBeCloseTo(10, 6);
-    expect(first.draws[0].value).toBeCloseTo(1000, 6);
-    expect(first.sourceBalances.gold).toBeCloseTo(40, 6);
+    expect(second.draws[0].amount).toBeCloseTo(10, 6);
+    expect(second.draws[0].value).toBeCloseTo(1000, 6);
+    expect(second.sourceBalances.gold).toBeCloseTo(40, 6);
+  });
+
+  it("leaves the account overdrawn when nothing may be sold", () => {
+    const r = run([lira, gold], templates, 3);
+    expect(r.months[1].draws).toEqual([]);
+    expect(r.months[1].uncovered).toBeCloseTo(1000, 6);
   });
 
   it("selling an asset doesn't change what you're worth", () => {
@@ -83,15 +93,23 @@ describe("paying for a month that doesn't pay for itself", () => {
     expect(withGold.months[2].endNetWorth).toBeCloseTo(without.months[2].endNetWorth, 6);
   });
 
+  it("net worth is always the sum of what's left, even once you run out", () => {
+    // $6,000 of assets against $1,000/mo of rent: six months of runway
+    const r = run([lira, gold], templates, 9, { order: ["gold", "lira"] });
+    for (const [i, m] of r.months.entries()) {
+      expect(m.endNetWorth, `month ${i}`).toBeCloseTo(6000 - 1000 * (i + 1), 6);
+    }
+    // and once everything is gone the shortfall shows up as unpaid, not as
+    // net worth quietly climbing back
+    expect(r.months[5].endNetWorth).toBeCloseTo(0, 6);
+    expect(r.months[6].uncovered).toBeCloseTo(1000, 6);
+    expect(r.months[8].endNetWorth).toBeCloseTo(-3000, 6);
+  });
+
   it("falls through to the next source once one runs dry, then gives up", () => {
-    // $5,000 of gold covers five months, the lira account a sixth, then
-    // there is genuinely nothing left to sell
     const r = run([lira, gold], templates, 8, { order: ["gold", "lira"] });
-    expect(r.months[4].draws[0].accountId).toBe("gold");
-    expect(r.months[4].uncovered).toBe(0);
-    expect(r.months[4].sourceBalances.gold).toBeCloseTo(0, 6);
-    expect(r.months[5].draws[0].accountId).toBe("lira");
-    expect(r.months[5].uncovered).toBe(0);
+    expect(r.months[5].draws[0].accountId).toBe("gold");
+    expect(r.months[5].sourceBalances.gold).toBeCloseTo(0, 6);
     expect(r.months[6].draws).toEqual([]);
     expect(r.months[6].uncovered).toBeCloseTo(1000, 6);
     expect(firstUncoveredMonth(r)).toBe(r.months[6].month);
@@ -103,24 +121,24 @@ describe("paying for a month that doesn't pay for itself", () => {
     const r = run([lira, gold], [big], 1, { order: ["lira", "gold"] });
     const m = r.months[0];
     expect(m.shortfall).toBeCloseTo(20_000, 6);
-    // both sources are emptied, and the rest is honestly reported as unpaid
-    expect(m.draws.map((d) => d.accountId).sort()).toEqual(["gold", "lira"]);
-    expect(m.sourceBalances.lira).toBeCloseTo(0, 6);
+    // the gold is sold — all of it — and the rest is reported as unpaid
+    expect(m.draws.map((d) => d.accountId)).toEqual(["gold"]);
     expect(m.sourceBalances.gold).toBeCloseTo(0, 6);
     expect(m.uncovered).toBeCloseTo(14_000, 6);
-    // and what's uncovered is exactly how far under water the month leaves you
+    // what's uncovered is exactly how far under water the month leaves you
     expect(m.endNetWorth).toBeCloseTo(-14_000, 6);
   });
 
   it("lets a single month be paid from something else", () => {
     const usd = account("usd", "USD", 10_000);
-    const r = run([lira, gold, usd], templates, 3, {
+    const r = run([lira, gold, usd], templates, 4, {
       order: ["usd", "gold"],
-      overrides: { "2026-02": "gold" },
+      overrides: { "2026-03": "gold" },
     });
-    expect(r.months[0].draws[0].accountId).toBe("usd");
-    expect(r.months[1].draws[0].accountId).toBe("gold");
-    expect(r.months[2].draws[0].accountId).toBe("usd");
+    expect(r.months[0].draws).toEqual([]); // still paying out of the lira account
+    expect(r.months[1].draws[0].accountId).toBe("usd");
+    expect(r.months[2].draws[0].accountId).toBe("gold");
+    expect(r.months[3].draws[0].accountId).toBe("usd");
   });
 
   it("a month that pays for itself sells nothing", () => {
@@ -132,13 +150,30 @@ describe("paying for a month that doesn't pay for itself", () => {
       categoryId: "salary",
     };
     const usd = account("usd", "USD", 0);
-    // +$3,000 salary against $1,000 of rent: the lira side is short, but the
-    // month as a whole is up $2,000, so nothing has to be sold
+    // +$3,000 salary against $1,000 of rent, and the rent's own account covers it
     const r = run([usd, lira, gold], [salary, templates[0]], 2, { order: ["usd", "gold"] });
     expect(r.months[0].shortfall).toBe(0);
     expect(r.months[0].draws).toEqual([]);
-    // the $2,000 the month cleared builds up at the top of the list
-    expect(r.months[0].sourceBalances.usd).toBeCloseTo(2000, 6);
+    expect(r.months[0].sourceBalances.usd).toBeCloseTo(3000, 6);
+  });
+
+  it("income landing in dollars is still there to be spent later", () => {
+    // the bug: dollars earned during good months vanished from what could be
+    // sold, while still propping up net worth
+    const salary: RecurringTemplate = {
+      ...rent("usd", 3_000),
+      id: "salary",
+      name: "Salary",
+      direction: "income",
+      categoryId: "salary",
+      endDate: "2026-02-28",
+    };
+    const usd = account("usd", "USD", 0);
+    const r = run([usd, lira, gold], [salary, templates[0]], 6, { order: ["usd", "gold"] });
+    // two months of salary = $6,000, minus the five months of rent it went on
+    expect(r.months[5].sourceBalances.usd).toBeCloseTo(1000, 6);
+    // gold is untouched because the dollars were available first
+    expect(r.months[5].sourceBalances.gold).toBeCloseTo(50, 6);
   });
 });
 
@@ -162,9 +197,10 @@ describe("planFundingOrder", () => {
 
 describe("totalDrawn", () => {
   it("adds up everything sold across the horizon", () => {
-    const r = run([account("lira", "TRY", 40_000), account("gold", "XAU_G", 50)], [rent("lira", 40_000)], 3, {
+    const r = run([account("lira", "TRY", 40_000), account("gold", "XAU_G", 50)], [rent("lira", 40_000)], 4, {
       order: ["gold"],
     });
+    // month one came out of the lira account; the next three came out of gold
     expect(totalDrawn(r)).toBeCloseTo(3000, 6);
   });
 });

@@ -86,11 +86,11 @@ export interface ExtraFlow {
  * template+date). Transfer legs cancel out in a single net-worth view and are
  * excluded.
  *
- * Holdings are carried per currency rather than as one running total, so an
- * optional `ratePath` (the planner's devaluation assumption) revalues what you
- * already hold as well as what flows in — a lira balance really does lose
- * value over ten years. With no ratePath the rates are constant and the result
- * is identical to summing the monthly nets.
+ * Balances are carried per account, so net worth is always the sum of what you
+ * actually hold. An optional `ratePath` (the planner's devaluation assumption)
+ * revalues those balances as well as what flows in — a lira balance really
+ * does lose value over ten years — and `funding` decides which of them get
+ * sold when a month overdraws one.
  */
 export function projectCashflow(params: {
   accounts: Account[];
@@ -217,36 +217,52 @@ export function projectCashflow(params: {
     });
   }
 
-  // what you already hold, per currency — this is what devaluation revalues
-  const holdings = new Map<Currency, number>();
+  // One ledger, per account. Net worth is the sum of it, revalued each month,
+  // so "what I'm worth" and "what I have left to sell" can never drift apart —
+  // which is the whole point once a plan starts eating into savings.
   const skipped = new Set(skippedAccountIds);
-  for (const a of accounts) {
-    if (a.archived || skipped.has(a.id)) continue;
-    holdings.set(a.currency, (holdings.get(a.currency) ?? 0) + (balances.get(a.id) ?? 0));
-  }
+  const live = accounts.filter((a) => !a.archived && !skipped.has(a.id));
+  const balance = new Map<string, number>(live.map((a) => [a.id, balances.get(a.id) ?? 0]));
+  const kindOf = new Map(live.map((a) => [a.id, a.kind] as const));
+
+  /**
+   * A hypothetical flow has no real account, so it lands on the account that
+   * would really carry it: the first funding source in its currency, else the
+   * biggest balance in that currency, else a placeholder for that currency.
+   */
+  const homeFor = (currency: Currency): string => {
+    const ranked = (funding?.order ?? []).find(
+      (id) => currencyOf.get(id) === currency && balance.has(id)
+    );
+    if (ranked) return ranked;
+    const inCurrency = live.filter((a) => a.currency === currency && a.kind !== "credit_card");
+    if (inCurrency.length > 0) {
+      return inCurrency.reduce((best, a) =>
+        (balance.get(a.id) ?? 0) > (balance.get(best.id) ?? 0) ? a : best
+      ).id;
+    }
+    const placeholder = `virtual:${currency}`;
+    if (!balance.has(placeholder)) {
+      balance.set(placeholder, 0);
+      currencyOf.set(placeholder, currency);
+    }
+    return placeholder;
+  };
 
   const valueOf = (rates: UsdPerMap): number => {
     let total = 0;
-    for (const [currency, amount] of holdings) {
-      const converted = convert(amount, currency, display, rates);
+    for (const [id, amount] of balance) {
+      const converted = convert(amount, currencyOf.get(id)!, display, rates);
       if (converted != null) total += converted;
     }
     return total;
   };
 
-  // Funding sources, tracked per account so the timeline can say *which* asset
-  // paid. This is a ledger of who paid for what, not a second simulation of
-  // each account: a month's surplus goes to the top source and a month's
-  // deficit is drawn down the list, so what the sources hold between them
-  // moves exactly in step with net worth and can never claim to cover a gap
-  // out of money that isn't there.
+  // the assets you'll allow to be sold, in the order you'd sell them
   const sourceOrder = (funding?.order ?? []).filter((id) => {
-    const a = accounts.find((acc) => acc.id === id);
-    return a != null && !a.archived && !skipped.has(id) && a.kind !== "credit_card";
+    const a = live.find((acc) => acc.id === id);
+    return a != null && a.kind !== "credit_card";
   });
-  const sourceBalance = new Map<string, number>(
-    sourceOrder.map((id) => [id, balances.get(id) ?? 0])
-  );
   const sourceCurrency = new Map<string, Currency>(
     sourceOrder.map((id) => [id, currencyOf.get(id)!])
   );
@@ -257,17 +273,16 @@ export function projectCashflow(params: {
     let income = 0;
     let expense = 0;
     const expenseByCategory: Record<string, number> = {};
-    // what each currency took in minus what it paid out this month — the
-    // deficit that has to come from somewhere
-    const monthFlow = new Map<Currency, number>();
     // several occurrences of the same thing read better as one line
     const byLabel = new Map<string, ProjectionLine>();
+
     for (const f of buckets.get(month) ?? []) {
       const converted = convert(f.amount, f.currency, display, rates);
       if (converted == null) continue;
       const signed = f.direction === "income" ? f.amount : -f.amount;
-      holdings.set(f.currency, (holdings.get(f.currency) ?? 0) + signed);
-      monthFlow.set(f.currency, (monthFlow.get(f.currency) ?? 0) + signed);
+      // every flow lands on a real account, so the ledger stays the truth
+      const acct = f.accountId != null && balance.has(f.accountId) ? f.accountId : homeFor(f.currency);
+      balance.set(acct, (balance.get(acct) ?? 0) + signed);
 
       if (f.direction === "income") income += converted;
       else {
@@ -281,71 +296,46 @@ export function projectCashflow(params: {
     }
     const lines = [...byLabel.values()].sort((a, b) => b.amount - a.amount);
 
-    // A month that takes in less than it spends has to be paid for out of
-    // something you already hold. Each currency that ran a deficit is covered
-    // from the assets you allowed, in the order you set — paying out of a lira
-    // account just draws that account down, while paying out of gold or
-    // dollars also shifts what you're holding, which is what really matters
-    // once the lira is sliding. Selling never changes what you're worth.
+    // An account the month has overdrawn has to be topped up out of something
+    // you actually hold. Selling never changes what you're worth — it changes
+    // what you're holding, which is what matters once the lira is sliding —
+    // so this is a transfer, and when there's nothing left to transfer the
+    // account simply stays overdrawn and the month is reported as unpaid.
     const draws: FundingDraw[] = [];
-    let shortfall = 0;
     let uncovered = 0;
     const first = funding?.overrides?.[month];
-    const tryOrder =
+    const order =
       first && sourceOrder.includes(first)
         ? [first, ...sourceOrder.filter((id) => id !== first)]
         : sourceOrder;
 
-    // Only a month that ends down needs funding. A month that takes in more
-    // than it spends pays for itself, even if one currency ran dry and another
-    // piled up — that's a conversion you'd make without thinking about it.
-    shortfall = Math.max(0, expense - income);
-    if (shortfall > 1e-9) {
-      // the deficit currencies, and how much of the gap each one accounts for
-      const gaps: { currency: Currency; share: number }[] = [];
-      let gapTotal = 0;
-      for (const [currency, flow] of monthFlow) {
-        if (flow >= 0) continue;
-        const value = convert(-flow, currency, display, rates);
-        if (value == null || value <= 0) continue;
-        gaps.push({ currency, share: value });
-        gapTotal += value;
-      }
+    for (const [id, amount] of balance) {
+      // card debt is debt, not an overdraft to be covered by selling gold
+      if (amount >= 0 || kindOf.get(id) === "credit_card") continue;
+      const short = currencyOf.get(id)!;
+      let owed = -amount; // in the overdrawn account's own currency
 
-      let remaining = shortfall; // still to be found, in the display currency
-      for (const id of tryOrder) {
-        if (remaining <= 1e-9) break;
-        const from = sourceCurrency.get(id)!;
-        const available = sourceBalance.get(id) ?? 0;
+      for (const from of order) {
+        if (owed <= 1e-9 || from === id) continue;
+        const available = balance.get(from) ?? 0;
         if (available <= 0) continue;
-        const needed = convert(remaining, display, from, rates);
+        const fromCurrency = sourceCurrency.get(from)!;
+        const needed = convert(owed, short, fromCurrency, rates);
         if (needed == null || needed <= 0) continue;
         const take = Math.min(available, needed);
-        const value = convert(take, from, display, rates);
-        if (value == null || value <= 0) continue;
+        const bought = convert(take, fromCurrency, short, rates);
+        if (bought == null || bought <= 0) continue;
 
-        sourceBalance.set(id, available - take);
-        holdings.set(from, (holdings.get(from) ?? 0) - take);
-        // the money lands back in whatever ran short, so what you're worth is
-        // unchanged by the sale — only what you're holding moves
-        for (const gap of gaps) {
-          const slice = gapTotal > 0 ? (value * gap.share) / gapTotal : value;
-          const inGapCurrency = convert(slice, display, gap.currency, rates);
-          if (inGapCurrency != null) {
-            holdings.set(gap.currency, (holdings.get(gap.currency) ?? 0) + inGapCurrency);
-          }
-        }
-        remaining -= value;
-        draws.push({ accountId: id, currency: from, amount: take, value });
+        balance.set(from, available - take);
+        balance.set(id, (balance.get(id) ?? 0) + bought);
+        owed -= bought;
+        const value = convert(take, fromCurrency, display, rates);
+        draws.push({ accountId: from, currency: fromCurrency, amount: take, value: value ?? 0 });
       }
-      uncovered = Math.max(0, remaining);
-    } else if (income - expense > 1e-9) {
-      // a month that pays for itself puts the surplus somewhere: the top of
-      // your list, which is the account you'd let build up
-      const topUp = tryOrder[0];
-      if (topUp != null) {
-        const inCurrency = convert(income - expense, display, sourceCurrency.get(topUp)!, rates);
-        if (inCurrency != null) sourceBalance.set(topUp, (sourceBalance.get(topUp) ?? 0) + inCurrency);
+
+      if (owed > 1e-9) {
+        const left = convert(owed, short, display, rates);
+        if (left != null) uncovered += left;
       }
     }
 
@@ -355,10 +345,11 @@ export function projectCashflow(params: {
       expense,
       net: income - expense,
       endNetWorth: valueOf(rates),
-      shortfall,
+      // what the month came up short by, before anything was sold to cover it
+      shortfall: Math.max(0, expense - income),
       draws,
       uncovered,
-      sourceBalances: Object.fromEntries(sourceBalance),
+      sourceBalances: Object.fromEntries(sourceOrder.map((id) => [id, balance.get(id) ?? 0])),
       expenseByCategory,
       lines,
     });

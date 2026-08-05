@@ -521,16 +521,15 @@ export default function PlannerPage() {
                                   </label>
                                 </div>
                                 {m.draws.map((d, i) => (
-                                  <div key={i} className="flex items-center gap-2 text-xs">
-                                    <span className="flex-1 truncate text-zinc-600 dark:text-zinc-300">
+                                  <div key={i} className="mx-auto flex w-full max-w-md items-center gap-2 text-xs">
+                                    <span className="min-w-0 flex-1 truncate text-right text-zinc-600 dark:text-zinc-300">
                                       {accountName(d.accountId)}
+                                      <span className="ml-1.5 text-[10px] text-zinc-400">
+                                        −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
+                                      </span>
                                     </span>
-                                    <span className="text-[10px] text-zinc-400">
-                                      −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
-                                    </span>
-                                    <span className="w-28 text-right tabular-nums text-amber-600">
-                                      −{fmt(d.value)}
-                                    </span>
+                                    <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--edge)]" />
+                                    <span className="w-28 shrink-0 tabular-nums text-amber-600">−{fmt(d.value)}</span>
                                   </div>
                                 ))}
                                 {m.uncovered > 0.005 ? (
@@ -545,15 +544,18 @@ export default function PlannerPage() {
                             ) : (
                               <ul className="space-y-0.5">
                                 {m.lines.map((line, i) => (
-                                  <li key={i} className="flex items-center gap-2 px-4 text-xs">
-                                    <span className="flex-1 truncate text-zinc-600 dark:text-zinc-300">
+                                  <li key={i} className="mx-auto flex w-full max-w-md items-center gap-2 text-xs">
+                                    <span className="min-w-0 flex-1 truncate text-right text-zinc-600 dark:text-zinc-300">
                                       {line.label || categoryName(line.categoryId) || t("common.none")}
+                                      {line.categoryId && categoryName(line.categoryId) && line.label ? (
+                                        <span className="ml-1.5 text-[10px] text-zinc-400">
+                                          {categoryName(line.categoryId)}
+                                        </span>
+                                      ) : null}
                                     </span>
-                                    {line.categoryId && categoryName(line.categoryId) && line.label ? (
-                                      <span className="text-[10px] text-zinc-400">{categoryName(line.categoryId)}</span>
-                                    ) : null}
+                                    <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--edge)]" />
                                     <span
-                                      className={`w-28 text-right tabular-nums ${
+                                      className={`w-28 shrink-0 tabular-nums ${
                                         line.direction === "income" ? "text-emerald-600" : "text-red-600"
                                       }`}
                                     >

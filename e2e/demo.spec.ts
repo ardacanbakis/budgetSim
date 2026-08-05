@@ -872,3 +872,41 @@ test("funding never covers a gap out of money that isn't there", async ({ page }
   expect(left.length).toBeGreaterThan(0);
   expect(Math.max(...left)).toBeLessThan(0.01);
 });
+
+test("planner: net worth runs down to nothing and stays down", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(900);
+  await page.getByRole("button", { name: /^10y$/ }).click();
+
+  // spend far more than comes in, every month, forever
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Big monthly outgoing");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("3000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1400);
+
+  const cells = await page.locator("table.stack-sm tbody tr td:last-child").allTextContents();
+  const worth = cells.map((c) => {
+    const m = c.match(/(-?)[^\d-]*([\d,]+\.\d\d)/);
+    return m ? Number(m[2].replace(/,/g, "")) * (m[1] === "-" ? -1 : 1) : NaN;
+  });
+  expect(worth.length).toBeGreaterThan(100);
+
+  // it only ever goes down: no month may end richer than the one before it
+  for (let i = 1; i < worth.length; i++) {
+    expect(worth[i], `${cells[i]} after ${cells[i - 1]}`).toBeLessThan(worth[i - 1] + 0.01);
+  }
+  // and it really does run out rather than levelling off
+  expect(worth.at(-1)!).toBeLessThan(0);
+
+  // the last month with anything left to sell is where the money runs out
+  const shorts = page.locator("table.stack-sm tbody tr").filter({ hasText: "Short" });
+  expect(await shorts.count()).toBeGreaterThan(0);
+  await shorts.first().click();
+  await page.waitForTimeout(300);
+  await expect(page.getByText(/still uncovered/).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-runway.png" });
+});
