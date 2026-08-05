@@ -73,6 +73,12 @@ export interface Funding {
   order: string[];
   /** the subset that's actually allowed — untick the emergency fund */
   disabled: string[];
+  /**
+   * Accounts money routinely passes through on its way to a bill — the ones
+   * you get paid into. Drawing on them is cash management, not eating into
+   * savings, so a month covered entirely from these isn't flagged as sold.
+   */
+  routine: string[];
   /** month ("yyyy-MM") → account to raid first, just for that month */
   overrides: Record<string, string>;
 }
@@ -87,7 +93,7 @@ export interface Plan {
 }
 
 export const NO_DEVALUATION: Devaluation = { enabled: false, pctPerYear: 25 };
-export const NO_FUNDING: Funding = { enabled: true, order: [], disabled: [], overrides: {} };
+export const NO_FUNDING: Funding = { enabled: true, order: [], disabled: [], routine: [], overrides: {} };
 export const EMPTY_PLAN: Plan = {
   items: [],
   budgets: [],
@@ -283,6 +289,7 @@ export function normalizePlan(raw: unknown, thisMonth: string): Plan {
       enabled: saved.funding?.enabled ?? true,
       order: saved.funding?.order ?? [],
       disabled: saved.funding?.disabled ?? [],
+      routine: saved.funding?.routine ?? [],
       overrides: saved.funding?.overrides ?? {},
     },
     items: saved.items.map((i) => ({
@@ -317,9 +324,21 @@ export function firstUncoveredMonth(result: ProjectionResult): string | null {
   return result.months.find((m) => m.uncovered > 0.005)?.month ?? null;
 }
 
-/** Total sold out of assets across the horizon, in the display currency. */
-export function totalDrawn(result: ProjectionResult): number {
-  return result.months.reduce((s, m) => s + m.draws.reduce((d, x) => d + x.value, 0), 0);
+/**
+ * Total sold out of assets across the horizon, in the display currency.
+ * Routine draws are left out by default: turning dollars into lira to pay a
+ * lira bill isn't a raid on your savings, it's how the month works.
+ */
+export function totalDrawn(result: ProjectionResult, includeRoutine = false): number {
+  return result.months.reduce(
+    (s, m) => s + m.draws.reduce((d, x) => (includeRoutine || !x.routine ? d + x.value : d), 0),
+    0
+  );
+}
+
+/** Did this month have to touch something you'd rather have kept? */
+export function soldFromReserve(month: { draws: { routine: boolean }[] }): boolean {
+  return month.draws.some((d) => !d.routine);
 }
 
 /** Average monthly surplus (or shortfall) across the horizon. */

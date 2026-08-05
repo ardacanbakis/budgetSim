@@ -25,11 +25,13 @@ import {
   planFundingOrder,
   normalizePlan,
   firstUncoveredMonth,
+  soldFromReserve,
   totalDrawn,
   retentionFactor,
 } from "@/lib/domain/planner";
 import { usePlanScenarios } from "@/lib/usePlanScenarios";
 import { ScenarioBar } from "@/components/scenarioBar";
+import { FundingList } from "@/components/fundingList";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -137,7 +139,11 @@ export default function PlannerPage() {
   // anything that isn't a credit card can be sold to get through a bad month
   const drawable = accounts.data.filter((a) => !a.archived && a.kind !== "credit_card");
   const fundingOrder = planFundingOrder(plan, drawable.map((a) => a.id));
-  const fundingArg = { order: fundingOrder, overrides: plan.funding?.overrides ?? {} };
+  const fundingArg = {
+    order: fundingOrder,
+    overrides: plan.funding?.overrides ?? {},
+    routine: plan.funding?.routine ?? [],
+  };
 
   const base = projectCashflow({
     accounts: accounts.data,
@@ -190,6 +196,7 @@ export default function PlannerPage() {
         funding: {
           order: planFundingOrder(compareNormalized, drawable.map((a) => a.id)),
           overrides: compareNormalized.funding?.overrides ?? {},
+          routine: compareNormalized.funding?.routine ?? [],
         },
       })
     : null;
@@ -231,14 +238,6 @@ export default function PlannerPage() {
     ...drawable.map((a) => a.id).filter((id) => !(plan.funding?.order ?? []).includes(id)),
   ];
   const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
-
-  const moveSource = (index: number, delta: number) => {
-    const next = [...rankedIds];
-    const target = index + delta;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    persist({ ...plan, funding: { ...plan.funding, order: next } });
-  };
 
   const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? id;
   const accountCurrency = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? "USD";
@@ -343,19 +342,6 @@ export default function PlannerPage() {
       ),
     },
     {
-      id: "horizon",
-      title: t("planner.blockHorizon"),
-      defaultSize: { w: 2, h: 1 },
-      node: (
-        <>
-          {/* the horizon lives with the chart it controls */}
-          <Card className="p-4">
-            <HorizonSlider months={months} onChange={setHorizon} />
-          </Card>
-        </>
-      ),
-    },
-    {
       id: "chart",
       title: t("planner.chartTitle"),
       defaultSize: { w: 2, h: 4 },
@@ -430,9 +416,12 @@ export default function PlannerPage() {
       defaultSize: { w: 2, h: 5 },
       node: (
         <>
-        {/* the same numbers, readable */}
+        {/* the same numbers, readable — with the control that shapes them */}
         <Card className="flex flex-col">
           <CardHeader title={t("projections.title")} />
+          <div className="border-b border-[var(--edge-soft)] p-3">
+            <HorizonSlider months={months} onChange={setHorizon} />
+          </div>
           <div className="fill-in-grid max-h-[28rem] overflow-auto p-2">
             <table className="stack-sm w-full text-sm tabular-nums">
               <thead className="sticky top-0 bg-[var(--surface)]">
@@ -475,7 +464,7 @@ export default function PlannerPage() {
                               <span title={t("planner.shortTip")}>
                                 <Badge tone="red">{t("planner.short")}</Badge>
                               </span>
-                            ) : m.draws.length > 0 ? (
+                            ) : soldFromReserve(m) ? (
                               <span title={t("planner.soldTip")}>
                                 <Badge tone="amber">{t("planner.sold")}</Badge>
                               </span>
@@ -574,6 +563,55 @@ export default function PlannerPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "sales",
+      title: t("planner.salesTitle"),
+      defaultSize: { w: 2, h: 7 },
+      node: (
+        <>
+        {/* everything sold, month by month — its own card so it can be given
+            the room it needs, or hidden entirely */}
+        <Card className="flex flex-col">
+          <CardHeader title={t("planner.salesTitle")} />
+          <div className="fill-in-grid p-3">
+            {salesByMonth.length === 0 ? (
+              <EmptyState>{t("planner.salesEmpty")}</EmptyState>
+            ) : (
+              <div>
+                {salesByMonth.map((m) => (
+                  <div key={m.month} className="border-t border-[var(--edge-soft)] py-2 first:border-t-0">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium">{monthLabelOf(m.month, locale)}</span>
+                      <span className="text-zinc-400">{t("planner.monthShort", { amount: fmt(m.shortfall) })}</span>
+                    </div>
+                    {m.draws.map((d, i) => (
+                      <div key={i} className="mx-auto flex w-full max-w-md items-center gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate text-right text-zinc-600 dark:text-zinc-300">
+                          {accountName(d.accountId)}
+                          <span className="ml-1.5 text-[10px] text-zinc-400">
+                            −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
+                          </span>
+                        </span>
+                        <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--edge)]" />
+                        <span className={`w-28 shrink-0 tabular-nums ${d.routine ? "text-zinc-500" : "text-amber-600"}`}>
+                          −{fmt(d.value)}
+                        </span>
+                      </div>
+                    ))}
+                    {m.uncovered > 0.005 ? (
+                      <p className="text-xs font-medium text-red-600">
+                        {t("planner.uncovered", { amount: fmt(m.uncovered) })}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
         </>
@@ -702,107 +740,27 @@ export default function PlannerPage() {
             {drawable.length === 0 ? (
               <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
             ) : (
-              <ul className="divide-y divide-[var(--edge-soft)]">
-                {fundingRows.map((account, i) => {
-                  const off = (plan.funding?.disabled ?? []).includes(account.id);
-                  const left = planned.months[planned.months.length - 1]?.sourceBalances?.[account.id];
-                  return (
-                    <li key={account.id} className="flex items-center gap-2 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={account.name}
-                        className="h-4 w-4 accent-teal-600"
-                        checked={!off}
-                        onChange={() =>
-                          persist({
-                            ...plan,
-                            funding: {
-                              ...plan.funding,
-                              disabled: off
-                                ? (plan.funding?.disabled ?? []).filter((id) => id !== account.id)
-                                : [...(plan.funding?.disabled ?? []), account.id],
-                            },
-                          })
-                        }
-                      />
-                      <span className="w-5 text-center text-xs text-zinc-400 tabular-nums">{i + 1}</span>
-                      <span className={`min-w-0 flex-1 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
-                        {account.name}
-                      </span>
-                      {!off && salesByAsset.has(account.id) ? (
-                        <span
-                          className="hidden text-xs tabular-nums text-amber-600 sm:inline"
-                          title={t("planner.soldTotalHint")}
-                        >
-                          −{formatAmount(salesByAsset.get(account.id)!.amount, account.currency, locale)}
-                        </span>
-                      ) : null}
-                      {!off && left != null ? (
-                        <span
-                          data-source-left={Math.max(0, left).toFixed(4)}
-                          className={`text-xs tabular-nums ${left <= 0.005 ? "text-red-500" : "text-zinc-400"}`}
-                          title={t("planner.leftAtEnd")}
-                        >
-                          {formatAmount(Math.max(0, left), account.currency, locale)}
-                        </span>
-                      ) : null}
-                      <Button
-                        variant="ghost"
-                        aria-label={t("layout.moveUp")}
-                        disabled={i === 0}
-                        onClick={() => moveSource(i, -1)}
-                      >
-                        ↑
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        aria-label={t("layout.moveDown")}
-                        disabled={i === fundingRows.length - 1}
-                        onClick={() => moveSource(i, 1)}
-                      >
-                        ↓
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <FundingList
+                accounts={fundingRows}
+                disabled={plan.funding?.disabled ?? []}
+                routine={plan.funding?.routine ?? []}
+                soldByAccount={salesByAsset}
+                leftByAccount={planned.months[planned.months.length - 1]?.sourceBalances ?? {}}
+                locale={locale}
+                onReorder={(ids) => persist({ ...plan, funding: { ...plan.funding, order: ids } })}
+                onToggle={(id, key) => {
+                  const list = (plan.funding?.[key] ?? []) as string[];
+                  persist({
+                    ...plan,
+                    funding: {
+                      ...plan.funding,
+                      [key]: list.includes(id) ? list.filter((x) => x !== id) : [...list, id],
+                    },
+                  });
+                }}
+              />
             )}
 
-            {salesByMonth.length > 0 ? (
-              <details className="rounded-lg border border-[var(--edge)]" open>
-                <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-500">
-                  {t("planner.salesLog", { count: salesByMonth.length })}
-                </summary>
-                <div className="max-h-72 overflow-auto px-3 pb-2">
-                  {salesByMonth.map((m) => (
-                    <div key={m.month} className="border-t border-[var(--edge-soft)] py-2 first:border-t-0">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-medium">{monthLabelOf(m.month, locale)}</span>
-                        <span className="text-zinc-400">
-                          {t("planner.monthShort", { amount: fmt(m.shortfall) })}
-                        </span>
-                      </div>
-                      {m.draws.map((d, i) => (
-                        <div key={i} className="flex items-center gap-2 pl-3 text-xs">
-                          <span className="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">
-                            {accountName(d.accountId)}
-                          </span>
-                          <span className="text-[10px] text-zinc-400 tabular-nums">
-                            −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
-                          </span>
-                          <span className="w-24 text-right tabular-nums text-amber-600">−{fmt(d.value)}</span>
-                        </div>
-                      ))}
-                      {m.uncovered > 0.005 ? (
-                        <p className="pl-3 text-xs font-medium text-red-600">
-                          {t("planner.uncovered", { amount: fmt(m.uncovered) })}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ) : null}
           </div>
         </Card>
         </>
@@ -814,6 +772,7 @@ export default function PlannerPage() {
       defaultSize: { w: 2, h: 3 },
       node: (
         <>
+
         {/* what-if items */}
         <Card>
           <CardHeader
@@ -1090,11 +1049,11 @@ export default function PlannerPage() {
               {block("dev")}
               {block("lost")}
               {block("funding")}
+              {block("sales")}
               {block("items")}
               {block("budgets")}
             </div>
             <div className={view === "two" ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>
-              {block("horizon")}
               {block("chart")}
               {milestones.length > 0 ? block("milestones") : null}
               {block("projections")}

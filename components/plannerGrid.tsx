@@ -1,30 +1,31 @@
 "use client";
 
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 
 /** one grid row, in pixels — a card's height is a whole number of these */
 const ROW_PX = 128;
 export const GRID_COLUMNS = 4;
-const MAX_ROWS = 12;
+const MAX_ROWS = 16;
 /** matches the grid `gap-4` — needed to work a cell size back out of a rect */
 const GAP_PX = 16;
 
-export interface CardSize {
+export interface CardBox {
+  /** column, 0-based */
+  x: number;
+  /** row, 0-based */
+  y: number;
   /** columns spanned, 1–4 */
   w: number;
-  /** rows spanned, 1–12 */
+  /** rows spanned, 1–16 */
   h: number;
 }
 
 export interface GridLayout {
-  order: string[];
+  /** where each card sits; absence means it has never been placed */
+  boxes: Record<string, CardBox>;
   hidden: string[];
-  size: Record<string, CardSize>;
 }
 
 export interface GridBlock {
@@ -32,19 +33,65 @@ export interface GridBlock {
   title: string;
   node: ReactNode;
   /** used the first time this card is placed */
-  defaultSize: CardSize;
+  defaultSize: { w: number; h: number };
 }
 
-const LAYOUT_KEY = "renovator-planner-grid-v1";
+const LAYOUT_KEY = "renovator-planner-grid-v2";
 
 const clampW = (n: number) => Math.min(GRID_COLUMNS, Math.max(1, n));
 const clampH = (n: number) => Math.min(MAX_ROWS, Math.max(1, n));
+const overlaps = (a: CardBox, b: CardBox) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**
- * The custom Planner arrangement, kept on this device: which cards are shown,
- * in what order, and how many grid cells each one takes. A layout only exists
- * once you've made one, which is what lets the page default to it.
+ * Lay cards out top-to-bottom in the order given, packing them across the
+ * columns. Used to seed a fresh canvas from the reading layout's order.
  */
+function pack(blocks: GridBlock[]): Record<string, CardBox> {
+  const boxes: Record<string, CardBox> = {};
+  let x = 0;
+  let y = 0;
+  let rowHeight = 0;
+  for (const b of blocks) {
+    const w = clampW(b.defaultSize.w);
+    const h = clampH(b.defaultSize.h);
+    if (x + w > GRID_COLUMNS) {
+      x = 0;
+      y += rowHeight;
+      rowHeight = 0;
+    }
+    boxes[b.id] = { x, y, w, h };
+    x += w;
+    rowHeight = Math.max(rowHeight, h);
+  }
+  return boxes;
+}
+
+/**
+ * Settle a canvas after one card moved: anything the moved card now sits on
+ * top of slides down far enough to clear it, cascading. Space you deliberately
+ * left empty stays empty — nothing is pulled up to fill it.
+ */
+export function resolveCollisions(
+  boxes: Record<string, CardBox>,
+  movedId: string
+): Record<string, CardBox> {
+  const next = { ...boxes };
+  // settle in reading order so a push lands somewhere predictable
+  const settle = (id: string, seen: Set<string>) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const others = Object.keys(next).filter((k) => k !== id);
+    for (const other of others) {
+      if (!overlaps(next[id], next[other])) continue;
+      next[other] = { ...next[other], y: next[id].y + next[id].h };
+      settle(other, seen);
+    }
+  };
+  settle(movedId, new Set());
+  return next;
+}
+
 export function usePlannerGrid() {
   const [layout, setLayout] = useState<GridLayout | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -55,8 +102,8 @@ export function usePlannerGrid() {
         const raw = window.localStorage.getItem(LAYOUT_KEY);
         if (raw) {
           const saved = JSON.parse(raw) as GridLayout;
-          if (Array.isArray(saved.order)) {
-            setLayout({ order: saved.order, hidden: saved.hidden ?? [], size: saved.size ?? {} });
+          if (saved.boxes && typeof saved.boxes === "object") {
+            setLayout({ boxes: saved.boxes, hidden: saved.hidden ?? [] });
           }
         }
       } catch {
@@ -71,13 +118,9 @@ export function usePlannerGrid() {
     window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
   }
 
-  /** start from the current default arrangement rather than an empty canvas */
+  /** start from the reading layout's arrangement rather than an empty canvas */
   function start(blocks: GridBlock[]) {
-    save({
-      order: blocks.map((b) => b.id),
-      hidden: [],
-      size: Object.fromEntries(blocks.map((b) => [b.id, b.defaultSize])),
-    });
+    save({ boxes: pack(blocks), hidden: [] });
   }
 
   function reset() {
@@ -86,14 +129,6 @@ export function usePlannerGrid() {
   }
 
   return { layout, loaded, save, start, reset };
-}
-
-/** Cards the layout doesn't mention yet (added by a later version) go last. */
-function resolve(blocks: GridBlock[], layout: GridLayout) {
-  const known = new Set(layout.order);
-  const order = [...layout.order.filter((id) => blocks.some((b) => b.id === id))];
-  for (const b of blocks) if (!known.has(b.id)) order.push(b.id);
-  return order;
 }
 
 export function PlannerGrid({
@@ -108,102 +143,87 @@ export function PlannerGrid({
   onChange: (next: GridLayout) => void;
 }) {
   const { t } = useI18n();
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const canvas = useRef<HTMLDivElement | null>(null);
   const byId = new Map(blocks.map((b) => [b.id, b]));
-
-  const order = resolve(blocks, layout);
   const hidden = new Set(layout.hidden);
-  const visible = order.filter((id) => !hidden.has(id));
-  const sizeOf = (id: string): CardSize => layout.size[id] ?? byId.get(id)?.defaultSize ?? { w: 2, h: 2 };
 
-  function onDragEnd(e: DragEndEvent) {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const from = visible.indexOf(String(active.id));
-    const to = visible.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    const moved = arrayMove(visible, from, to);
-    // hidden cards keep their place at the end so unhiding is predictable
-    onChange({ ...layout, order: [...moved, ...order.filter((id) => hidden.has(id))] });
+  // a card the layout has never seen goes below everything already placed
+  const boxes: Record<string, CardBox> = { ...layout.boxes };
+  let floor = Object.values(boxes).reduce((m, b) => Math.max(m, b.y + b.h), 0);
+  for (const b of blocks) {
+    if (boxes[b.id] || hidden.has(b.id)) continue;
+    boxes[b.id] = { x: 0, y: floor, w: clampW(b.defaultSize.w), h: clampH(b.defaultSize.h) };
+    floor += boxes[b.id].h;
+  }
+  const visible = blocks.map((b) => b.id).filter((id) => !hidden.has(id));
+  const rows = Math.max(1, ...visible.map((id) => boxes[id].y + boxes[id].h));
+
+  /** the size of one cell, measured from the canvas so it survives any width */
+  function cell() {
+    const rect = canvas.current?.getBoundingClientRect();
+    const width = rect ? (rect.width + GAP_PX) / GRID_COLUMNS : 200;
+    return { w: width, h: ROW_PX + GAP_PX };
   }
 
-  function resize(id: string, next: CardSize) {
-    onChange({
-      ...layout,
-      size: { ...layout.size, [id]: { w: clampW(next.w), h: clampH(next.h) } },
-    });
+  function place(id: string, box: CardBox) {
+    onChange({ ...layout, boxes: resolveCollisions({ ...boxes, [id]: box }, id) });
   }
-
-  const grid = (
-    <div
-      className="relative grid gap-4"
-      style={{
-        gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
-        gridAutoRows: `${ROW_PX}px`,
-      }}
-    >
-      {/* while editing, show the columns you're snapping to */}
-      {editing ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 grid gap-4"
-          style={{ gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))` }}
-        >
-          {Array.from({ length: GRID_COLUMNS }, (_, i) => (
-            <div key={i} className="rounded-xl border border-dashed border-[var(--edge)]" />
-          ))}
-        </div>
-      ) : null}
-      {visible.map((id) => {
-        const block = byId.get(id);
-        if (!block) return null;
-        return (
-          <GridCard
-            key={id}
-            id={id}
-            title={block.title}
-            size={sizeOf(id)}
-            editing={editing}
-            onResize={(next) => resize(id, next)}
-            onHide={() => onChange({ ...layout, hidden: [...layout.hidden, id] })}
-          >
-            {block.node}
-          </GridCard>
-        );
-      })}
-    </div>
-  );
 
   return (
     <div className="space-y-3">
-      {editing ? (
-        <p className="text-xs text-zinc-500">{t("plannerGrid.hint")}</p>
-      ) : null}
+      {editing ? <p className="text-xs text-zinc-500">{t("plannerGrid.hint")}</p> : null}
 
-      {editing ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={visible} strategy={rectSortingStrategy}>
-            {grid}
-          </SortableContext>
-        </DndContext>
-      ) : (
-        grid
-      )}
+      <div
+        ref={canvas}
+        className="relative grid gap-4"
+        style={{
+          gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
+          gridAutoRows: `${ROW_PX}px`,
+        }}
+      >
+        {/* while editing, show the cells you're snapping to */}
+        {editing
+          ? Array.from({ length: GRID_COLUMNS * rows }, (_, i) => (
+              <div
+                key={i}
+                aria-hidden
+                className="pointer-events-none rounded-xl border border-dashed border-[var(--edge)]"
+                style={{ gridColumn: `${(i % GRID_COLUMNS) + 1}`, gridRow: `${Math.floor(i / GRID_COLUMNS) + 1}` }}
+              />
+            ))
+          : null}
+
+        {visible.map((id) => {
+          const block = byId.get(id)!;
+          return (
+            <GridCard
+              key={id}
+              id={id}
+              title={block.title}
+              box={boxes[id]}
+              editing={editing}
+              cell={cell}
+              onPlace={(next) => place(id, next)}
+              onHide={() => onChange({ ...layout, hidden: [...layout.hidden, id] })}
+            >
+              {block.node}
+            </GridCard>
+          );
+        })}
+      </div>
 
       {editing && hidden.size > 0 ? (
         <div className="space-y-2 rounded-xl border border-dashed border-[var(--edge)] p-3">
           <p className="text-xs font-medium text-zinc-500">{t("layout.hiddenCards")}</p>
           <div className="flex flex-wrap gap-2">
-            {order
-              .filter((id) => hidden.has(id))
-              .map((id) => (
-                <Button
-                  key={id}
-                  onClick={() => onChange({ ...layout, hidden: layout.hidden.filter((h) => h !== id) })}
-                >
-                  + {byId.get(id)?.title ?? id}
-                </Button>
-              ))}
+            {[...hidden].map((id) => (
+              <Button
+                key={id}
+                onClick={() => onChange({ ...layout, hidden: layout.hidden.filter((h) => h !== id) })}
+              >
+                + {byId.get(id)?.title ?? id}
+              </Button>
+            ))}
           </div>
         </div>
       ) : null}
@@ -214,107 +234,100 @@ export function PlannerGrid({
 function GridCard({
   id,
   title,
-  size,
+  box,
   editing,
+  cell,
   children,
-  onResize,
+  onPlace,
   onHide,
 }: {
   id: string;
   title: string;
-  size: CardSize;
+  box: CardBox;
   editing: boolean;
+  cell: () => { w: number; h: number };
   children: ReactNode;
-  onResize: (next: CardSize) => void;
+  onPlace: (next: CardBox) => void;
   onHide: () => void;
 }) {
   const { t } = useI18n();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled: !editing,
-  });
-  const box = useRef<HTMLDivElement | null>(null);
-  // the size being dragged towards, so the card previews it under the cursor
-  const [ghost, setGhost] = useState<CardSize | null>(null);
-  const shown = ghost ?? size;
+  const el = useRef<HTMLDivElement | null>(null);
+  // where the card is being dragged towards, so it previews under the cursor
+  const [ghost, setGhost] = useState<CardBox | null>(null);
+  const shown = ghost ?? box;
 
-  const attachRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      box.current = node;
-      setNodeRef(node);
+  /** One pointer gesture, snapping to cells and committing on release. */
+  const gesture = useCallback(
+    (e: React.PointerEvent, compute: (dx: number, dy: number, size: { w: number; h: number }) => CardBox) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const size = cell();
+      let latest = box;
+
+      const move = (ev: PointerEvent) => {
+        const next = compute(ev.clientX - startX, ev.clientY - startY, size);
+        if (next.x !== latest.x || next.y !== latest.y || next.w !== latest.w || next.h !== latest.h) {
+          latest = next;
+          setGhost(next);
+        }
+      };
+      const end = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        setGhost(null);
+        onPlace(latest);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
     },
-    [setNodeRef]
+    [box, cell, onPlace]
   );
+
+  const startMove = (e: React.PointerEvent) =>
+    gesture(e, (dx, dy, size) => ({
+      ...box,
+      x: Math.max(0, Math.min(GRID_COLUMNS - box.w, box.x + Math.round(dx / size.w))),
+      y: Math.max(0, box.y + Math.round(dy / size.h)),
+    }));
+
+  const startResize = (e: React.PointerEvent) =>
+    gesture(e, (dx, dy, size) => ({
+      ...box,
+      w: Math.min(GRID_COLUMNS - box.x, clampW(box.w + Math.round(dx / size.w))),
+      h: clampH(box.h + Math.round(dy / size.h)),
+    }));
 
   /** Size the card to exactly the height its content wants. */
   function fitHeight() {
-    const content = box.current?.querySelector("[data-grid-card]");
-    const card = box.current;
+    const content = el.current?.querySelector("[data-grid-card]");
+    const card = el.current;
     if (!content || !card) return;
     const chrome = card.getBoundingClientRect().height - content.getBoundingClientRect().height;
     const wanted = content.scrollHeight + chrome;
-    onResize({ ...size, h: clampH(Math.ceil((wanted + GAP_PX) / (ROW_PX + GAP_PX))) });
-  }
-
-  /** Drag the corner: the card resizes in whole cells, live, under the cursor. */
-  function startResize(e: React.PointerEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = box.current?.getBoundingClientRect();
-    if (!rect) return;
-    // a cell is the card's span minus the gaps between the cells it covers
-    const cellW = (rect.width + GAP_PX) / size.w;
-    const cellH = (rect.height + GAP_PX) / size.h;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    let latest = size;
-
-    const move = (ev: PointerEvent) => {
-      const next = {
-        w: clampW(Math.round((rect.width + (ev.clientX - startX) + GAP_PX) / cellW)),
-        h: clampH(Math.round((rect.height + (ev.clientY - startY) + GAP_PX) / cellH)),
-      };
-      if (next.w !== latest.w || next.h !== latest.h) {
-        latest = next;
-        setGhost(next);
-      }
-    };
-    const end = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", end);
-      window.removeEventListener("pointercancel", end);
-      setGhost(null);
-      if (latest.w !== size.w || latest.h !== size.h) onResize(latest);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
+    onPlace({ ...box, h: clampH(Math.ceil((wanted + GAP_PX) / (ROW_PX + GAP_PX))) });
   }
 
   return (
     <div
-      ref={attachRef}
+      ref={el}
       data-card={id}
-      data-size={`${shown.w}x${shown.h}`}
+      data-box={`${shown.x},${shown.y},${shown.w},${shown.h}`}
       style={{
-        gridColumn: `span ${shown.w}`,
-        gridRow: `span ${shown.h}`,
-        transform: CSS.Transform.toString(transform),
-        transition: ghost ? "none" : transition,
-        zIndex: isDragging || ghost ? 30 : undefined,
+        gridColumn: `${shown.x + 1} / span ${shown.w}`,
+        gridRow: `${shown.y + 1} / span ${shown.h}`,
       }}
-      className={`relative flex min-h-0 min-w-0 flex-col ${isDragging ? "opacity-70" : ""} ${
-        ghost ? "ring-2 ring-teal-500" : ""
-      }`}
+      className={`relative z-0 flex min-h-0 min-w-0 flex-col ${ghost ? "z-30 ring-2 ring-teal-500" : ""}`}
     >
       {editing ? (
         <div className="mb-1 flex items-center gap-0.5 rounded-lg bg-[var(--edge-soft)] pr-1">
-          {/* the whole strip drags, not a four-pixel glyph */}
           <button
-            {...attributes}
-            {...listeners}
+            onPointerDown={startMove}
             aria-label={t("plannerGrid.move", { title })}
-            className="flex min-w-0 flex-1 cursor-grab items-center gap-1.5 px-2 py-1.5 text-left active:cursor-grabbing"
+            className="flex min-w-0 flex-1 cursor-grab touch-none items-center gap-1.5 px-2 py-1.5 text-left active:cursor-grabbing"
           >
             <span className="text-zinc-400">⠿</span>
             <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{title}</span>
@@ -322,22 +335,6 @@ function GridCard({
           <span className="px-1 text-[10px] text-zinc-400 tabular-nums">
             {shown.w}×{shown.h}
           </span>
-          <button
-            aria-label={t("plannerGrid.narrower", { title })}
-            className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={size.w <= 1}
-            onClick={() => onResize({ ...size, w: size.w - 1 })}
-          >
-            ←
-          </button>
-          <button
-            aria-label={t("plannerGrid.wider", { title })}
-            className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={size.w >= GRID_COLUMNS}
-            onClick={() => onResize({ ...size, w: size.w + 1 })}
-          >
-            →
-          </button>
           <button
             aria-label={t("plannerGrid.fit", { title })}
             title={t("plannerGrid.fit", { title })}
@@ -347,18 +344,34 @@ function GridCard({
             ⇕
           </button>
           <button
+            aria-label={t("plannerGrid.narrower", { title })}
+            className="px-1 text-zinc-500 disabled:opacity-30"
+            disabled={box.w <= 1}
+            onClick={() => onPlace({ ...box, w: box.w - 1 })}
+          >
+            ←
+          </button>
+          <button
+            aria-label={t("plannerGrid.wider", { title })}
+            className="px-1 text-zinc-500 disabled:opacity-30"
+            disabled={box.x + box.w >= GRID_COLUMNS}
+            onClick={() => onPlace({ ...box, w: box.w + 1 })}
+          >
+            →
+          </button>
+          <button
             aria-label={t("plannerGrid.shorter", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={size.h <= 1}
-            onClick={() => onResize({ ...size, h: size.h - 1 })}
+            disabled={box.h <= 1}
+            onClick={() => onPlace({ ...box, h: box.h - 1 })}
           >
             ↑
           </button>
           <button
             aria-label={t("plannerGrid.taller", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={size.h >= MAX_ROWS}
-            onClick={() => onResize({ ...size, h: size.h + 1 })}
+            disabled={box.h >= MAX_ROWS}
+            onClick={() => onPlace({ ...box, h: box.h + 1 })}
           >
             ↓
           </button>
@@ -369,13 +382,15 @@ function GridCard({
       ) : null}
 
       {/* the card owns the cell: anything taller than its rows scrolls inside */}
-      <div data-grid-card className="min-h-0 flex-1 overflow-auto">{children}</div>
+      <div data-grid-card className="min-h-0 flex-1 overflow-auto">
+        {children}
+      </div>
 
       {editing ? (
         <button
           aria-label={t("plannerGrid.resize", { title })}
           onPointerDown={startResize}
-          className="absolute -bottom-1 -right-1 z-10 flex h-6 w-6 cursor-nwse-resize items-center justify-center rounded-md bg-[var(--surface)] text-[11px] leading-none text-zinc-400 shadow ring-1 ring-[var(--edge)] hover:text-teal-600"
+          className="absolute -bottom-1 -right-1 z-10 flex h-6 w-6 cursor-nwse-resize touch-none items-center justify-center rounded-md bg-[var(--surface)] text-[11px] leading-none text-zinc-400 shadow ring-1 ring-[var(--edge)] hover:text-teal-600"
         >
           ⟋
         </button>

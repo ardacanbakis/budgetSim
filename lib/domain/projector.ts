@@ -21,6 +21,8 @@ export interface FundingDraw {
   amount: number;
   /** what that was worth in the display currency, at this month's rates */
   value: number;
+  /** money that routinely passes through here on its way to a bill */
+  routine: boolean;
 }
 
 export interface ProjectionMonth {
@@ -118,6 +120,8 @@ export function projectCashflow(params: {
     order: string[];
     /** month key ("yyyy-MM") → account to raid first, overriding the order */
     overrides?: Record<string, string>;
+    /** accounts whose draws are routine conversions, not raids on savings */
+    routine?: string[];
   };
 }): ProjectionResult {
   const {
@@ -266,6 +270,7 @@ export function projectCashflow(params: {
   const sourceCurrency = new Map<string, Currency>(
     sourceOrder.map((id) => [id, currencyOf.get(id)!])
   );
+  const routineSources = new Set(funding?.routine ?? []);
 
   const result: ProjectionMonth[] = [];
   monthKeys.forEach((month, offset) => {
@@ -330,7 +335,13 @@ export function projectCashflow(params: {
         balance.set(id, (balance.get(id) ?? 0) + bought);
         owed -= bought;
         const value = convert(take, fromCurrency, display, rates);
-        draws.push({ accountId: from, currency: fromCurrency, amount: take, value: value ?? 0 });
+        draws.push({
+          accountId: from,
+          currency: fromCurrency,
+          amount: take,
+          value: value ?? 0,
+          routine: routineSources.has(from),
+        });
       }
 
       if (owed > 1e-9) {

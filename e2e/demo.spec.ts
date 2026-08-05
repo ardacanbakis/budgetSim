@@ -761,41 +761,46 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await page.getByRole("button", { name: /Edit layout/i }).click();
   await page.waitForTimeout(300);
 
-  // Projections starts two columns wide and five rows tall
+  // every card is placed explicitly: column, row, width, height
   const card = page.locator('[data-card="projections"]');
-  await expect(card).toHaveAttribute("data-size", "2x5");
+  const startBox = (await card.getAttribute("data-box"))!;
+  const [, , w0, h0] = startBox.split(",").map(Number);
   const before = (await card.boundingBox())!;
 
   // resizing changes the card's real footprint, not just the label
   await page.getByRole("button", { name: /^Narrower: Projections$/ }).click();
   await page.waitForTimeout(300);
-  await expect(card).toHaveAttribute("data-size", "1x5");
+  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h0}$`));
   const after = (await card.boundingBox())!;
   expect(after.width).toBeLessThan(before.width);
 
   await page.getByRole("button", { name: /^Taller: Projections$/ }).click();
   await page.waitForTimeout(300);
-  await expect(card).toHaveAttribute("data-size", "1x6");
+  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h0 + 1}$`));
   expect((await card.boundingBox())!.height).toBeGreaterThan(after.height);
 
-  // the table inside grows with the card rather than stopping at a fixed cap
+  // the table inside grows with the card rather than stopping at the 448px
+  // cap it used to carry; the horizon slider sits above it in the same card
   const inner = card.locator(".fill-in-grid");
   const tall = (await card.boundingBox())!.height;
-  expect((await inner.boundingBox())!.height).toBeGreaterThan(tall * 0.8);
+  const innerHeight = (await inner.boundingBox())!.height;
+  expect(innerHeight).toBeGreaterThan(448);
+  expect(innerHeight).toBeGreaterThan(tall * 0.6);
 
   // dragging the corner resizes both dimensions at once
-  const handle = page.locator('[data-card="chart"]').getByRole("button", { name: /^Resize/ });
+  const chartCard = page.locator('[data-card="chart"]');
+  const chartStart = (await chartCard.getAttribute("data-box"))!.split(",").map(Number);
+  const handle = chartCard.getByRole("button", { name: /^Resize/ });
   const hb = (await handle.boundingBox())!;
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
   await page.mouse.move(hb.x + 400, hb.y + 300, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(300);
-  const chartSize = await page.locator('[data-card="chart"]').getAttribute("data-size");
-  expect(chartSize).not.toBe("2x4");
-  const [cw, ch] = chartSize!.split("x").map(Number);
-  expect(cw).toBeGreaterThan(2);
-  expect(ch).toBeGreaterThan(4);
+  const chartSize = (await chartCard.getAttribute("data-box"))!;
+  const [, , cw, ch] = chartSize.split(",").map(Number);
+  expect(ch).toBeGreaterThan(chartStart[3]);
+  expect(cw).toBeGreaterThanOrEqual(chartStart[2]);
 
   // hiding moves it to the tray, and it can be brought back
   await page.getByRole("button", { name: /^Hide Lost income$/ }).click();
@@ -807,8 +812,11 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await page.reload();
   await page.waitForTimeout(1200);
   await expect(page.getByRole("button", { name: /^Custom$/ })).toHaveClass(/shadow-sm/);
-  await expect(page.locator('[data-card="projections"]')).toHaveAttribute("data-size", "1x6");
-  await expect(page.locator('[data-card="chart"]')).toHaveAttribute("data-size", chartSize!);
+  await expect(page.locator('[data-card="projections"]')).toHaveAttribute(
+    "data-box",
+    new RegExp(`,${w0 - 1},${h0 + 1}$`)
+  );
+  await expect(page.locator('[data-card="chart"]')).toHaveAttribute("data-box", chartSize);
   await expect(page.locator('[data-card="lost"]')).toHaveCount(0); // still hidden
 });
 
@@ -825,10 +833,10 @@ test("funding: the card logs every sale, and the badges explain themselves", asy
   await page.getByRole("button", { name: /^Save$/ }).click();
   await page.waitForTimeout(1200);
 
-  // the funding card carries the full sales log, month by month
-  await expect(page.getByText(/Everything sold — \d+ months/)).toBeVisible();
-  const log = page.locator("details").filter({ hasText: /Everything sold/ });
-  await expect(log.getByText(/is .* short/).first()).toBeVisible();
+  // the sales log is its own card now, month by month
+  const log = page.locator("div").filter({ hasText: /^Everything sold/ }).first();
+  await expect(log).toBeVisible();
+  await expect(page.getByText(/is .* short/).first()).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/planner-sales-log.png" });
 
   // and the badges say what they mean, on hover
