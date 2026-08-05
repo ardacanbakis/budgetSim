@@ -36,6 +36,8 @@ import { ScenarioBar } from "@/components/scenarioBar";
 import { FundingList } from "@/components/fundingList";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
+import { computeBalances } from "@/lib/domain/balances";
+import { buildPlanExport } from "@/lib/domain/planExport";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
 import { useI18n } from "@/lib/i18n";
@@ -51,6 +53,11 @@ const tooltipStyle = {
 const HORIZON_KEY = "renovator-plan-horizon";
 const COMPARE_KEY = "renovator-plan-compare";
 const VIEW_KEY = "renovator-plan-view";
+const TILES_KEY = "renovator-plan-tiles";
+
+const TILE_IDS = ["start", "end", "delta", "sold", "avg", "runway", "lowest", "income", "expense"] as const;
+type TileId = (typeof TILE_IDS)[number];
+const DEFAULT_TILES: TileId[] = ["start", "end", "delta", "sold"];
 
 type PlannerView = "single" | "two" | "custom";
 const LAYOUT_KEY = "renovator-plan-layout";
@@ -87,6 +94,8 @@ export default function PlannerPage() {
   const [view, setView] = useState<PlannerView>("two");
   const [editingLayout, setEditingLayout] = useState(false);
   const [groupItems, setGroupItems] = useState(false);
+  const [pickingTiles, setPickingTiles] = useState(false);
+  const [shownTiles, setShownTiles] = useState<TileId[]>(DEFAULT_TILES);
   const grid = usePlannerGrid();
 
   const toggleMonth = (month: string) =>
@@ -106,6 +115,11 @@ export default function PlannerPage() {
       if (savedView === "single" || savedView === "two" || savedView === "custom") setView(savedView);
       else if (window.localStorage.getItem(LAYOUT_KEY) === "single") setView("single");
       setCompareId(window.localStorage.getItem(COMPARE_KEY));
+      const savedTiles = window.localStorage.getItem(TILES_KEY);
+      if (savedTiles) {
+        const picked = savedTiles.split(",").filter((x): x is TileId => TILE_IDS.includes(x as TileId));
+        if (picked.length > 0) setShownTiles(picked);
+      }
       setLoaded(true);
     });
   }, []);
@@ -119,6 +133,10 @@ export default function PlannerPage() {
   const setHorizon = (m: number) => {
     setMonths(m);
     window.localStorage.setItem(HORIZON_KEY, String(m));
+  };
+  const setTiles = (next: TileId[]) => {
+    setShownTiles(next);
+    window.localStorage.setItem(TILES_KEY, next.join(","));
   };
   const chooseView = (next: PlannerView) => {
     setView(next);
@@ -241,6 +259,8 @@ export default function PlannerPage() {
     ...drawable.map((a) => a.id).filter((id) => !(plan.funding?.order ?? []).includes(id)),
   ];
   const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
+  // what each account holds today, so the card can show start → sold → left
+  const startBalances = computeBalances(accounts.data, transactions.data);
 
   // what-if items read best in the order they'll happen; grouping by
   // direction is a switch because sometimes you want all the outgoings together
@@ -283,6 +303,70 @@ export default function PlannerPage() {
   const milestones = planMilestones(planned);
   const baseMilestones = new Map(planMilestones(base).map((m) => [m.months, m.netWorth]));
 
+  // every number the headline can show; you pick which ones earn a tile
+  const good = "text-emerald-600";
+  const bad = "text-red-600";
+  const horizonIncome = planned.months.reduce((n, m) => n + m.income, 0);
+  const horizonExpense = planned.months.reduce((n, m) => n + m.expense, 0);
+  const lowest = planned.months.reduce(
+    (low, m) => (m.endNetWorth < low.endNetWorth ? m : low),
+    planned.months[0] ?? { month: firstMonth, endNetWorth: base.startNetWorth }
+  );
+  const safeMonths = planned.months.findIndex((m) => isShort(m, shortFloor));
+
+  const tileFor = (id: TileId): { label: string; value: string; hint?: string; tone?: string } => {
+    switch (id) {
+      case "start":
+        return { label: t("projections.startNetWorth"), value: fmt(base.startNetWorth) };
+      case "end":
+        return {
+          label: `${t("planner.endWithPlan")} · ${horizonLabel(months, t)}`,
+          value: fmt(planEnd),
+          tone: planEnd >= base.startNetWorth ? good : bad,
+        };
+      case "delta":
+        return {
+          label: t("planner.vsToday"),
+          value: hasPlan ? `${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}` : "—",
+          hint: t("planner.vsBaseHint"),
+          tone: delta >= 0 ? good : bad,
+        };
+      case "sold":
+        return {
+          label: t("planner.soldToGetBy"),
+          value: fmt(drawnTotal),
+          hint: brokeMonth
+            ? t("planner.runsOutIn", { month: monthLabelOf(brokeMonth, locale) })
+            : t("planner.coveredThroughout"),
+          tone: brokeMonth ? bad : "text-amber-600",
+        };
+      case "avg":
+        return {
+          label: t("planner.avgMonthly"),
+          value: fmt(averageMonthlyNet(planned)),
+          tone: averageMonthlyNet(planned) >= 0 ? good : bad,
+        };
+      case "runway":
+        return {
+          label: t("planner.runway"),
+          value: safeMonths < 0 ? t("planner.runwayClear") : t("planner.runwayMonths", { count: safeMonths }),
+          hint: brokeMonth ? monthLabelOf(brokeMonth, locale) : undefined,
+          tone: safeMonths < 0 ? good : bad,
+        };
+      case "lowest":
+        return {
+          label: t("planner.lowestPoint"),
+          value: fmt(lowest.endNetWorth),
+          hint: monthLabelOf(lowest.month, locale),
+          tone: lowest.endNetWorth >= 0 ? good : bad,
+        };
+      case "income":
+        return { label: t("planner.horizonIncome"), value: fmt(horizonIncome), tone: good };
+      case "expense":
+        return { label: t("planner.horizonExpense"), value: fmt(horizonExpense), tone: bad };
+    }
+  };
+
   const setBudget = (categoryId: string, patch: Partial<CategoryBudget>) => {
     const existing = budgetByCategory.get(categoryId);
     const name = categories.data?.find((c) => c.id === categoryId)?.name ?? "";
@@ -311,50 +395,51 @@ export default function PlannerPage() {
       defaultSize: { w: 4, h: 1 },
       node: (
         <>
-      {/* headline: where you land, with and without the plan */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-4">
-          <div className="text-xs text-zinc-500">{t("projections.startNetWorth")}</div>
-          <div className="mt-1 text-2xl font-bold">{fmt(base.startNetWorth)}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs text-zinc-500">
-            {t("planner.endWithPlan")} · {horizonLabel(months, t)}
+      {/* headline: pick which numbers matter to you; the four-across grid
+          keeps every tile the size it was */}
+      <div className="space-y-2">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setPickingTiles((v) => !v)}
+            aria-expanded={pickingTiles}
+            className="rounded-md px-2 py-0.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            {pickingTiles ? t("common.close") : t("planner.chooseTiles")}
+          </button>
+        </div>
+        {pickingTiles ? (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-lg border border-dashed border-[var(--edge)] p-2">
+            {TILE_IDS.map((id) => (
+              <label key={id} className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-teal-600"
+                  checked={shownTiles.includes(id)}
+                  onChange={() =>
+                    setTiles(
+                      shownTiles.includes(id)
+                        ? shownTiles.filter((x) => x !== id)
+                        : [...TILE_IDS.filter((x) => shownTiles.includes(x) || x === id)]
+                    )
+                  }
+                />
+                {tileFor(id).label}
+              </label>
+            ))}
           </div>
-          <div className={`mt-1 text-2xl font-bold ${planEnd >= base.startNetWorth ? "text-emerald-600" : "text-red-600"}`}>
-            {fmt(planEnd)}
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs text-zinc-500">{t("planner.vsToday")}</div>
-          <div className={`mt-1 text-2xl font-bold ${delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-            {hasPlan ? `${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}` : "—"}
-          </div>
-          <div className="mt-0.5 text-xs text-zinc-400">{t("planner.vsBaseHint")}</div>
-        </Card>
-        <Card className="p-4">
-          {drawnTotal > 0 || brokeMonth ? (
-            <>
-              <div className="text-xs text-zinc-500">{t("planner.soldToGetBy")}</div>
-              <div className={`mt-1 text-2xl font-bold ${brokeMonth ? "text-red-600" : "text-amber-600"}`}>
-                {fmt(drawnTotal)}
-              </div>
-              <div className="mt-0.5 text-xs text-zinc-400">
-                {brokeMonth
-                  ? t("planner.runsOutIn", { month: monthLabelOf(brokeMonth, locale) })
-                  : t("planner.coveredThroughout")}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="text-xs text-zinc-500">{t("planner.avgMonthly")}</div>
-              <div className={`mt-1 text-2xl font-bold ${averageMonthlyNet(planned) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                {fmt(averageMonthlyNet(planned))}
-              </div>
-              <div className="mt-0.5 text-xs text-zinc-400">{t("planner.everyMonthPays")}</div>
-            </>
-          )}
-        </Card>
+        ) : null}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {shownTiles.map((id) => {
+            const tile = tileFor(id);
+            return (
+              <Card key={id} className="p-4">
+                <div className="text-xs text-zinc-500">{tile.label}</div>
+                <div className={`mt-1 text-2xl font-bold ${tile.tone ?? ""}`}>{tile.value}</div>
+                {tile.hint ? <div className="mt-0.5 text-xs text-zinc-400">{tile.hint}</div> : null}
+              </Card>
+            );
+          })}
+        </div>
       </div>
         </>
       ),
@@ -788,6 +873,7 @@ export default function PlannerPage() {
                 accounts={fundingRows}
                 disabled={plan.funding?.disabled ?? []}
                 routine={plan.funding?.routine ?? []}
+                startByAccount={startBalances}
                 soldByAccount={salesByAsset}
                 leftByAccount={planned.months[planned.months.length - 1]?.sourceBalances ?? {}}
                 locale={locale}
@@ -1093,6 +1179,29 @@ export default function PlannerPage() {
         onDuplicate={(name) => scenarios.create(name, plan)}
         onRename={scenarios.rename}
         onDelete={scenarios.remove}
+        onExport={() => {
+          const name =
+            scenarios.scenarios.find((sc) => sc.id === scenarios.selectedId)?.name ?? "scenario";
+          const data = buildPlanExport({
+            name,
+            plan,
+            result: planned,
+            accounts: accounts.data!,
+            startBalances,
+            usdPer: rates.data!.usdPer,
+            display: displayCurrency,
+            months,
+            fundingOrder,
+          });
+          const url = URL.createObjectURL(
+            new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+          );
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `budgetsim-${name.replace(/[^\w-]+/g, "-").toLowerCase()}-${todayISO()}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }}
       />
 
       {view === "custom" && grid.layout ? (

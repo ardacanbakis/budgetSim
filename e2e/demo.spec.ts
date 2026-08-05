@@ -960,3 +960,46 @@ test("planner: short only past ₺1,000, grouped detail, sorted what-if items", 
   await expect(detail.getByText("EXPENSES")).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/planner-detail-groups.png" });
 });
+
+test("planner: funding columns, headline picker, and a JSON export that checks itself", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(900);
+
+  // the funding card says which number is which
+  await expect(page.getByText("Start", { exact: true })).toBeVisible();
+  await expect(page.getByText("Left", { exact: true })).toBeVisible();
+  const firstRow = page.locator("li").filter({ has: page.locator("[data-source-left]") }).first();
+  await expect(firstRow).toContainText(/[\d,]+\.\d\d/);
+
+  // the headline shows the numbers you pick
+  await expect(page.getByText("Runway")).toHaveCount(0);
+  await page.getByRole("button", { name: /Choose numbers/i }).click();
+  await page.getByText("Runway", { exact: true }).click();
+  await page.waitForTimeout(300);
+  await expect(page.getByText("Runway")).toHaveCount(2); // the checkbox and the tile
+  await page.screenshot({ path: "e2e/screenshots/planner-headline.png" });
+
+  // and it survives a reload
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await expect(page.getByText("Runway").first()).toBeVisible();
+
+  // exporting hands back a file whose own checks pass
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export JSON/i }).click();
+  const file = await download;
+  const stream = await file.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const c of stream) chunks.push(c as Buffer);
+  const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+
+  expect(data.app).toBe("budgetsim");
+  expect(data.accounts.length).toBeGreaterThan(0);
+  expect(data.months.length).toBeGreaterThan(0);
+  expect(data.accounts[0]).toHaveProperty("startBalance");
+  expect(data.plan).toHaveProperty("funding");
+  const failed = data.checks.filter((c: { ok: boolean }) => !c.ok);
+  expect(failed, JSON.stringify(failed, null, 2)).toEqual([]);
+});
