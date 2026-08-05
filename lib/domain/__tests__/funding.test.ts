@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { projectCashflow } from "../projector";
-import { NO_FUNDING, planFundingOrder, firstUncoveredMonth, totalDrawn, Plan, EMPTY_PLAN } from "../planner";
+import {
+  NO_FUNDING,
+  planFundingOrder,
+  firstUncoveredMonth,
+  soldFromReserve,
+  totalDrawn,
+  Plan,
+  EMPTY_PLAN,
+} from "../planner";
 import { Account, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { UsdPerMap } from "../fx";
 
@@ -39,7 +47,7 @@ const run = (
   accounts: Account[],
   templates: RecurringTemplate[],
   months: number,
-  funding?: { order: string[]; overrides?: Record<string, string> }
+  funding?: { order: string[]; overrides?: Record<string, string>; routine?: string[] }
 ) =>
   projectCashflow({
     accounts,
@@ -202,5 +210,36 @@ describe("totalDrawn", () => {
     });
     // month one came out of the lira account; the next three came out of gold
     expect(totalDrawn(r)).toBeCloseTo(3000, 6);
+  });
+});
+
+describe("routine accounts", () => {
+  const lira = account("lira", "TRY", 0);
+  const usd = account("usd", "USD", 10_000);
+  const gold = account("gold", "XAU_G", 50);
+  const templates = [rent("lira", 40_000)];
+
+  it("marks a draw routine when it's just money passing through", () => {
+    const r = run([lira, usd, gold], templates, 2, { order: ["usd", "gold"], routine: ["usd"] });
+    const m = r.months[0];
+    expect(m.draws[0].accountId).toBe("usd");
+    expect(m.draws[0].routine).toBe(true);
+    // turning dollars into lira to pay a lira bill isn't a raid on savings
+    expect(soldFromReserve(m)).toBe(false);
+  });
+
+  it("still flags the month once it has to reach past them", () => {
+    // $10,000 of dollars covers ten months; the eleventh has to sell gold
+    const r = run([lira, usd, gold], templates, 12, { order: ["usd", "gold"], routine: ["usd"] });
+    expect(soldFromReserve(r.months[9])).toBe(false);
+    const first = r.months.findIndex((m) => soldFromReserve(m));
+    expect(first).toBe(10);
+    expect(r.months[first].draws.some((d) => d.accountId === "gold" && !d.routine)).toBe(true);
+  });
+
+  it("leaves routine conversions out of what you've had to sell", () => {
+    const r = run([lira, usd, gold], templates, 4, { order: ["usd"], routine: ["usd"] });
+    expect(totalDrawn(r)).toBe(0);
+    expect(totalDrawn(r, true)).toBeCloseTo(4000, 6);
   });
 });
