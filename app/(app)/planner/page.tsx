@@ -25,6 +25,8 @@ import {
   planFundingOrder,
   normalizePlan,
   firstUncoveredMonth,
+  isShort,
+  shortThreshold,
   soldFromReserve,
   totalDrawn,
   retentionFactor,
@@ -84,6 +86,7 @@ export default function PlannerPage() {
   // custom arrangement exists it becomes the default instead.
   const [view, setView] = useState<PlannerView>("two");
   const [editingLayout, setEditingLayout] = useState(false);
+  const [groupItems, setGroupItems] = useState(false);
   const grid = usePlannerGrid();
 
   const toggleMonth = (month: string) =>
@@ -239,12 +242,27 @@ export default function PlannerPage() {
   ];
   const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
 
+  // what-if items read best in the order they'll happen; grouping by
+  // direction is a switch because sometimes you want all the outgoings together
+  const byStart = (a: PlanItem, b: PlanItem) =>
+    a.startMonth < b.startMonth ? -1 : a.startMonth > b.startMonth ? 1 : 0;
+  const itemGroups = groupItems
+    ? (["income", "expense"] as const)
+        .map((direction) => ({
+          direction,
+          items: plan.items.filter((i) => i.direction === direction).sort(byStart),
+        }))
+        .filter((g) => g.items.length > 0)
+    : [{ direction: "all" as const, items: [...plan.items].sort(byStart) }];
+
   const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? id;
   const accountCurrency = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? "USD";
-  const brokeMonth = firstUncoveredMonth(planned);
+  // a month is only called short once it's short by real money, not by dust
+  const shortFloor = shortThreshold(displayCurrency, rates.data.usdPer);
+  const brokeMonth = firstUncoveredMonth(planned, shortFloor);
   // everything sold across the horizon: once per asset, and month by month
   const salesByMonth = planned.months
-    .filter((m) => m.draws.length > 0 || m.uncovered > 0.005)
+    .filter((m) => m.draws.length > 0 || isShort(m, shortFloor))
     .map((m) => ({ month: m.month, draws: m.draws, uncovered: m.uncovered, shortfall: m.shortfall }));
   const salesByAsset = (() => {
     const acc = new Map<string, { amount: number; value: number; months: number; lastMonth: string }>();
@@ -460,7 +478,7 @@ export default function PlannerPage() {
                         </td>
                         <td className="px-2 py-1.5 text-right font-semibold" data-label={t("projections.endOfMonth")}>
                           <span className="inline-flex items-center gap-1.5">
-                            {m.uncovered > 0.005 ? (
+                            {isShort(m, shortFloor) ? (
                               <span title={t("planner.shortTip")}>
                                 <Badge tone="red">{t("planner.short")}</Badge>
                               </span>
@@ -521,7 +539,7 @@ export default function PlannerPage() {
                                     <span className="w-28 shrink-0 tabular-nums text-amber-600">−{fmt(d.value)}</span>
                                   </div>
                                 ))}
-                                {m.uncovered > 0.005 ? (
+                                {isShort(m, shortFloor) ? (
                                   <p className="text-xs font-medium text-red-600">
                                     {t("planner.uncovered", { amount: fmt(m.uncovered) })}
                                   </p>
@@ -531,29 +549,55 @@ export default function PlannerPage() {
                             {m.lines.length === 0 ? (
                               <p className="px-4 text-xs text-zinc-400">{t("planner.monthEmpty")}</p>
                             ) : (
-                              <ul className="space-y-0.5">
-                                {m.lines.map((line, i) => (
-                                  <li key={i} className="mx-auto flex w-full max-w-md items-center gap-2 text-xs">
-                                    <span className="min-w-0 flex-1 truncate text-right text-zinc-600 dark:text-zinc-300">
-                                      {line.label || categoryName(line.categoryId) || t("common.none")}
-                                      {line.categoryId && categoryName(line.categoryId) && line.label ? (
-                                        <span className="ml-1.5 text-[10px] text-zinc-400">
-                                          {categoryName(line.categoryId)}
+                              // what came in and what went out, kept apart —
+                              // a mixed list of both is hard to read down
+                              <div className="space-y-2">
+                                {(["income", "expense"] as const).map((direction) => {
+                                  const group = m.lines.filter((l) => l.direction === direction);
+                                  if (group.length === 0) return null;
+                                  const total = group.reduce((sum, l) => sum + l.amount, 0);
+                                  return (
+                                    <div key={direction}>
+                                      <div className="mx-auto flex w-full max-w-md items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                                        <span className="flex-1 text-right">
+                                          {direction === "income" ? t("dashboard.income") : t("dashboard.expense")}
                                         </span>
-                                      ) : null}
-                                    </span>
-                                    <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--edge)]" />
-                                    <span
-                                      className={`w-28 shrink-0 tabular-nums ${
-                                        line.direction === "income" ? "text-emerald-600" : "text-red-600"
-                                      }`}
-                                    >
-                                      {line.direction === "income" ? "+" : "−"}
-                                      {fmt(line.amount)}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
+                                        <span aria-hidden className="h-3.5 w-px shrink-0 bg-transparent" />
+                                        <span className="w-28 shrink-0 tabular-nums">
+                                          {direction === "income" ? "+" : "−"}
+                                          {fmt(total)}
+                                        </span>
+                                      </div>
+                                      <ul className="space-y-0.5">
+                                        {group.map((line, i) => (
+                                          <li
+                                            key={i}
+                                            className="mx-auto flex w-full max-w-md items-center gap-2 text-xs"
+                                          >
+                                            <span className="min-w-0 flex-1 truncate text-right text-zinc-600 dark:text-zinc-300">
+                                              {line.label || categoryName(line.categoryId) || t("common.none")}
+                                              {line.categoryId && categoryName(line.categoryId) && line.label ? (
+                                                <span className="ml-1.5 text-[10px] text-zinc-400">
+                                                  {categoryName(line.categoryId)}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                            <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--edge)]" />
+                                            <span
+                                              className={`w-28 shrink-0 tabular-nums ${
+                                                direction === "income" ? "text-emerald-600" : "text-red-600"
+                                              }`}
+                                            >
+                                              {direction === "income" ? "+" : "−"}
+                                              {fmt(line.amount)}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -603,7 +647,7 @@ export default function PlannerPage() {
                         </span>
                       </div>
                     ))}
-                    {m.uncovered > 0.005 ? (
+                    {isShort(m, shortFloor) ? (
                       <p className="text-xs font-medium text-red-600">
                         {t("planner.uncovered", { amount: fmt(m.uncovered) })}
                       </p>
@@ -778,9 +822,20 @@ export default function PlannerPage() {
           <CardHeader
             title={t("planner.itemsTitle")}
             action={
-              <Button variant="primary" onClick={() => setAdding(true)}>
-                + {t("planner.addItem")}
-              </Button>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-600"
+                    checked={groupItems}
+                    onChange={(e) => setGroupItems(e.target.checked)}
+                  />
+                  {t("planner.groupByType")}
+                </label>
+                <Button variant="primary" onClick={() => setAdding(true)}>
+                  + {t("planner.addItem")}
+                </Button>
+              </div>
             }
           />
           {plan.items.length === 0 ? (
@@ -789,7 +844,14 @@ export default function PlannerPage() {
             </div>
           ) : (
             <ul className="divide-y divide-[var(--edge-soft)]">
-              {plan.items.map((item) => (
+              {itemGroups.map(({ direction, items }) => (
+                <Fragment key={direction}>
+                  {groupItems ? (
+                    <li className="bg-[var(--edge-soft)]/60 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                      {direction === "income" ? t("tx.income") : t("tx.expense")}
+                    </li>
+                  ) : null}
+                  {items.map((item) => (
                 <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
                   <input
                     type="checkbox"
@@ -836,6 +898,8 @@ export default function PlannerPage() {
                     ✕
                   </Button>
                 </li>
+                  ))}
+                </Fragment>
               ))}
             </ul>
           )}

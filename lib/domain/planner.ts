@@ -1,6 +1,6 @@
 import { TxDirection } from "@/lib/data/types";
 import { Currency } from "./currencies";
-import { UsdPerMap } from "./fx";
+import { convert, UsdPerMap } from "./fx";
 import { ExtraFlow, ProjectionResult } from "./projector";
 
 /**
@@ -319,9 +319,25 @@ export function planFundingOrder(plan: Plan, drawableIds: string[]): string[] {
   return [...ordered, ...rest].filter((id) => !off.has(id));
 }
 
+/**
+ * Rounding dust isn't a shortfall. A month only counts as unpaid once it's
+ * short by real money — a thousand lira, or whatever that's worth in the
+ * currency you're reading in.
+ */
+export const SHORT_THRESHOLD_TRY = 1000;
+
+export function shortThreshold(display: Currency, usdPer: UsdPerMap): number {
+  return convert(SHORT_THRESHOLD_TRY, "TRY", display, usdPer) ?? 0;
+}
+
+/** Is this month short by enough to be worth saying so? */
+export function isShort(month: { uncovered: number }, threshold: number): boolean {
+  return month.uncovered > threshold;
+}
+
 /** The first month the plan can't pay for itself, or null if it always can. */
-export function firstUncoveredMonth(result: ProjectionResult): string | null {
-  return result.months.find((m) => m.uncovered > 0.005)?.month ?? null;
+export function firstUncoveredMonth(result: ProjectionResult, threshold = 0.005): string | null {
+  return result.months.find((m) => m.uncovered > threshold)?.month ?? null;
 }
 
 /**

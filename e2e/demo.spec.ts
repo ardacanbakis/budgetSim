@@ -918,3 +918,45 @@ test("planner: net worth runs down to nothing and stays down", async ({ page }) 
   await expect(page.getByText(/still uncovered/).first()).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/planner-runway.png" });
 });
+
+test("planner: short only past ₺1,000, grouped detail, sorted what-if items", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(900);
+
+  // two items, added newest-first, so ordering has something to fix
+  for (const [name, month] of [
+    ["Later expense", "2028-06"],
+    ["Earlier income", "2027-01"],
+  ] as const) {
+    await page.getByRole("button", { name: /Add item/i }).click();
+    await page.getByLabel(/^Name$/i).fill(name);
+    await page.getByRole("button", { name: name.includes("income") ? /^Income$/ : /^Expense$/ }).click();
+    await page.getByLabel(/Amount/i).first().fill("500");
+    await page.getByLabel(/Starts/i).fill(month);
+    await page.getByRole("button", { name: /^Save$/ }).click();
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(900);
+
+  // date ascending by default, whatever order they were entered in
+  const items = page.locator("li").filter({ hasText: /Later expense|Earlier income/ });
+  const names = await items.allTextContents();
+  expect(names[0]).toContain("Earlier income");
+  expect(names[1]).toContain("Later expense");
+
+  // and they can be split into income and expense
+  await page.getByText("Group by type").click();
+  await page.waitForTimeout(300);
+  await expect(page.locator("li").filter({ hasText: /^Income$/ })).toBeVisible();
+  await expect(page.locator("li").filter({ hasText: /^Expense$/ })).toBeVisible();
+
+  // the month breakdown keeps what came in apart from what went out
+  await page.locator("table.stack-sm tbody tr").first().click();
+  await page.waitForTimeout(300);
+  const detail = page.locator("table.stack-sm tbody tr").nth(1);
+  await expect(detail.getByText("INCOME")).toBeVisible();
+  await expect(detail.getByText("EXPENSES")).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-detail-groups.png" });
+});

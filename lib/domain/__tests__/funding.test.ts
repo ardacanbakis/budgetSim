@@ -4,6 +4,8 @@ import {
   NO_FUNDING,
   planFundingOrder,
   firstUncoveredMonth,
+  isShort,
+  shortThreshold,
   soldFromReserve,
   totalDrawn,
   Plan,
@@ -241,5 +243,35 @@ describe("routine accounts", () => {
     const r = run([lira, usd, gold], templates, 4, { order: ["usd"], routine: ["usd"] });
     expect(totalDrawn(r)).toBe(0);
     expect(totalDrawn(r, true)).toBeCloseTo(4000, 6);
+  });
+});
+
+describe("when a month counts as short", () => {
+  it("prices the threshold into whatever you're reading in", () => {
+    // ₺1,000 at 40 to the dollar
+    expect(shortThreshold("TRY", RATES)).toBeCloseTo(1000, 6);
+    expect(shortThreshold("USD", RATES)).toBeCloseTo(25, 6);
+    expect(shortThreshold("XAU_G", RATES)).toBeCloseTo(0.25, 6);
+  });
+
+  it("ignores a gap left by rounding", () => {
+    const floor = shortThreshold("USD", RATES);
+    expect(isShort({ uncovered: 0.23 }, floor)).toBe(false);
+    expect(isShort({ uncovered: 24.99 }, floor)).toBe(false);
+    expect(isShort({ uncovered: 25.01 }, floor)).toBe(true);
+  });
+
+  it("doesn't call the runway over for a few lira", () => {
+    const months = [
+      { month: "2026-01", uncovered: 0 },
+      { month: "2026-02", uncovered: 0.4 }, // ₺16 — rounding, not ruin
+      { month: "2026-03", uncovered: 800 },
+    ];
+    const result = { startNetWorth: 0, skippedAccountIds: [], months } as unknown as Parameters<
+      typeof firstUncoveredMonth
+    >[0];
+    expect(firstUncoveredMonth(result, shortThreshold("USD", RATES))).toBe("2026-03");
+    // without a threshold even the dust counts
+    expect(firstUncoveredMonth(result)).toBe("2026-02");
   });
 });
