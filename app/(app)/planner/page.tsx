@@ -291,7 +291,7 @@ export default function PlannerPage() {
     {
       id: "tiles",
       title: t("planner.blockHeadline"),
-      defaultSize: { w: 4, h: 2 },
+      defaultSize: { w: 4, h: 1 },
       node: (
         <>
       {/* headline: where you land, with and without the plan */}
@@ -362,9 +362,9 @@ export default function PlannerPage() {
       node: (
         <>
         {/* the picture */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader title={`${t("planner.chartTitle")} (${displayCurrency})`} />
-          <div className="h-80 p-3">
+          <div className="fill-in-grid h-80 p-3">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
                 <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
@@ -431,9 +431,9 @@ export default function PlannerPage() {
       node: (
         <>
         {/* the same numbers, readable */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader title={t("projections.title")} />
-          <div className="max-h-[28rem] overflow-auto p-2">
+          <div className="fill-in-grid max-h-[28rem] overflow-auto p-2">
             <table className="stack-sm w-full text-sm tabular-nums">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-left text-xs text-zinc-400">
@@ -678,7 +678,7 @@ export default function PlannerPage() {
       node: (
         <>
         {/* which assets pay for a month that doesn't pay for itself */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader
             title={t("planner.fundingTitle")}
             action={
@@ -695,7 +695,7 @@ export default function PlannerPage() {
               </label>
             }
           />
-          <div className="space-y-2 p-4">
+          <div className="fill-in-grid space-y-2 p-4">
             <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
             {drawable.length === 0 ? (
               <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
