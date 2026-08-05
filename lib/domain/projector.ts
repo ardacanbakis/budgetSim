@@ -235,8 +235,11 @@ export function projectCashflow(params: {
   };
 
   // Funding sources, tracked per account so the timeline can say *which* asset
-  // paid. A source can never give up more than its own currency pool holds —
-  // the pool is the truth, the per-account figure just attributes it.
+  // paid. This is a ledger of who paid for what, not a second simulation of
+  // each account: a month's surplus goes to the top source and a month's
+  // deficit is drawn down the list, so what the sources hold between them
+  // moves exactly in step with net worth and can never claim to cover a gap
+  // out of money that isn't there.
   const sourceOrder = (funding?.order ?? []).filter((id) => {
     const a = accounts.find((acc) => acc.id === id);
     return a != null && !a.archived && !skipped.has(id) && a.kind !== "credit_card";
@@ -265,13 +268,7 @@ export function projectCashflow(params: {
       const signed = f.direction === "income" ? f.amount : -f.amount;
       holdings.set(f.currency, (holdings.get(f.currency) ?? 0) + signed);
       monthFlow.set(f.currency, (monthFlow.get(f.currency) ?? 0) + signed);
-      // a source account also grows and shrinks with what actually lands on
-      // it; a hypothetical flow lands on the first source in its currency
-      const target =
-        f.accountId != null && sourceBalance.has(f.accountId)
-          ? f.accountId
-          : sourceOrder.find((id) => sourceCurrency.get(id) === f.currency);
-      if (target != null) sourceBalance.set(target, (sourceBalance.get(target) ?? 0) + signed);
+
       if (f.direction === "income") income += converted;
       else {
         expense += converted;
@@ -342,6 +339,14 @@ export function projectCashflow(params: {
         draws.push({ accountId: id, currency: from, amount: take, value });
       }
       uncovered = Math.max(0, remaining);
+    } else if (income - expense > 1e-9) {
+      // a month that pays for itself puts the surplus somewhere: the top of
+      // your list, which is the account you'd let build up
+      const topUp = tryOrder[0];
+      if (topUp != null) {
+        const inCurrency = convert(income - expense, display, sourceCurrency.get(topUp)!, rates);
+        if (inCurrency != null) sourceBalance.set(topUp, (sourceBalance.get(topUp) ?? 0) + inCurrency);
+      }
     }
 
     result.push({

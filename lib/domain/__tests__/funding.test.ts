@@ -84,15 +84,32 @@ describe("paying for a month that doesn't pay for itself", () => {
   });
 
   it("falls through to the next source once one runs dry, then gives up", () => {
-    // the rent itself empties the lira account in month one, so the $5,000 of
-    // gold is all there is: five covered months, then nothing
+    // $5,000 of gold covers five months, the lira account a sixth, then
+    // there is genuinely nothing left to sell
     const r = run([lira, gold], templates, 8, { order: ["gold", "lira"] });
     expect(r.months[4].draws[0].accountId).toBe("gold");
     expect(r.months[4].uncovered).toBe(0);
     expect(r.months[4].sourceBalances.gold).toBeCloseTo(0, 6);
-    expect(r.months[5].draws).toEqual([]);
-    expect(r.months[5].uncovered).toBeCloseTo(1000, 6);
-    expect(firstUncoveredMonth(r)).toBe(r.months[5].month);
+    expect(r.months[5].draws[0].accountId).toBe("lira");
+    expect(r.months[5].uncovered).toBe(0);
+    expect(r.months[6].draws).toEqual([]);
+    expect(r.months[6].uncovered).toBeCloseTo(1000, 6);
+    expect(firstUncoveredMonth(r)).toBe(r.months[6].month);
+  });
+
+  it("never covers a gap out of money that isn't there", () => {
+    // everything you own is $6,000; one month asks for $20,000 of it
+    const big: RecurringTemplate = { ...rent("lira", 800_000), id: "big" };
+    const r = run([lira, gold], [big], 1, { order: ["lira", "gold"] });
+    const m = r.months[0];
+    expect(m.shortfall).toBeCloseTo(20_000, 6);
+    // both sources are emptied, and the rest is honestly reported as unpaid
+    expect(m.draws.map((d) => d.accountId).sort()).toEqual(["gold", "lira"]);
+    expect(m.sourceBalances.lira).toBeCloseTo(0, 6);
+    expect(m.sourceBalances.gold).toBeCloseTo(0, 6);
+    expect(m.uncovered).toBeCloseTo(14_000, 6);
+    // and what's uncovered is exactly how far under water the month leaves you
+    expect(m.endNetWorth).toBeCloseTo(-14_000, 6);
   });
 
   it("lets a single month be paid from something else", () => {
@@ -120,7 +137,8 @@ describe("paying for a month that doesn't pay for itself", () => {
     const r = run([usd, lira, gold], [salary, templates[0]], 2, { order: ["usd", "gold"] });
     expect(r.months[0].shortfall).toBe(0);
     expect(r.months[0].draws).toEqual([]);
-    expect(r.months[0].sourceBalances.usd).toBeCloseTo(3000, 6);
+    // the $2,000 the month cleared builds up at the top of the list
+    expect(r.months[0].sourceBalances.usd).toBeCloseTo(2000, 6);
   });
 });
 
