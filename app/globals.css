@@ -195,3 +195,28 @@ html[data-compact="true"] {
     text-align: left;
   }
 }
+
+/*
+ * A card placed on the Planner canvas fills the cells it was given. Content
+ * that carries its own height for the reading layouts (a 20rem chart, a
+ * capped table) hands that height back here and grows into the cell instead,
+ * so making a card taller actually shows more of it.
+ */
+/* only cards that carry something worth stretching fill their cell; the rest
+   sit at their natural height rather than becoming tall empty boxes */
+[data-grid-card]:has(.fill-in-grid) > * {
+  height: 100%;
+}
+
+[data-grid-card] .fill-in-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  overflow: auto;
+}
+
+/* the sticky table head has to sit above the rows it scrolls under */
+[data-grid-card] thead {
+  z-index: 1;
+}

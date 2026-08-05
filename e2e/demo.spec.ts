@@ -778,8 +778,27 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await expect(card).toHaveAttribute("data-size", "1x6");
   expect((await card.boundingBox())!.height).toBeGreaterThan(after.height);
 
+  // the table inside grows with the card rather than stopping at a fixed cap
+  const inner = card.locator(".fill-in-grid");
+  const tall = (await card.boundingBox())!.height;
+  expect((await inner.boundingBox())!.height).toBeGreaterThan(tall * 0.8);
+
+  // dragging the corner resizes both dimensions at once
+  const handle = page.locator('[data-card="chart"]').getByRole("button", { name: /^Resize/ });
+  const hb = (await handle.boundingBox())!;
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + 400, hb.y + 300, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const chartSize = await page.locator('[data-card="chart"]').getAttribute("data-size");
+  expect(chartSize).not.toBe("2x4");
+  const [cw, ch] = chartSize!.split("x").map(Number);
+  expect(cw).toBeGreaterThan(2);
+  expect(ch).toBeGreaterThan(4);
+
   // hiding moves it to the tray, and it can be brought back
-  await page.getByRole("button", { name: /^Hide: Lost income$/ }).click();
+  await page.getByRole("button", { name: /^Hide Lost income$/ }).click();
   await page.waitForTimeout(300);
   await expect(page.getByText("Hidden cards")).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/planner-custom.png" });
@@ -789,6 +808,7 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await page.waitForTimeout(1200);
   await expect(page.getByRole("button", { name: /^Custom$/ })).toHaveClass(/shadow-sm/);
   await expect(page.locator('[data-card="projections"]')).toHaveAttribute("data-size", "1x6");
+  await expect(page.locator('[data-card="chart"]')).toHaveAttribute("data-size", chartSize!);
   await expect(page.locator('[data-card="lost"]')).toHaveCount(0); // still hidden
 });
 
