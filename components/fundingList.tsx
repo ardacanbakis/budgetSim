@@ -22,6 +22,7 @@ export function FundingList({
   accounts,
   disabled,
   routine,
+  startByAccount,
   soldByAccount,
   leftByAccount,
   locale,
@@ -31,6 +32,7 @@ export function FundingList({
   accounts: Account[];
   disabled: string[];
   routine: string[];
+  startByAccount: Map<string, number>;
   soldByAccount: Map<string, SoldTotal>;
   leftByAccount: Record<string, number>;
   locale: string;
@@ -54,6 +56,16 @@ export function FundingList({
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <ul className="divide-y divide-[var(--edge-soft)]">
+          {/* three numbers per row, so say which is which */}
+          <li className="flex items-center gap-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+            <span className="w-3.5" />
+            <span className="w-4" />
+            <span className="w-4" />
+            <span className="min-w-0 flex-1" />
+            <span className="hidden w-20 text-right sm:block">{t("planner.colStart")}</span>
+            <span className="hidden w-20 text-right sm:block">{t("planner.colSold")}</span>
+            <span className="w-20 text-right">{t("planner.colLeft")}</span>
+          </li>
           {accounts.map((account, i) => (
             <FundingRow
               key={account.id}
@@ -61,6 +73,7 @@ export function FundingList({
               rank={i + 1}
               off={disabled.includes(account.id)}
               isRoutine={routine.includes(account.id)}
+              start={startByAccount.get(account.id) ?? 0}
               sold={soldByAccount.get(account.id)}
               left={leftByAccount[account.id]}
               locale={locale}
@@ -79,6 +92,7 @@ function FundingRow({
   rank,
   off,
   isRoutine,
+  start,
   sold,
   left,
   locale,
@@ -88,6 +102,7 @@ function FundingRow({
   rank: number;
   off: boolean;
   isRoutine: boolean;
+  start: number;
   sold: SoldTotal | undefined;
   left: number | undefined;
   locale: string;
@@ -108,7 +123,7 @@ function FundingRow({
         {...attributes}
         {...listeners}
         aria-label={t("planner.reorderSource", { name: account.name })}
-        className="cursor-grab touch-none px-0.5 text-zinc-400 active:cursor-grabbing"
+        className="w-3.5 cursor-grab touch-none text-zinc-400 active:cursor-grabbing"
       >
         ⠿
       </button>
@@ -120,43 +135,52 @@ function FundingRow({
         onChange={() => onToggle(account.id, "disabled")}
       />
       <span className="w-4 text-center text-xs text-zinc-400 tabular-nums">{rank}</span>
-      <span className={`min-w-0 flex-1 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
-        {account.name}
+
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className={`min-w-0 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
+          {account.name}
+        </span>
+        {!off ? (
+          <button
+            aria-label={t("planner.routineToggle", { name: account.name })}
+            aria-pressed={isRoutine}
+            title={t("planner.routineHint")}
+            onClick={() => onToggle(account.id, "routine")}
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              isRoutine
+                ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+            }`}
+          >
+            {t("planner.routine")}
+          </button>
+        ) : null}
       </span>
 
-      {!off ? (
-        <button
-          aria-label={t("planner.routineToggle", { name: account.name })}
-          aria-pressed={isRoutine}
-          title={t("planner.routineHint")}
-          onClick={() => onToggle(account.id, "routine")}
-          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-            isRoutine
-              ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
-              : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          }`}
-        >
-          {t("planner.routine")}
-        </button>
-      ) : null}
-
-      {!off && sold ? (
-        <span
-          className={`hidden text-xs tabular-nums sm:inline ${isRoutine ? "text-zinc-400" : "text-amber-600"}`}
-          title={t("planner.soldTotalHint")}
-        >
-          −{formatAmount(sold.amount, account.currency, locale)}
-        </span>
-      ) : null}
-      {!off && left != null ? (
-        <span
-          data-source-left={Math.max(0, left).toFixed(4)}
-          className={`text-xs tabular-nums ${left <= 0.005 ? "text-red-500" : "text-zinc-400"}`}
-          title={t("planner.leftAtEnd")}
-        >
-          {formatAmount(Math.max(0, left), account.currency, locale)}
-        </span>
-      ) : null}
+      {/* start → sold → left, always in the same three columns */}
+      <span
+        className="hidden w-20 text-right text-xs tabular-nums text-zinc-500 sm:block"
+        title={t("planner.colStartHint")}
+      >
+        {formatAmount(start, account.currency, locale)}
+      </span>
+      <span
+        className={`hidden w-20 text-right text-xs tabular-nums sm:block ${
+          !off && sold ? (isRoutine ? "text-zinc-400" : "text-amber-600") : "text-zinc-300 dark:text-zinc-700"
+        }`}
+        title={t("planner.soldTotalHint")}
+      >
+        {!off && sold ? `−${formatAmount(sold.amount, account.currency, locale)}` : "—"}
+      </span>
+      <span
+        data-source-left={left != null ? Math.max(0, left).toFixed(4) : undefined}
+        className={`w-20 text-right text-xs tabular-nums ${
+          off ? "text-zinc-300 dark:text-zinc-700" : left != null && left <= 0.005 ? "text-red-500" : "text-zinc-500"
+        }`}
+        title={t("planner.leftAtEnd")}
+      >
+        {off || left == null ? "—" : formatAmount(Math.max(0, left), account.currency, locale)}
+      </span>
     </li>
   );
 }

@@ -21,6 +21,7 @@ export function ScenarioBar({
   onDuplicate,
   onRename,
   onDelete,
+  onExport,
 }: {
   scenarios: PlanRecord[];
   selectedId: string | null;
@@ -32,6 +33,7 @@ export function ScenarioBar({
   onDuplicate: (name: string) => Promise<unknown>;
   onRename: (id: string, name: string) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
+  onExport: () => void;
 }) {
   const { t } = useI18n();
   const [dialog, setDialog] = useState<"new" | "duplicate" | "rename" | null>(null);
@@ -87,6 +89,9 @@ export function ScenarioBar({
       </Button>
       <Button onClick={() => open("rename")} disabled={!current}>
         {t("common.edit")}
+      </Button>
+      <Button onClick={onExport} disabled={!current} title={t("planner.exportHint")}>
+        {t("planner.export")}
       </Button>
       <Button
         variant="ghost"
