@@ -742,3 +742,113 @@ test("funding: a short month is paid from an asset you choose", async ({ page })
   await expect(page.getByText(/This month is .* short/i).first()).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/planner-funding-month.png" });
 });
+
+test("planner custom view: place, resize, hide, and it becomes the default", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(1000);
+
+  // the reading layouts stay narrow; the custom canvas takes the screen
+  const shell = page.locator("main > div").first();
+  const narrow = (await shell.boundingBox())!.width;
+  await page.getByRole("button", { name: /^Custom$/ }).click();
+  await page.waitForTimeout(500);
+  const wide = (await shell.boundingBox())!.width;
+  expect(wide).toBeGreaterThan(narrow);
+  expect(wide).toBeGreaterThan(1800 * 0.7); // ~90% of the area left by the sidebar
+
+  await page.getByRole("button", { name: /Edit layout/i }).click();
+  await page.waitForTimeout(300);
+
+  // Projections starts two columns wide and five rows tall
+  const card = page.locator('[data-card="projections"]');
+  await expect(card).toHaveAttribute("data-size", "2x5");
+  const before = (await card.boundingBox())!;
+
+  // resizing changes the card's real footprint, not just the label
+  await page.getByRole("button", { name: /^Narrower: Projections$/ }).click();
+  await page.waitForTimeout(300);
+  await expect(card).toHaveAttribute("data-size", "1x5");
+  const after = (await card.boundingBox())!;
+  expect(after.width).toBeLessThan(before.width);
+
+  await page.getByRole("button", { name: /^Taller: Projections$/ }).click();
+  await page.waitForTimeout(300);
+  await expect(card).toHaveAttribute("data-size", "1x6");
+  expect((await card.boundingBox())!.height).toBeGreaterThan(after.height);
+
+  // hiding moves it to the tray, and it can be brought back
+  await page.getByRole("button", { name: /^Hide: Lost income$/ }).click();
+  await page.waitForTimeout(300);
+  await expect(page.getByText("Hidden cards")).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-custom.png" });
+
+  // the arrangement survives a reload and is now what the page opens on
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await expect(page.getByRole("button", { name: /^Custom$/ })).toHaveClass(/shadow-sm/);
+  await expect(page.locator('[data-card="projections"]')).toHaveAttribute("data-size", "1x6");
+  await expect(page.locator('[data-card="lost"]')).toHaveCount(0); // still hidden
+});
+
+test("funding: the card logs every sale, and the badges explain themselves", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(800);
+
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Runaway spending");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("9000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1200);
+
+  // the funding card carries the full sales log, month by month
+  await expect(page.getByText(/Everything sold — \d+ months/)).toBeVisible();
+  const log = page.locator("details").filter({ hasText: /Everything sold/ });
+  await expect(log.getByText(/is .* short/).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/planner-sales-log.png" });
+
+  // and the badges say what they mean, on hover
+  await expect(page.locator('[title*="assets were sold"]').first()).toBeVisible();
+  expect(await page.locator('[title*="how deep the hole gets"]').count()).toBeGreaterThan(0);
+});
+
+test("funding never covers a gap out of money that isn't there", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(800);
+
+  // spend far beyond everything owned, in one month
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Impossible purchase");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("500000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1200);
+
+  // the first month is Short, and what it says is uncovered matches how far
+  // under water it leaves you — the bug was claiming a gap was covered
+  const firstRow = page.locator("table.stack-sm tbody tr").first();
+  await expect(firstRow.getByText("Short")).toBeVisible();
+  await firstRow.click();
+  await page.waitForTimeout(300);
+  const uncovered = await page.getByText(/still uncovered/).first().textContent();
+  const endWorth = await firstRow.locator("td").last().textContent();
+  const num = (s: string | null) => Number((s ?? "").replace(/[^\d.]/g, ""));
+  // the bug reported a rounding-error gap while assets sat untouched; what's
+  // uncovered must now be the same order as how far under water you end up
+  expect(num(uncovered)).toBeGreaterThan(1000);
+  expect(Math.abs(num(uncovered) - num(endWorth)) / num(endWorth)).toBeLessThan(0.02);
+
+  // and nothing was left sitting unsold while the month went unpaid — the bug
+  // stopped early and never touched the gold
+  const left = await page.locator("[data-source-left]").evaluateAll((els) =>
+    els.map((e) => Number(e.getAttribute("data-source-left")))
+  );
+  expect(left.length).toBeGreaterThan(0);
+  expect(Math.max(...left)).toBeLessThan(0.01);
+});

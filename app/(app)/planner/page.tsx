@@ -30,6 +30,7 @@ import {
 } from "@/lib/domain/planner";
 import { usePlanScenarios } from "@/lib/usePlanScenarios";
 import { ScenarioBar } from "@/components/scenarioBar";
+import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
@@ -45,6 +46,9 @@ const tooltipStyle = {
 // device-local: how this screen is set up. The plan itself lives server-side.
 const HORIZON_KEY = "renovator-plan-horizon";
 const COMPARE_KEY = "renovator-plan-compare";
+const VIEW_KEY = "renovator-plan-view";
+
+type PlannerView = "single" | "two" | "custom";
 const LAYOUT_KEY = "renovator-plan-layout";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -74,8 +78,11 @@ export default function PlannerPage() {
   const [editing, setEditing] = useState<PlanItem | null>(null);
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // two columns by default: inputs beside the picture they change
-  const [twoColumn, setTwoColumn] = useState(true);
+  // two columns by default: inputs beside the picture they change. Once a
+  // custom arrangement exists it becomes the default instead.
+  const [view, setView] = useState<PlannerView>("two");
+  const [editingLayout, setEditingLayout] = useState(false);
+  const grid = usePlannerGrid();
 
   const toggleMonth = (month: string) =>
     setExpanded((prev) => {
@@ -90,7 +97,9 @@ export default function PlannerPage() {
     queueMicrotask(() => {
       const savedHorizon = Number(window.localStorage.getItem(HORIZON_KEY));
       if (savedHorizon >= 1 && savedHorizon <= 120) setMonths(savedHorizon);
-      if (window.localStorage.getItem(LAYOUT_KEY) === "single") setTwoColumn(false);
+      const savedView = window.localStorage.getItem(VIEW_KEY);
+      if (savedView === "single" || savedView === "two" || savedView === "custom") setView(savedView);
+      else if (window.localStorage.getItem(LAYOUT_KEY) === "single") setView("single");
       setCompareId(window.localStorage.getItem(COMPARE_KEY));
       setLoaded(true);
     });
@@ -106,9 +115,10 @@ export default function PlannerPage() {
     setMonths(m);
     window.localStorage.setItem(HORIZON_KEY, String(m));
   };
-  const setLayout = (two: boolean) => {
-    setTwoColumn(two);
-    window.localStorage.setItem(LAYOUT_KEY, two ? "two" : "single");
+  const chooseView = (next: PlannerView) => {
+    setView(next);
+    if (next !== "custom") setEditingLayout(false);
+    window.localStorage.setItem(VIEW_KEY, next);
   };
 
   if (
@@ -233,6 +243,24 @@ export default function PlannerPage() {
   const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? id;
   const accountCurrency = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? "USD";
   const brokeMonth = firstUncoveredMonth(planned);
+  // everything sold across the horizon: once per asset, and month by month
+  const salesByMonth = planned.months
+    .filter((m) => m.draws.length > 0 || m.uncovered > 0.005)
+    .map((m) => ({ month: m.month, draws: m.draws, uncovered: m.uncovered, shortfall: m.shortfall }));
+  const salesByAsset = (() => {
+    const acc = new Map<string, { amount: number; value: number; months: number; lastMonth: string }>();
+    for (const m of planned.months) {
+      for (const d of m.draws) {
+        const row = acc.get(d.accountId) ?? { amount: 0, value: 0, months: 0, lastMonth: m.month };
+        row.amount += d.amount;
+        row.value += d.value;
+        row.months += 1;
+        row.lastMonth = m.month;
+        acc.set(d.accountId, row);
+      }
+    }
+    return acc;
+  })();
   const drawnTotal = totalDrawn(planned);
 
   const milestones = planMilestones(planned);
@@ -257,41 +285,15 @@ export default function PlannerPage() {
     setAdding(false);
   };
 
-  return (
-    <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{t("planner.title")}</h1>
-          <p className="text-sm text-zinc-500">{t("planner.hint")}</p>
-        </div>
-        <div className="no-print hidden gap-1 rounded-lg bg-[var(--edge-soft)] p-1 xl:flex">
-          {([true, false] as const).map((two) => (
-            <button
-              key={String(two)}
-              onClick={() => setLayout(two)}
-              className={`rounded-md px-3 py-1 text-xs font-medium ${
-                twoColumn === two ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500"
-              }`}
-            >
-              {two ? t("planner.layoutTwo") : t("planner.layoutSingle")}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ScenarioBar
-        scenarios={scenarios.scenarios}
-        selectedId={scenarios.selectedId}
-        compareId={compareId}
-        saving={scenarios.saving}
-        onSelect={scenarios.select}
-        onCompare={setCompare}
-        onCreate={(name) => scenarios.create(name)}
-        onDuplicate={(name) => scenarios.create(name, plan)}
-        onRename={scenarios.rename}
-        onDelete={scenarios.remove}
-      />
-
+  // every placeable card, so the classic columns and the custom grid
+  // render exactly the same content
+  const blocks: GridBlock[] = [
+    {
+      id: "tiles",
+      title: t("planner.blockHeadline"),
+      defaultSize: { w: 4, h: 2 },
+      node: (
+        <>
       {/* headline: where you land, with and without the plan */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
@@ -337,320 +339,28 @@ export default function PlannerPage() {
           )}
         </Card>
       </div>
-
-
-      {/* inputs on the left, the picture on the right — editing an
-          assumption redraws the chart beside it without scrolling */}
-      <div className={twoColumn ? "grid items-start gap-4 xl:grid-cols-2" : "space-y-4"}>
-        <div className="space-y-4">
-        {/* the assumption that dominates a 10-year view from Turkey */}
-        <Card>
-          <CardHeader title={t("planner.devalTitle")} />
-          <div className="space-y-3 p-4">
-            <label className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4 accent-teal-600"
-                checked={plan.devaluation.enabled}
-                onChange={(e) => persist({ ...plan, devaluation: { ...plan.devaluation, enabled: e.target.checked } })}
-              />
-              <span>
-                <span className="block text-sm font-medium">{t("planner.devalEnable")}</span>
-                <span className="block text-xs text-zinc-500">{t("planner.devalHint")}</span>
-              </span>
-            </label>
-            {plan.devaluation.enabled ? (
-              <>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="60"
-                    step="1"
-                    value={plan.devaluation.pctPerYear}
-                    onChange={(e) =>
-                      persist({ ...plan, devaluation: { ...plan.devaluation, pctPerYear: Number(e.target.value) } })
-                    }
-                    className="flex-1 accent-teal-600"
-                    aria-label={t("planner.devalRate")}
-                  />
-                  <span className="w-28 text-right text-sm font-semibold tabular-nums">
-                    −{plan.devaluation.pctPerYear}% {t("planner.perYear")}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-500">
-                  {t("planner.devalExplain", {
-                    years: Math.max(1, Math.round(months / 12)),
-                    pct: Math.round((1 - retentionFactor(plan.devaluation, months)) * 100),
-                  })}
-                </p>
-              </>
-            ) : null}
-          </div>
-        </Card>
-
-        {/* what if an income source stops */}
-        <Card>
-          <CardHeader title={t("planner.lostIncomeTitle")} />
-          <div className="space-y-2 p-4">
-            <p className="text-xs text-zinc-500">{t("planner.lostIncomeHint")}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {incomeCategories.map((c) => {
-                const lost = plan.lostIncome.includes(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() =>
-                      persist({
-                        ...plan,
-                        lostIncome: lost
-                          ? plan.lostIncome.filter((id) => id !== c.id)
-                          : [...plan.lostIncome, c.id],
-                      })
-                    }
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                      lost ? "border-red-500 bg-red-500 text-white line-through" : "text-zinc-500 hover:opacity-80"
-                    }`}
-                    style={lost ? undefined : { borderColor: c.color }}
-                  >
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
-
-        {/* which assets pay for a month that doesn't pay for itself */}
-        <Card>
-          <CardHeader
-            title={t("planner.fundingTitle")}
-            action={
-              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-teal-600"
-                  checked={plan.funding?.enabled ?? true}
-                  onChange={(e) =>
-                    persist({ ...plan, funding: { ...plan.funding, enabled: e.target.checked } })
-                  }
-                />
-                {t("planner.fundingEnabled")}
-              </label>
-            }
-          />
-          <div className="space-y-2 p-4">
-            <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
-            {drawable.length === 0 ? (
-              <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
-            ) : (
-              <ul className="divide-y divide-[var(--edge-soft)]">
-                {fundingRows.map((account, i) => {
-                  const off = (plan.funding?.disabled ?? []).includes(account.id);
-                  const left = planned.months[planned.months.length - 1]?.sourceBalances?.[account.id];
-                  return (
-                    <li key={account.id} className="flex items-center gap-2 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={account.name}
-                        className="h-4 w-4 accent-teal-600"
-                        checked={!off}
-                        onChange={() =>
-                          persist({
-                            ...plan,
-                            funding: {
-                              ...plan.funding,
-                              disabled: off
-                                ? (plan.funding?.disabled ?? []).filter((id) => id !== account.id)
-                                : [...(plan.funding?.disabled ?? []), account.id],
-                            },
-                          })
-                        }
-                      />
-                      <span className="w-5 text-center text-xs text-zinc-400 tabular-nums">{i + 1}</span>
-                      <span className={`min-w-0 flex-1 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
-                        {account.name}
-                      </span>
-                      {!off && left != null ? (
-                        <span
-                          className={`text-xs tabular-nums ${left <= 0.005 ? "text-red-500" : "text-zinc-400"}`}
-                          title={t("planner.leftAtEnd")}
-                        >
-                          {formatAmount(Math.max(0, left), account.currency, locale)}
-                        </span>
-                      ) : null}
-                      <Button
-                        variant="ghost"
-                        aria-label={t("layout.moveUp")}
-                        disabled={i === 0}
-                        onClick={() => moveSource(i, -1)}
-                      >
-                        ↑
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        aria-label={t("layout.moveDown")}
-                        disabled={i === fundingRows.length - 1}
-                        onClick={() => moveSource(i, 1)}
-                      >
-                        ↓
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </Card>
-
-        {/* what-if items */}
-        <Card>
-          <CardHeader
-            title={t("planner.itemsTitle")}
-            action={
-              <Button variant="primary" onClick={() => setAdding(true)}>
-                + {t("planner.addItem")}
-              </Button>
-            }
-          />
-          {plan.items.length === 0 ? (
-            <div className="p-4">
-              <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
-            </div>
-          ) : (
-            <ul className="divide-y divide-[var(--edge-soft)]">
-              {plan.items.map((item) => (
-                <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-teal-600"
-                    checked={item.enabled}
-                    onChange={(e) => persist({ ...plan, items: plan.items.map((i) => (i.id === item.id ? { ...i, enabled: e.target.checked } : i)) })}
-                    aria-label={item.label}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-medium">{item.label}</span>
-                      <Badge tone={item.direction === "income" ? "green" : "red"}>
-                        {t(`tx.${item.direction}`)}
-                      </Badge>
-                      <Badge tone="zinc">{t(`planner.freq_${item.frequency}`)}</Badge>
-                    </div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
-                      {t("planner.startsOn", { month: monthLabelOf(item.startMonth, locale) })}
-                      {item.frequency !== "once"
-                        ? ` · ${
-                            item.durationMonths != null
-                              ? t("planner.untilMonth", {
-                                  month: monthLabelOf(addMonthKey(item.startMonth, item.durationMonths - 1), locale),
-                                })
-                              : t("planner.ongoing")
-                          }`
-                        : ""}
-                      {" · "}
-                      {t("planner.horizonTotal", { amount: formatAmount(itemHorizonTotal(item, months, plan.devaluation, firstMonth), item.currency, locale) })}
-                    </div>
-                  </div>
-                  <span className={`text-sm font-semibold tabular-nums ${item.direction === "income" ? "text-green-600" : "text-red-600"}`}>
-                    {item.direction === "income" ? "+" : "−"}
-                    {formatAmount(item.amount, item.currency, locale)}
-                  </span>
-                  <Button variant="ghost" aria-label={t("common.edit")} onClick={() => setEditing(item)}>
-                    ✎
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    aria-label={t("common.delete")}
-                    onClick={() => persist({ ...plan, items: plan.items.filter((i) => i.id !== item.id) })}
-                  >
-                    ✕
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        {/* monthly budgets for everyday spending */}
-        <Card>
-          <CardHeader title={t("planner.budgetsTitle")} />
-          <div className="space-y-3 p-4">
-            <p className="text-xs text-zinc-500">{t("planner.budgetsHint")}</p>
-            <div className="space-y-2">
-              {expenseCategories.map((c) => {
-                const budget = budgetByCategory.get(c.id);
-                const average = averageByCategory.get(c.id) ?? 0;
-                return (
-                  <div key={c.id} className="flex flex-wrap items-center gap-2">
-                    <label className="flex min-w-40 flex-1 items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-teal-600"
-                        checked={budget?.enabled ?? false}
-                        onChange={(e) =>
-                          setBudget(c.id, {
-                            enabled: e.target.checked,
-                            // first tick seeds from the real 3-month average
-                            monthlyAmount: budget?.monthlyAmount || Math.round(average),
-                          })
-                        }
-                      />
-                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
-                      <span className="truncate">{c.name}</span>
-                    </label>
-                    {average > 0 ? (
-                      <button
-                        onClick={() =>
-                          // the average is computed in the display currency, so
-                          // adopt that currency along with the number
-                          setBudget(c.id, {
-                            enabled: true,
-                            monthlyAmount: Math.round(average),
-                            currency: displayCurrency,
-                          })
-                        }
-                        className="text-[11px] text-teal-600 hover:underline"
-                        title={t("planner.useAverageHint")}
-                      >
-                        {t("planner.useAverage", { amount: fmt(average) })}
-                      </button>
-                    ) : null}
-                    <Input
-                      type="number"
-                      step="any"
-                      min="0"
-                      inputMode="decimal"
-                      className="!w-32 text-right"
-                      placeholder="0"
-                      value={budget ? String(budget.monthlyAmount) : ""}
-                      onChange={(e) => setBudget(c.id, { monthlyAmount: Number(e.target.value) || 0, enabled: true })}
-                    />
-                    <Select
-                      className="!w-24"
-                      aria-label={`${c.name} ${t("common.currency")}`}
-                      value={budget?.currency ?? displayCurrency}
-                      onChange={(e) => setBudget(c.id, { currency: e.target.value as Currency })}
-                    >
-                      {CURRENCIES.map((cur) => (
-                        <option key={cur} value={cur}>
-                          {cur === "XAU_G" ? "GOLD" : cur}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
-
-        </div>
-
-        <div className={twoColumn ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>
+        </>
+      ),
+    },
+    {
+      id: "horizon",
+      title: t("planner.blockHorizon"),
+      defaultSize: { w: 2, h: 1 },
+      node: (
+        <>
           {/* the horizon lives with the chart it controls */}
           <Card className="p-4">
             <HorizonSlider months={months} onChange={setHorizon} />
           </Card>
+        </>
+      ),
+    },
+    {
+      id: "chart",
+      title: t("planner.chartTitle"),
+      defaultSize: { w: 2, h: 4 },
+      node: (
+        <>
         {/* the picture */}
         <Card>
           <CardHeader title={`${t("planner.chartTitle")} (${displayCurrency})`} />
@@ -711,31 +421,15 @@ export default function PlannerPage() {
             </ResponsiveContainer>
           </div>
         </Card>
-
-        {milestones.length > 0 ? (
-          <Card>
-            <CardHeader title={t("planner.milestones")} />
-            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
-              {milestones.map((m) => {
-                const baseline = baseMilestones.get(m.months);
-                const diff = baseline != null ? m.netWorth - baseline : null;
-                return (
-                  <div key={m.months} className="rounded-lg bg-[var(--edge-soft)] p-3">
-                    <div className="text-xs font-medium text-zinc-500">{m.label}</div>
-                    <div className="mt-0.5 font-bold tabular-nums">{fmt(m.netWorth)}</div>
-                    {diff != null && hasPlan && Math.abs(diff) > 0.5 ? (
-                      <div className={`text-[11px] tabular-nums ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {diff >= 0 ? "+" : "−"}
-                        {fmt(Math.abs(diff))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        ) : null}
-
+        </>
+      ),
+    },
+    {
+      id: "projections",
+      title: t("projections.title"),
+      defaultSize: { w: 2, h: 5 },
+      node: (
+        <>
         {/* the same numbers, readable */}
         <Card>
           <CardHeader title={t("projections.title")} />
@@ -778,9 +472,13 @@ export default function PlannerPage() {
                         <td className="px-2 py-1.5 text-right font-semibold" data-label={t("projections.endOfMonth")}>
                           <span className="inline-flex items-center gap-1.5">
                             {m.uncovered > 0.005 ? (
-                              <Badge tone="red">{t("planner.short")}</Badge>
+                              <span title={t("planner.shortTip")}>
+                                <Badge tone="red">{t("planner.short")}</Badge>
+                              </span>
                             ) : m.draws.length > 0 ? (
-                              <Badge tone="amber">{t("planner.sold")}</Badge>
+                              <span title={t("planner.soldTip")}>
+                                <Badge tone="amber">{t("planner.sold")}</Badge>
+                              </span>
                             ) : null}
                             {fmt(m.endNetWorth)}
                           </span>
@@ -876,9 +574,532 @@ export default function PlannerPage() {
             </table>
           </div>
         </Card>
+        </>
+      ),
+    },
+    {
+      id: "dev",
+      title: t("planner.devaluationTitle"),
+      defaultSize: { w: 1, h: 2 },
+      node: (
+        <>
+        {/* the assumption that dominates a 10-year view from Turkey */}
+        <Card>
+          <CardHeader title={t("planner.devalTitle")} />
+          <div className="space-y-3 p-4">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-teal-600"
+                checked={plan.devaluation.enabled}
+                onChange={(e) => persist({ ...plan, devaluation: { ...plan.devaluation, enabled: e.target.checked } })}
+              />
+              <span>
+                <span className="block text-sm font-medium">{t("planner.devalEnable")}</span>
+                <span className="block text-xs text-zinc-500">{t("planner.devalHint")}</span>
+              </span>
+            </label>
+            {plan.devaluation.enabled ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={plan.devaluation.pctPerYear}
+                    onChange={(e) =>
+                      persist({ ...plan, devaluation: { ...plan.devaluation, pctPerYear: Number(e.target.value) } })
+                    }
+                    className="flex-1 accent-teal-600"
+                    aria-label={t("planner.devalRate")}
+                  />
+                  <span className="w-28 text-right text-sm font-semibold tabular-nums">
+                    −{plan.devaluation.pctPerYear}% {t("planner.perYear")}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  {t("planner.devalExplain", {
+                    years: Math.max(1, Math.round(months / 12)),
+                    pct: Math.round((1 - retentionFactor(plan.devaluation, months)) * 100),
+                  })}
+                </p>
+              </>
+            ) : null}
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "lost",
+      title: t("planner.lostIncomeTitle"),
+      defaultSize: { w: 1, h: 2 },
+      node: (
+        <>
+        {/* what if an income source stops */}
+        <Card>
+          <CardHeader title={t("planner.lostIncomeTitle")} />
+          <div className="space-y-2 p-4">
+            <p className="text-xs text-zinc-500">{t("planner.lostIncomeHint")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {incomeCategories.map((c) => {
+                const lost = plan.lostIncome.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() =>
+                      persist({
+                        ...plan,
+                        lostIncome: lost
+                          ? plan.lostIncome.filter((id) => id !== c.id)
+                          : [...plan.lostIncome, c.id],
+                      })
+                    }
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                      lost ? "border-red-500 bg-red-500 text-white line-through" : "text-zinc-500 hover:opacity-80"
+                    }`}
+                    style={lost ? undefined : { borderColor: c.color }}
+                  >
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "funding",
+      title: t("planner.fundingTitle"),
+      defaultSize: { w: 2, h: 4 },
+      node: (
+        <>
+        {/* which assets pay for a month that doesn't pay for itself */}
+        <Card>
+          <CardHeader
+            title={t("planner.fundingTitle")}
+            action={
+              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-teal-600"
+                  checked={plan.funding?.enabled ?? true}
+                  onChange={(e) =>
+                    persist({ ...plan, funding: { ...plan.funding, enabled: e.target.checked } })
+                  }
+                />
+                {t("planner.fundingEnabled")}
+              </label>
+            }
+          />
+          <div className="space-y-2 p-4">
+            <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
+            {drawable.length === 0 ? (
+              <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
+            ) : (
+              <ul className="divide-y divide-[var(--edge-soft)]">
+                {fundingRows.map((account, i) => {
+                  const off = (plan.funding?.disabled ?? []).includes(account.id);
+                  const left = planned.months[planned.months.length - 1]?.sourceBalances?.[account.id];
+                  return (
+                    <li key={account.id} className="flex items-center gap-2 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={account.name}
+                        className="h-4 w-4 accent-teal-600"
+                        checked={!off}
+                        onChange={() =>
+                          persist({
+                            ...plan,
+                            funding: {
+                              ...plan.funding,
+                              disabled: off
+                                ? (plan.funding?.disabled ?? []).filter((id) => id !== account.id)
+                                : [...(plan.funding?.disabled ?? []), account.id],
+                            },
+                          })
+                        }
+                      />
+                      <span className="w-5 text-center text-xs text-zinc-400 tabular-nums">{i + 1}</span>
+                      <span className={`min-w-0 flex-1 truncate text-sm ${off ? "text-zinc-400 line-through" : ""}`}>
+                        {account.name}
+                      </span>
+                      {!off && salesByAsset.has(account.id) ? (
+                        <span
+                          className="hidden text-xs tabular-nums text-amber-600 sm:inline"
+                          title={t("planner.soldTotalHint")}
+                        >
+                          −{formatAmount(salesByAsset.get(account.id)!.amount, account.currency, locale)}
+                        </span>
+                      ) : null}
+                      {!off && left != null ? (
+                        <span
+                          data-source-left={Math.max(0, left).toFixed(4)}
+                          className={`text-xs tabular-nums ${left <= 0.005 ? "text-red-500" : "text-zinc-400"}`}
+                          title={t("planner.leftAtEnd")}
+                        >
+                          {formatAmount(Math.max(0, left), account.currency, locale)}
+                        </span>
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        aria-label={t("layout.moveUp")}
+                        disabled={i === 0}
+                        onClick={() => moveSource(i, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={t("layout.moveDown")}
+                        disabled={i === fundingRows.length - 1}
+                        onClick={() => moveSource(i, 1)}
+                      >
+                        ↓
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
 
+            {salesByMonth.length > 0 ? (
+              <details className="rounded-lg border border-[var(--edge)]" open>
+                <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-500">
+                  {t("planner.salesLog", { count: salesByMonth.length })}
+                </summary>
+                <div className="max-h-72 overflow-auto px-3 pb-2">
+                  {salesByMonth.map((m) => (
+                    <div key={m.month} className="border-t border-[var(--edge-soft)] py-2 first:border-t-0">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-medium">{monthLabelOf(m.month, locale)}</span>
+                        <span className="text-zinc-400">
+                          {t("planner.monthShort", { amount: fmt(m.shortfall) })}
+                        </span>
+                      </div>
+                      {m.draws.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 pl-3 text-xs">
+                          <span className="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">
+                            {accountName(d.accountId)}
+                          </span>
+                          <span className="text-[10px] text-zinc-400 tabular-nums">
+                            −{formatAmount(d.amount, accountCurrency(d.accountId), locale)}
+                          </span>
+                          <span className="w-24 text-right tabular-nums text-amber-600">−{fmt(d.value)}</span>
+                        </div>
+                      ))}
+                      {m.uncovered > 0.005 ? (
+                        <p className="pl-3 text-xs font-medium text-red-600">
+                          {t("planner.uncovered", { amount: fmt(m.uncovered) })}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "items",
+      title: t("planner.itemsTitle"),
+      defaultSize: { w: 2, h: 3 },
+      node: (
+        <>
+        {/* what-if items */}
+        <Card>
+          <CardHeader
+            title={t("planner.itemsTitle")}
+            action={
+              <Button variant="primary" onClick={() => setAdding(true)}>
+                + {t("planner.addItem")}
+              </Button>
+            }
+          />
+          {plan.items.length === 0 ? (
+            <div className="p-4">
+              <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--edge-soft)]">
+              {plan.items.map((item) => (
+                <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-600"
+                    checked={item.enabled}
+                    onChange={(e) => persist({ ...plan, items: plan.items.map((i) => (i.id === item.id ? { ...i, enabled: e.target.checked } : i)) })}
+                    aria-label={item.label}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium">{item.label}</span>
+                      <Badge tone={item.direction === "income" ? "green" : "red"}>
+                        {t(`tx.${item.direction}`)}
+                      </Badge>
+                      <Badge tone="zinc">{t(`planner.freq_${item.frequency}`)}</Badge>
+                    </div>
+                    <div className="mt-0.5 text-xs text-zinc-500">
+                      {t("planner.startsOn", { month: monthLabelOf(item.startMonth, locale) })}
+                      {item.frequency !== "once"
+                        ? ` · ${
+                            item.durationMonths != null
+                              ? t("planner.untilMonth", {
+                                  month: monthLabelOf(addMonthKey(item.startMonth, item.durationMonths - 1), locale),
+                                })
+                              : t("planner.ongoing")
+                          }`
+                        : ""}
+                      {" · "}
+                      {t("planner.horizonTotal", { amount: formatAmount(itemHorizonTotal(item, months, plan.devaluation, firstMonth), item.currency, locale) })}
+                    </div>
+                  </div>
+                  <span className={`text-sm font-semibold tabular-nums ${item.direction === "income" ? "text-green-600" : "text-red-600"}`}>
+                    {item.direction === "income" ? "+" : "−"}
+                    {formatAmount(item.amount, item.currency, locale)}
+                  </span>
+                  <Button variant="ghost" aria-label={t("common.edit")} onClick={() => setEditing(item)}>
+                    ✎
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    aria-label={t("common.delete")}
+                    onClick={() => persist({ ...plan, items: plan.items.filter((i) => i.id !== item.id) })}
+                  >
+                    ✕
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "budgets",
+      title: t("planner.budgetsTitle"),
+      defaultSize: { w: 2, h: 4 },
+      node: (
+        <>
+        {/* monthly budgets for everyday spending */}
+        <Card>
+          <CardHeader title={t("planner.budgetsTitle")} />
+          <div className="space-y-3 p-4">
+            <p className="text-xs text-zinc-500">{t("planner.budgetsHint")}</p>
+            <div className="space-y-2">
+              {expenseCategories.map((c) => {
+                const budget = budgetByCategory.get(c.id);
+                const average = averageByCategory.get(c.id) ?? 0;
+                return (
+                  <div key={c.id} className="flex flex-wrap items-center gap-2">
+                    <label className="flex min-w-40 flex-1 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-teal-600"
+                        checked={budget?.enabled ?? false}
+                        onChange={(e) =>
+                          setBudget(c.id, {
+                            enabled: e.target.checked,
+                            // first tick seeds from the real 3-month average
+                            monthlyAmount: budget?.monthlyAmount || Math.round(average),
+                          })
+                        }
+                      />
+                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
+                      <span className="truncate">{c.name}</span>
+                    </label>
+                    {average > 0 ? (
+                      <button
+                        onClick={() =>
+                          // the average is computed in the display currency, so
+                          // adopt that currency along with the number
+                          setBudget(c.id, {
+                            enabled: true,
+                            monthlyAmount: Math.round(average),
+                            currency: displayCurrency,
+                          })
+                        }
+                        className="text-[11px] text-teal-600 hover:underline"
+                        title={t("planner.useAverageHint")}
+                      >
+                        {t("planner.useAverage", { amount: fmt(average) })}
+                      </button>
+                    ) : null}
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      inputMode="decimal"
+                      className="!w-32 text-right"
+                      placeholder="0"
+                      value={budget ? String(budget.monthlyAmount) : ""}
+                      onChange={(e) => setBudget(c.id, { monthlyAmount: Number(e.target.value) || 0, enabled: true })}
+                    />
+                    <Select
+                      className="!w-24"
+                      aria-label={`${c.name} ${t("common.currency")}`}
+                      value={budget?.currency ?? displayCurrency}
+                      onChange={(e) => setBudget(c.id, { currency: e.target.value as Currency })}
+                    >
+                      {CURRENCIES.map((cur) => (
+                        <option key={cur} value={cur}>
+                          {cur === "XAU_G" ? "GOLD" : cur}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
+      id: "milestones",
+      title: t("planner.milestones"),
+      defaultSize: { w: 2, h: 2 },
+      node: (
+        <>
+
+          <Card>
+            <CardHeader title={t("planner.milestones")} />
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
+              {milestones.map((m) => {
+                const baseline = baseMilestones.get(m.months);
+                const diff = baseline != null ? m.netWorth - baseline : null;
+                return (
+                  <div key={m.months} className="rounded-lg bg-[var(--edge-soft)] p-3">
+                    <div className="text-xs font-medium text-zinc-500">{m.label}</div>
+                    <div className="mt-0.5 font-bold tabular-nums">{fmt(m.netWorth)}</div>
+                    {diff != null && hasPlan && Math.abs(diff) > 0.5 ? (
+                      <div className={`text-[11px] tabular-nums ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {diff >= 0 ? "+" : "−"}
+                        {fmt(Math.abs(diff))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </>
+      ),
+    },
+  ];
+  const blockById = new Map(blocks.map((b) => [b.id, b.node] as const));
+  const block = (id: string) => blockById.get(id);
+
+
+  return (
+    // the custom canvas earns the whole screen; the reading layouts don't
+    <div
+      className={
+        view === "custom"
+          ? "mx-[5%] w-[90%] space-y-4"
+          : "mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]"
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold">{t("planner.title")}</h1>
+          <p className="text-sm text-zinc-500">{t("planner.hint")}</p>
+        </div>
+        <div className="no-print hidden items-center gap-2 xl:flex">
+          {view === "custom" ? (
+            <>
+              <Button onClick={() => setEditingLayout((v) => !v)}>
+                {editingLayout ? t("layout.done") : t("layout.edit")}
+              </Button>
+              {editingLayout ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (window.confirm(t("plannerGrid.resetConfirm"))) {
+                      grid.reset();
+                      chooseView("two");
+                    }
+                  }}
+                >
+                  {t("plannerGrid.reset")}
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+          <div className="flex gap-1 rounded-lg bg-[var(--edge-soft)] p-1">
+            {(["two", "single", "custom"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => {
+                  if (v === "custom" && !grid.layout) grid.start(blocks);
+                  chooseView(v);
+                }}
+                className={`rounded-md px-3 py-1 text-xs font-medium ${
+                  view === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500"
+                }`}
+              >
+                {v === "two"
+                  ? t("planner.layoutTwo")
+                  : v === "single"
+                    ? t("planner.layoutSingle")
+                    : t("planner.layoutCustom")}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      <ScenarioBar
+        scenarios={scenarios.scenarios}
+        selectedId={scenarios.selectedId}
+        compareId={compareId}
+        saving={scenarios.saving}
+        onSelect={scenarios.select}
+        onCompare={setCompare}
+        onCreate={(name) => scenarios.create(name)}
+        onDuplicate={(name) => scenarios.create(name, plan)}
+        onRename={scenarios.rename}
+        onDelete={scenarios.remove}
+      />
+
+      {view === "custom" && grid.layout ? (
+        <PlannerGrid
+          blocks={blocks}
+          layout={grid.layout}
+          editing={editingLayout}
+          onChange={grid.save}
+        />
+      ) : (
+        <>
+          {block("tiles")}
+
+          {/* inputs on the left, the picture on the right — editing an
+              assumption redraws the chart beside it without scrolling */}
+          <div className={view === "two" ? "grid items-start gap-4 xl:grid-cols-2" : "space-y-4"}>
+            <div className="space-y-4">
+              {block("dev")}
+              {block("lost")}
+              {block("funding")}
+              {block("items")}
+              {block("budgets")}
+            </div>
+            <div className={view === "two" ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>
+              {block("horizon")}
+              {block("chart")}
+              {milestones.length > 0 ? block("milestones") : null}
+              {block("projections")}
+            </div>
+          </div>
+        </>
+      )}
 
       <PlanItemModal
         open={adding || editing != null}
