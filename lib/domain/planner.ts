@@ -87,6 +87,12 @@ export interface Funding {
   routine: string[];
   /** month ("yyyy-MM") → account to raid first, just for that month */
   overrides: Record<string, string>;
+  /**
+   * Settle credit-card debt every month out of these same accounts. On by
+   * default, because a card bill is a bill: without it the projection lets
+   * debt pile up on the card and never touches the cash you'd really use.
+   */
+  payCards?: boolean;
 }
 
 export interface Plan {
@@ -99,7 +105,14 @@ export interface Plan {
 }
 
 export const NO_DEVALUATION: Devaluation = { enabled: false, pctPerYear: 25 };
-export const NO_FUNDING: Funding = { enabled: true, order: [], disabled: [], routine: [], overrides: {} };
+export const NO_FUNDING: Funding = {
+  enabled: true,
+  order: [],
+  disabled: [],
+  routine: [],
+  overrides: {},
+  payCards: true,
+};
 export const EMPTY_PLAN: Plan = {
   items: [],
   budgets: [],
@@ -297,6 +310,7 @@ export function normalizePlan(raw: unknown, thisMonth: string): Plan {
       order: saved.funding?.order ?? [],
       disabled: saved.funding?.disabled ?? [],
       routine: saved.funding?.routine ?? [],
+      payCards: saved.funding?.payCards ?? true,
       overrides: saved.funding?.overrides ?? {},
     },
     items: saved.items.map((i) => ({

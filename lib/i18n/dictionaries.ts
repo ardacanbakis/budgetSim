@@ -422,6 +422,8 @@ export const en = {
     resetConfirm: "Discard the custom arrangement and go back to two columns?",
   },
   planner: {
+    payCards: "Pay card bills every month",
+    payCardsHint: "Installments land on the card, and the bill is settled from the accounts above. Untick to let a balance ride instead.",
     landsIn: "Lands in",
     landsInAuto: "Pick automatically",
     landsInHint: "Which account this arrives in or comes out of. Left automatic, it goes to the highest-ranked account in its currency — which means your sell order quietly decides where your income arrives.",
@@ -1029,6 +1031,8 @@ export const tr: Dictionary = {
     resetConfirm: "Özel düzen silinip iki sütuna dönülsün mü?",
   },
   planner: {
+    payCards: "Kart borcunu her ay öde",
+    payCardsHint: "Taksitler karta işlenir, ekstre yukarıdaki hesaplardan kapatılır. Borcu devretmek istersen işareti kaldır.",
     landsIn: "Şu hesaba girer",
     landsInAuto: "Otomatik seç",
     landsInHint: "Bu tutarın girdiği ya da çıktığı hesap. Otomatik bırakılırsa kendi para biriminde en üst sıradaki hesaba gider — yani satış sıran gelirin nereye geldiğini sessizce belirler.",

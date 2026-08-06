@@ -164,6 +164,7 @@ export default function PlannerPage() {
     order: fundingOrder,
     overrides: plan.funding?.overrides ?? {},
     routine: plan.funding?.routine ?? [],
+    payCards: plan.funding?.payCards ?? true,
   };
 
   const base = projectCashflow({
@@ -218,6 +219,7 @@ export default function PlannerPage() {
           order: planFundingOrder(compareNormalized, drawable.map((a) => a.id)),
           overrides: compareNormalized.funding?.overrides ?? {},
           routine: compareNormalized.funding?.routine ?? [],
+          payCards: compareNormalized.funding?.payCards ?? true,
         },
       })
     : null;
@@ -869,6 +871,19 @@ export default function PlannerPage() {
           />
           <div className="fill-in-grid space-y-2 p-4">
             <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
+            <label className="flex items-start gap-2 text-xs text-zinc-500">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-3.5 w-3.5 accent-teal-600"
+                checked={plan.funding?.payCards ?? true}
+                onChange={(e) =>
+                  persist({ ...plan, funding: { ...plan.funding, payCards: e.target.checked } })
+                }
+              />
+              <span>
+                <span className="font-medium">{t("planner.payCards")}</span> — {t("planner.payCardsHint")}
+              </span>
+            </label>
             {drawable.length === 0 ? (
               <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
             ) : (
