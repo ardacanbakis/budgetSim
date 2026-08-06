@@ -62,7 +62,7 @@ type CardId = (typeof CARD_IDS)[number];
 const CARD_ROUTE: Partial<Record<CardId, string>> = {
   "net-worth": "/reports",
   "safe-to-spend": "/transactions",
-  "cc-debt": "/purchases",
+  "cc-debt": "/cards",
   victvs: "/victvs",
   accounts: "/accounts",
   upcoming: "/transactions",
@@ -274,7 +274,7 @@ export default function DashboardPage() {
             +{formatAmount(derived.liability, displayCurrency, locale)} {t("purchases.upcomingInstallments").toLowerCase()}
           </div>
         ) : null}
-        <Link href="/purchases" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
+        <Link href="/cards" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
           {t("dashboard.seeAll")} →
         </Link>
       </Card>

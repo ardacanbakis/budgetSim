@@ -22,7 +22,7 @@ export const NAV = [
   { href: "/", key: "nav.dashboard", icon: "◧" },
   { href: "/accounts", key: "nav.accounts", icon: "▤" },
   { href: "/transactions", key: "nav.transactions", icon: "⇄" },
-  { href: "/purchases", key: "nav.purchases", icon: "▣" },
+  { href: "/cards", key: "nav.cards", icon: "💳" },
   { href: "/victvs", key: "nav.victvs", icon: "✓" },
   { href: "/recurring", key: "nav.recurring", icon: "↻" },
   { href: "/loans", key: "nav.loans", icon: "⌂" },

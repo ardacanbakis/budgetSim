@@ -31,5 +31,32 @@ export function useLocalToggle(key: string, fallback: boolean) {
   return { value, setValue: update, loaded };
 }
 
+/**
+ * A number kept on the device — a display threshold, not shared data.
+ * `loaded` works the same way as for a toggle.
+ */
+export function useLocalNumber(key: string, fallback: number) {
+  const [value, setValue] = useState(fallback);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      const saved = Number(window.localStorage.getItem(key));
+      if (Number.isFinite(saved) && saved >= 0) setValue(saved);
+      setLoaded(true);
+    });
+  }, [key]);
+
+  function update(next: number) {
+    setValue(next);
+    window.localStorage.setItem(key, String(next));
+  }
+
+  return { value, setValue: update, loaded };
+}
+
+/** Below this many lira, a month's shortfall is rounding rather than trouble. */
+export const SHORT_THRESHOLD_KEY = "renovator-short-threshold";
+
 /** Collapse every year but the current one when a history list first opens. */
 export const COLLAPSE_HISTORY_KEY = "renovator-collapse-history";

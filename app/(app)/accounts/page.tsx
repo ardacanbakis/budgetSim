@@ -53,7 +53,6 @@ export default function PortfolioPage() {
   const archived = (accounts.data ?? []).filter((a) => a.archived);
   const sections: Array<{ key: string; title: string; items: Account[] }> = [
     { key: "accounts", title: t("portfolio.accounts"), items: list.filter((a) => a.kind === "fiat") },
-    { key: "cards", title: t("portfolio.cards"), items: list.filter((a) => a.kind === "credit_card") },
     { key: "assets", title: t("portfolio.assets"), items: list.filter((a) => a.kind === "crypto" || a.kind === "gold") },
   ];
   const selected = (accounts.data ?? []).find((a) => a.id === selectedId) ?? null;

@@ -25,6 +25,8 @@ import {
   purchaseProgress,
 } from "@/lib/domain/purchases";
 import { averageMonthlySpend } from "@/lib/domain/stats";
+import { findDueCardPayments } from "@/lib/domain/purchases";
+import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
@@ -43,6 +45,7 @@ export default function PurchasesPage() {
   const categories = useCategories();
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
+  const [paying, setPaying] = useState<Account | null>(null);
   const { columns, setColumns } = useColumns("renovator-cols-purchases");
 
   const setReflected = useAppMutation(
@@ -77,6 +80,49 @@ export default function PurchasesPage() {
 
   const accountList = accounts.data ?? [];
   const cards = accountList.filter((a) => a.kind === "credit_card" && !a.archived);
+
+  // what each card still owes, month by month, and what you've already paid it
+  const schedule = (() => {
+    const byCard = new Map<string, { month: string; total: number }[]>();
+    for (const card of cards) {
+      const months = new Map<string, number>();
+      for (const tx of transactions.data ?? []) {
+        if (tx.accountId !== card.id || tx.status !== "planned" || tx.direction !== "expense") continue;
+        const key = tx.dueDate.slice(0, 7);
+        months.set(key, (months.get(key) ?? 0) + tx.amount);
+      }
+      if (months.size > 0) {
+        byCard.set(
+          card.id,
+          [...months.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([month, total]) => ({ month, total }))
+        );
+      }
+    }
+    return byCard;
+  })();
+
+  const payments = (() => {
+    const byCard = new Map<string, typeof list>();
+    const list = (transactions.data ?? []).filter(
+      (tx) => tx.direction === "income" && tx.transferGroupId != null && tx.status === "completed"
+    );
+    for (const card of cards) {
+      const mine = list
+        .filter((tx) => tx.accountId === card.id)
+        .sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1))
+        .slice(0, 6);
+      if (mine.length > 0) byCard.set(card.id, mine);
+    }
+    return byCard;
+  })();
+
+  const duePayments = findDueCardPayments(accountList, balances, transactions.data ?? [], todayISO());
+  const dueFor = (id: string) => duePayments.find((d) => d.account.id === id);
+  const monthLabel = (month: string) =>
+    new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", {
+      month: "short",
+      year: "2-digit",
+    });
   const byAccount = new Map<string | null, Purchase[]>();
   for (const p of purchases.data ?? []) {
     const key = p.accountId;
@@ -165,7 +211,7 @@ export default function PurchasesPage() {
   return (
     <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-5xl 3xl:max-w-7xl" : "max-w-none"}`}>
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">{t("purchases.title")}</h1>
+        <h1 className="text-xl font-bold">{t("cards.title")}</h1>
         <div className="flex items-center gap-2">
           <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
           <Button variant="primary" onClick={() => setModalOpen(true)}>
@@ -206,9 +252,57 @@ export default function PurchasesPage() {
                       {t("purchases.avgMonthlySpend")}: {formatAmount(avg, displayCurrency, locale)}
                     </Badge>
                   ) : null}
+                  {card.paymentDay ? (
+                    <span className="text-xs font-normal text-zinc-400">
+                      {t("accounts.paymentDueOn", { day: card.paymentDay })}
+                    </span>
+                  ) : null}
                 </span>
               }
+              action={
+                <Button onClick={() => setPaying(card)}>{t("cards.recordPayment")}</Button>
+              }
             />
+
+            {/* what this card is going to cost you, month by month */}
+            {schedule.get(card.id)?.length ? (
+              <div className="border-b border-[var(--edge-soft)] px-4 py-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                  {t("cards.upcomingByMonth")}
+                </p>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  {schedule.get(card.id)!.map(({ month, total }) => (
+                    <span key={month} className="text-xs tabular-nums text-zinc-500">
+                      {monthLabel(month)}{" "}
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                        {formatAmount(total, card.currency, locale)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* and what you've actually paid it */}
+            {payments.get(card.id)?.length ? (
+              <div className="border-b border-[var(--edge-soft)] px-4 py-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                  {t("cards.paymentsMade")}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {payments.get(card.id)!.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2 text-xs">
+                      <span className="text-zinc-500">{fmtDate(p.dueDate)}</span>
+                      <span className="min-w-0 flex-1 truncate text-zinc-400">{p.description}</span>
+                      <span className="tabular-nums text-emerald-600">
+                        {formatAmount(p.amount, card.currency, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
               {cardPurchases.length === 0 ? (
                 <p className="text-sm text-zinc-400">{t("purchases.empty")}</p>
@@ -236,6 +330,13 @@ export default function PurchasesPage() {
       ) : null}
 
       <PurchaseModal open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      <CardPaymentModal
+        card={paying}
+        suggested={paying ? (dueFor(paying.id)?.suggestedAmount ?? Math.max(0, -(balances.get(paying.id) ?? 0))) : 0}
+        installmentsDue={paying ? (dueFor(paying.id)?.installmentsDue ?? []) : []}
+        onClose={() => setPaying(null)}
+      />
     </div>
   );
 }
