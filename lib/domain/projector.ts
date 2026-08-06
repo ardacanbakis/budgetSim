@@ -124,6 +124,8 @@ export function projectCashflow(params: {
     overrides?: Record<string, string>;
     /** accounts whose draws are routine conversions, not raids on savings */
     routine?: string[];
+    /** settle credit-card debt monthly from those same accounts */
+    payCards?: boolean;
   };
 }): ProjectionResult {
   const {
@@ -318,8 +320,10 @@ export function projectCashflow(params: {
         : sourceOrder;
 
     for (const [id, amount] of balance) {
-      // card debt is debt, not an overdraft to be covered by selling gold
-      if (amount >= 0 || kindOf.get(id) === "credit_card") continue;
+      if (amount >= 0) continue;
+      // a card bill is a bill: unless you've said you'd carry the balance,
+      // it gets paid every month out of the same accounts everything else does
+      if (kindOf.get(id) === "credit_card" && funding?.payCards === false) continue;
       const short = currencyOf.get(id)!;
       let owed = -amount; // in the overdrawn account's own currency
 

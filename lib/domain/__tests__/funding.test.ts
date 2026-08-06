@@ -49,7 +49,12 @@ const run = (
   accounts: Account[],
   templates: RecurringTemplate[],
   months: number,
-  funding?: { order: string[]; overrides?: Record<string, string>; routine?: string[] }
+  funding?: {
+    order: string[];
+    overrides?: Record<string, string>;
+    routine?: string[];
+    payCards?: boolean;
+  }
 ) =>
   projectCashflow({
     accounts,
@@ -273,5 +278,41 @@ describe("when a month counts as short", () => {
     expect(firstUncoveredMonth(result, shortThreshold("USD", RATES))).toBe("2026-03");
     // without a threshold even the dust counts
     expect(firstUncoveredMonth(result)).toBe("2026-02");
+  });
+});
+
+describe("credit card bills", () => {
+  const bank = account("bank", "TRY", 200_000); // $5,000
+  const card: Account = { ...account("card", "TRY", 0), kind: "credit_card" };
+  // ₺40k a month charged to the card, nothing else happening
+  const spend = [{ ...rent("card", 40_000), id: "card-spend" }];
+
+  it("settles the card from your accounts, so the cash really goes", () => {
+    const r = run([bank, card], spend, 3, { order: ["bank"] });
+    expect(r.months[0].draws[0].accountId).toBe("bank");
+    // ₺40k off the bank, and the card back to zero
+    expect(r.months[0].sourceBalances.bank).toBeCloseTo(160_000, 6);
+    expect(r.months[2].sourceBalances.bank).toBeCloseTo(80_000, 6);
+  });
+
+  it("lets the balance ride when you say so", () => {
+    const r = run([bank, card], spend, 3, { order: ["bank"], payCards: false });
+    expect(r.months[0].draws).toEqual([]);
+    expect(r.months[2].sourceBalances.bank).toBeCloseTo(200_000, 6);
+  });
+
+  it("either way the debt counts against what you're worth", () => {
+    const paid = run([bank, card], spend, 3, { order: ["bank"] });
+    const carried = run([bank, card], spend, 3, { order: ["bank"], payCards: false });
+    expect(paid.months[2].endNetWorth).toBeCloseTo(carried.months[2].endNetWorth, 6);
+    expect(paid.months[2].endNetWorth).toBeCloseTo(5000 - 3000, 6);
+  });
+
+  it("sells an asset when the card bill outruns the bank", () => {
+    const small = account("bank", "TRY", 40_000); // one month's worth
+    const gold = account("gold", "XAU_G", 50);
+    const r = run([small, gold, card], spend, 3, { order: ["bank", "gold"] });
+    expect(r.months[1].draws.map((d) => d.accountId)).toEqual(["gold"]);
+    expect(r.months[1].uncovered).toBe(0);
   });
 });

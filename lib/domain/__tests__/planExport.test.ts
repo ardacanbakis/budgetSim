@@ -64,12 +64,22 @@ describe("export checks", () => {
     expect(ok(runChecks(r, names, 25), "nothing is left unsold")).toBe(false);
   });
 
-  it("catches net worth climbing through an unpaid month", () => {
+  it("catches net worth climbing through a short month that went unpaid", () => {
     const r = result([
       month({ month: "2026-01", endNetWorth: 100 }),
       month({ month: "2026-02", endNetWorth: 200, uncovered: 500, shortfall: 500 }),
     ]);
     expect(ok(runChecks(r, names, 25), "doesn't rise")).toBe(false);
+  });
+
+  it("lets a surplus month climb while it digs out of an old overdraft", () => {
+    const r = result([
+      month({ month: "2026-01", endNetWorth: -1400 }),
+      // takes in more than it spends, so no shortfall — the 1,160 still unpaid
+      // is last month's hole shrinking, which is exactly what should happen
+      month({ month: "2026-02", income: 900, expense: 658, net: 242, endNetWorth: -1160, uncovered: 1160 }),
+    ]);
+    expect(ok(runChecks(r, names, 25), "doesn't rise")).toBe(true);
   });
 
   it("ignores a balance that's negative by rounding rather than by money", () => {

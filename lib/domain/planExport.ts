@@ -149,17 +149,19 @@ export function runChecks(
     detail: stillHolding.slice(0, 5).join("; ") || undefined,
   });
 
-  // 5. net worth never climbs through a month that couldn't be paid for
+  // 5. Net worth never climbs through a month that spent more than it took in
+  //    and couldn't pay for the difference. A month that runs a surplus while
+  //    still carrying an old overdraft is digging itself out, and should climb.
   const climbs: string[] = [];
   for (let i = 1; i < result.months.length; i++) {
     const prev = result.months[i - 1];
     const m = result.months[i];
-    if (m.uncovered > threshold && m.endNetWorth > prev.endNetWorth + 0.01) {
+    if (m.shortfall > threshold && m.uncovered > threshold && m.endNetWorth > prev.endNetWorth + 0.01) {
       climbs.push(`${m.month}: ${prev.endNetWorth} → ${m.endNetWorth} while ${m.uncovered} went unpaid`);
     }
   }
   checks.push({
-    name: "net worth doesn't rise through an unpaid month",
+    name: "net worth doesn't rise through a short month that went unpaid",
     severity: "error",
     ok: climbs.length === 0,
     detail: climbs.slice(0, 5).join("; ") || undefined,
