@@ -77,6 +77,8 @@ export interface ExtraFlow {
   /** in `currency`, nominal for that month */
   amount: number;
   currency: Currency;
+  /** the account it lands in; without one the projection picks a home */
+  accountId?: string | null;
   categoryId: string;
   label: string;
 }
@@ -212,6 +214,7 @@ export function projectCashflow(params: {
     if (key == null) continue;
     buckets.get(key)?.push({
       date: key,
+      accountId: extra.accountId ?? undefined,
       direction: extra.direction,
       amount: extra.amount,
       currency: extra.currency,

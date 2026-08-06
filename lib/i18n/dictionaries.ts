@@ -422,6 +422,9 @@ export const en = {
     resetConfirm: "Discard the custom arrangement and go back to two columns?",
   },
   planner: {
+    landsIn: "Lands in",
+    landsInAuto: "Pick automatically",
+    landsInHint: "Which account this arrives in or comes out of. Left automatic, it goes to the highest-ranked account in its currency — which means your sell order quietly decides where your income arrives.",
     chooseTiles: "Choose numbers",
     runway: "Runway",
     runwayMonths: "{count} months",
@@ -1026,6 +1029,9 @@ export const tr: Dictionary = {
     resetConfirm: "Özel düzen silinip iki sütuna dönülsün mü?",
   },
   planner: {
+    landsIn: "Şu hesaba girer",
+    landsInAuto: "Otomatik seç",
+    landsInHint: "Bu tutarın girdiği ya da çıktığı hesap. Otomatik bırakılırsa kendi para biriminde en üst sıradaki hesaba gider — yani satış sıran gelirin nereye geldiğini sessizce belirler.",
     chooseTiles: "Rakamları seç",
     runway: "Dayanma süresi",
     runwayMonths: "{count} ay",

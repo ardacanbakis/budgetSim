@@ -90,3 +90,43 @@ describe("export checks", () => {
     expect(runChecks(r, names, 25).every((c) => c.ok)).toBe(true);
   });
 });
+
+describe("conduit accounts", () => {
+  const conduit = new Map([
+    ["usd", { name: "Semoş USD", currency: "USD" as const, startBalance: 6500, routine: false }],
+  ]);
+
+  it("flags an account that gives up more than it ever held", () => {
+    // exactly the shape that confused a real plan: $450/mo of income lands
+    // here and leaves again, so ten years of it reads as $65,000 "sold"
+    const months = Array.from({ length: 12 }, (_, i) =>
+      month({
+        month: `2026-${String(i + 1).padStart(2, "0")}`,
+        draws: [{ accountId: "usd", currency: "USD", amount: 1000, value: 1000, routine: false }],
+      })
+    );
+    const checks = runChecks(result(months), conduit, 25);
+    const c = checks.find((x) => x.name.includes("more than it ever held"))!;
+    expect(c.ok).toBe(false);
+    expect(c.detail).toContain("Semoş USD");
+    expect(c.detail).toContain("mark it routine");
+  });
+
+  it("says nothing once it's marked routine", () => {
+    const routine = new Map([
+      ["usd", { name: "Semoş USD", currency: "USD" as const, startBalance: 6500, routine: true }],
+    ]);
+    const months = [
+      month({ draws: [{ accountId: "usd", currency: "USD", amount: 60_000, value: 60_000, routine: true }] }),
+    ];
+    expect(runChecks(result(months), routine, 25).every((c) => c.ok)).toBe(true);
+  });
+
+  it("leaves a genuine asset sale alone", () => {
+    const months = [
+      month({ draws: [{ accountId: "usd", currency: "USD", amount: 6000, value: 6000, routine: false }] }),
+    ];
+    const c = runChecks(result(months), conduit, 25).find((x) => x.name.includes("more than it ever held"))!;
+    expect(c.ok).toBe(true);
+  });
+});
