@@ -643,7 +643,10 @@ export default function PlannerPage() {
                                   const total = group.reduce((sum, l) => sum + l.amount, 0);
                                   return (
                                     <div key={direction}>
-                                      <div className="mx-auto flex w-full max-w-md items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                                      <div
+                                        data-line-group={direction}
+                                        className="mx-auto flex w-full max-w-md items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400"
+                                      >
                                         <span className="flex-1 text-right">
                                           {direction === "income" ? t("dashboard.income") : t("dashboard.expense")}
                                         </span>
@@ -1240,6 +1243,7 @@ export default function PlannerPage() {
         initial={editing}
         currency={displayCurrency}
         firstMonth={firstMonth}
+        accounts={drawable}
         onClose={() => {
           setAdding(false);
           setEditing(null);
@@ -1255,6 +1259,7 @@ function PlanItemModal({
   initial,
   currency,
   firstMonth,
+  accounts,
   onClose,
   onSave,
 }: {
@@ -1262,6 +1267,7 @@ function PlanItemModal({
   initial: PlanItem | null;
   currency: Currency;
   firstMonth: string;
+  accounts: { id: string; name: string; currency: Currency }[];
   onClose: () => void;
   onSave: (item: PlanItem) => void;
 }) {
@@ -1276,6 +1282,7 @@ function PlanItemModal({
   const [endMode, setEndMode] = useState<"ongoing" | "for" | "until">("ongoing");
   const [duration, setDuration] = useState("");
   const [endMonth, setEndMonth] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [key, setKey] = useState<string | null>(null);
 
   // Re-keys on close too ("closed"), so the next "Add item" starts blank
@@ -1288,6 +1295,7 @@ function PlanItemModal({
     setAmount(initial ? String(initial.amount) : "");
     setItemCurrency(initial?.currency ?? currency);
     setInflates(initial?.inflates ?? true);
+    setAccountId(initial?.accountId ?? "");
     setFrequency(initial?.frequency ?? "monthly");
     const start = initial?.startMonth ?? firstMonth;
     setStartMonth(start);
@@ -1328,6 +1336,7 @@ function PlanItemModal({
             frequency,
             startMonth,
             durationMonths: resolvedDuration(),
+            accountId: accountId || null,
             enabled: initial?.enabled ?? true,
           });
         }}
@@ -1364,6 +1373,18 @@ function PlanItemModal({
             </Select>
           </Field>
         </div>
+        <Field label={t("planner.landsIn")} hint={t("planner.landsInHint")}>
+          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">{t("planner.landsInAuto")}</option>
+            {accounts
+              .filter((a) => a.currency === itemCurrency)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+          </Select>
+        </Field>
         {itemCurrency === "TRY" ? (
           <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
             <input

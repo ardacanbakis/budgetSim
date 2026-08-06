@@ -14,6 +14,8 @@ import { ProjectionResult } from "./projector";
 export interface ExportCheck {
   name: string;
   ok: boolean;
+  /** "error" is arithmetic that can't be right; "advice" is a smell worth a look */
+  severity: "error" | "advice";
   /** what was compared, when it fails */
   detail?: string;
 }
@@ -62,7 +64,7 @@ const near = (a: number, b: number, tolerance = 0.01) => Math.abs(a - b) <= tole
  */
 export function runChecks(
   result: ProjectionResult,
-  accountsById: Map<string, { name: string; currency?: Currency }>,
+  accountsById: Map<string, { name: string; currency?: Currency; startBalance?: number; routine?: boolean }>,
   threshold: number,
   /** turn an account's own units into display currency, for judging "small" */
   valueOf: (amount: number, currency: Currency | undefined) => number = (a) => a
@@ -72,6 +74,10 @@ export function runChecks(
   // balance is rounding, not money, and saying otherwise is noise.
   const dust = Math.max(threshold / 1000, 1e-9);
   const fails: string[] = [];
+  const totals = new Map<string, number>();
+  for (const m of result.months) {
+    for (const d of m.draws) totals.set(d.accountId, (totals.get(d.accountId) ?? 0) + d.amount);
+  }
 
   // 1. a month's net is exactly what its own lines add up to
   for (const m of result.months) {
@@ -81,6 +87,7 @@ export function runChecks(
   }
   checks.push({
     name: "net equals income minus expense",
+    severity: "error",
     ok: fails.length === 0,
     detail: fails.slice(0, 5).join("; ") || undefined,
   });
@@ -95,6 +102,7 @@ export function runChecks(
   }
   checks.push({
     name: "shortfall is covered by sales plus what's left unpaid",
+    severity: "error",
     ok: cover.length === 0,
     detail: cover.slice(0, 5).join("; ") || undefined,
   });
@@ -114,6 +122,7 @@ export function runChecks(
   }
   checks.push({
     name: "no funding source is sold below zero",
+    severity: "error",
     ok: negative.length === 0,
     detail: negative.slice(0, 5).join("; ") || undefined,
   });
@@ -135,6 +144,7 @@ export function runChecks(
   }
   checks.push({
     name: "nothing is left unsold while a month goes unpaid",
+    severity: "error",
     ok: stillHolding.length === 0,
     detail: stillHolding.slice(0, 5).join("; ") || undefined,
   });
@@ -150,8 +160,30 @@ export function runChecks(
   }
   checks.push({
     name: "net worth doesn't rise through an unpaid month",
+    severity: "error",
     ok: climbs.length === 0,
     detail: climbs.slice(0, 5).join("; ") || undefined,
+  });
+
+  // 6. An account that gives up more than it ever held is a conduit, not a
+  //    store: income is landing in it and being spent straight back out. That
+  //    is fine, but calling it "sold" is misleading, so it should be routine.
+  const conduits: string[] = [];
+  for (const [id, sold] of totals) {
+    const account = accountsById.get(id);
+    if (account?.routine) continue;
+    const start = account?.startBalance ?? 0;
+    if (sold > start * 1.05 + Math.abs(dust)) {
+      conduits.push(
+        `${account?.name ?? id}: sold ${sold} against a starting balance of ${start} — income lands here, so mark it routine`
+      );
+    }
+  }
+  checks.push({
+    name: "nothing is sold for more than it ever held without being marked routine",
+    severity: "advice",
+    ok: conduits.length === 0,
+    detail: conduits.slice(0, 5).join("; ") || undefined,
   });
 
   return checks;
@@ -169,8 +201,13 @@ export function buildPlanExport(params: {
   fundingOrder: string[];
 }): PlanExport {
   const { name, plan, result, accounts, startBalances, usdPer, display, months, fundingOrder } = params;
-  const byId = new Map(accounts.map((a) => [a.id, a]));
   const routine = new Set(plan.funding?.routine ?? []);
+  const byId = new Map(
+    accounts.map((a) => [
+      a.id,
+      { ...a, startBalance: startBalances.get(a.id) ?? 0, routine: routine.has(a.id) },
+    ])
+  );
 
   return {
     app: "budgetsim",
@@ -182,7 +219,13 @@ export function buildPlanExport(params: {
       usdPer,
       note: "USD value of one unit of each currency, at the moment of export",
     },
-    plan,
+    plan: {
+      ...plan,
+      items: plan.items.map((i) => ({
+        ...i,
+        landsIn: i.accountId ? (byId.get(i.accountId)?.name ?? i.accountId) : "auto",
+      })),
+    } as Plan,
     accounts: accounts.map((a) => {
       const start = startBalances.get(a.id) ?? 0;
       const rank = fundingOrder.indexOf(a.id);

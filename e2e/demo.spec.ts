@@ -953,11 +953,19 @@ test("planner: short only past ₺1,000, grouped detail, sorted what-if items", 
   await expect(page.locator("li").filter({ hasText: /^Expense$/ })).toBeVisible();
 
   // the month breakdown keeps what came in apart from what went out
-  await page.locator("table.stack-sm tbody tr").first().click();
-  await page.waitForTimeout(300);
-  const detail = page.locator("table.stack-sm tbody tr").nth(1);
-  await expect(detail.getByText("INCOME")).toBeVisible();
-  await expect(detail.getByText("EXPENSES")).toBeVisible();
+  await page.locator("table.stack-sm tbody tr").first().locator("button").first().click();
+  await page.waitForTimeout(500);
+  // a month's lines come in labelled blocks, each with its own subtotal, and
+  // the sign always matches the block it's under
+  const groups = page.locator("[data-line-group]");
+  expect(await groups.count()).toBeGreaterThan(0);
+  for (const el of await groups.all()) {
+    const direction = await el.getAttribute("data-line-group");
+    await expect(el).toHaveText(direction === "income" ? /\+/ : /−/);
+  }
+  // income, when a month has any, is always shown above expenses
+  const order = await groups.evaluateAll((els) => els.map((e) => e.getAttribute("data-line-group")));
+  expect(order).toEqual([...order].sort().reverse());
   await page.screenshot({ path: "e2e/screenshots/planner-detail-groups.png" });
 });
 
@@ -1000,6 +1008,13 @@ test("planner: funding columns, headline picker, and a JSON export that checks i
   expect(data.months.length).toBeGreaterThan(0);
   expect(data.accounts[0]).toHaveProperty("startBalance");
   expect(data.plan).toHaveProperty("funding");
-  const failed = data.checks.filter((c: { ok: boolean }) => !c.ok);
-  expect(failed, JSON.stringify(failed, null, 2)).toEqual([]);
+  // the arithmetic must hold; the advisory check is allowed to have something to say
+  const broken = data.checks.filter((c: { ok: boolean; severity: string }) => !c.ok && c.severity === "error");
+  expect(broken, JSON.stringify(broken, null, 2)).toEqual([]);
+
+  // and it does have something to say: the demo's salary lands in Wise USD,
+  // so that account gives up far more than it ever held
+  const advice = data.checks.find((c: { severity: string }) => c.severity === "advice");
+  expect(advice.ok).toBe(false);
+  expect(advice.detail).toContain("Wise USD");
 });

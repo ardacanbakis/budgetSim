@@ -36,6 +36,12 @@ export interface PlanItem {
    * quietly erodes Turkish mortgages.
    */
   inflates: boolean;
+  /**
+   * The account this lands in or comes out of. Without it a hypothetical flow
+   * has to be guessed a home, which quietly makes your sell-order decide where
+   * your salary arrives — so say it explicitly when it matters.
+   */
+  accountId?: string | null;
   enabled: boolean;
 }
 
@@ -210,6 +216,7 @@ export function planExtraFlows(plan: Plan, months: number, firstMonth: string): 
         direction: item.direction,
         amount: nominalAmountAt(item.amount, item.currency, item.inflates, deval, offset),
         currency: item.currency,
+        accountId: item.accountId ?? null,
         categoryId: "",
         label: item.label,
       });
