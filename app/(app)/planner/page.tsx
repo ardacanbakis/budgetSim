@@ -27,11 +27,13 @@ import {
   firstUncoveredMonth,
   isShort,
   shortThreshold,
+  SHORT_THRESHOLD_TRY,
   soldFromReserve,
   totalDrawn,
   retentionFactor,
 } from "@/lib/domain/planner";
 import { usePlanScenarios } from "@/lib/usePlanScenarios";
+import { SHORT_THRESHOLD_KEY, useLocalNumber } from "@/lib/prefs";
 import { ScenarioBar } from "@/components/scenarioBar";
 import { FundingList } from "@/components/fundingList";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
@@ -97,6 +99,7 @@ export default function PlannerPage() {
   const [pickingTiles, setPickingTiles] = useState(false);
   const [shownTiles, setShownTiles] = useState<TileId[]>(DEFAULT_TILES);
   const grid = usePlannerGrid();
+  const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, SHORT_THRESHOLD_TRY);
 
   const toggleMonth = (month: string) =>
     setExpanded((prev) => {
@@ -280,7 +283,7 @@ export default function PlannerPage() {
   const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? id;
   const accountCurrency = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? "USD";
   // a month is only called short once it's short by real money, not by dust
-  const shortFloor = shortThreshold(displayCurrency, rates.data.usdPer);
+  const shortFloor = shortThreshold(displayCurrency, rates.data.usdPer, shortLira.value);
   const brokeMonth = firstUncoveredMonth(planned, shortFloor);
   // everything sold across the horizon: once per asset, and month by month
   const salesByMonth = planned.months

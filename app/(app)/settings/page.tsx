@@ -10,7 +10,7 @@ import { isBackupFile } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
 import { NAV, orderedNav } from "@/components/shell";
 import { LegacyImportModal } from "@/components/legacyImportModal";
-import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { COLLAPSE_HISTORY_KEY, SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -336,6 +336,7 @@ function AppearanceCard() {
   const { t } = useI18n();
   const { theme, setTheme, compact, setCompact } = useApp();
   const collapseHistory = useLocalToggle(COLLAPSE_HISTORY_KEY, true);
+  const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, 1000);
   return (
     <Card>
       <CardHeader title={t("theme.title")} />
@@ -386,6 +387,17 @@ function AppearanceCard() {
             <span className="block text-xs text-zinc-500">{t("theme.collapseHistoryHint")}</span>
           </span>
         </label>
+        <Field label={t("theme.shortThreshold")} hint={t("theme.shortThresholdHint")}>
+          <Input
+            type="number"
+            min="0"
+            step="100"
+            inputMode="numeric"
+            className="!w-40"
+            value={String(shortLira.value)}
+            onChange={(e) => shortLira.setValue(Math.max(0, Number(e.target.value) || 0))}
+          />
+        </Field>
       </div>
     </Card>
   );

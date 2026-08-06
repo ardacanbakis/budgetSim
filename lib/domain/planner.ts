@@ -347,8 +347,8 @@ export function planFundingOrder(plan: Plan, drawableIds: string[]): string[] {
  */
 export const SHORT_THRESHOLD_TRY = 1000;
 
-export function shortThreshold(display: Currency, usdPer: UsdPerMap): number {
-  return convert(SHORT_THRESHOLD_TRY, "TRY", display, usdPer) ?? 0;
+export function shortThreshold(display: Currency, usdPer: UsdPerMap, lira = SHORT_THRESHOLD_TRY): number {
+  return convert(Math.max(0, lira), "TRY", display, usdPer) ?? 0;
 }
 
 /** Is this month short by enough to be worth saying so? */

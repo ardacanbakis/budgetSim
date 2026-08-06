@@ -34,7 +34,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "purchases", "accounts", "loans", "reports", "planner"] as const) {
+    for (const route of ["victvs", "transactions", "cards", "accounts", "loans", "reports", "planner"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(700);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
@@ -47,9 +47,10 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/accounts");
   await expect(page.getByText(/Select an account|Geçmişini görmek/)).toBeVisible();
-  await page.getByRole("button", { name: /Bonus Card/ }).click();
+  // cards have their own page now, so the portfolio lists everything else
+  await expect(page.getByRole("button", { name: /Bonus Card/ })).toHaveCount(0);
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
   await expect(page.getByRole("heading", { name: /History|Geçmiş/i })).toBeVisible();
-  await expect(page.getByText(/iPhone 17 \(1\/6\)/).first()).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
 });
 
@@ -124,10 +125,9 @@ test("wave10: date format, dashboard nav, quick-add toggle, card payment day", a
   await page.getByText(/Quick-add button|Hızlı ekle/i).click();
   await expect(fab).toHaveCount(0);
 
-  // credit card statement due day shows on the card detail
-  await page.goto("/accounts");
-  await page.getByRole("button", { name: /Bonus Card/ }).click();
-  await expect(page.getByText(/Statement due|Ekstre/i)).toBeVisible();
+  // credit card statement due day shows on the cards page
+  await page.goto("/cards");
+  await expect(page.getByText(/Statement due|Ekstre/i).first()).toBeVisible();
 });
 
 test("wave11: month groups with net, edit transaction, report category filter, settings tabs", async ({ page }) => {
@@ -163,7 +163,7 @@ test("wave11: retroactive taksit goes legacy; card payment covers this month's i
   await enterDemo(page);
 
   // purchase with the first installment due the 28th of this month (planned)
-  await page.goto("/purchases");
+  await page.goto("/cards");
   await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Fridge");
   await page.getByLabel(/amount|tutar/i).first().fill("9000");
@@ -650,7 +650,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/purchases", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -1017,4 +1017,58 @@ test("planner: funding columns, headline picker, and a JSON export that checks i
   const advice = data.checks.find((c: { severity: string }) => c.severity === "advice");
   expect(advice.ok).toBe(false);
   expect(advice.detail).toContain("Wise USD");
+});
+
+test("cards: own page, payment logging, and a per-card schedule", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+
+  // credit cards have left the portfolio
+  await page.goto("/accounts");
+  await expect(page.getByText("Credit cards")).toHaveCount(0);
+
+  await page.goto("/cards");
+  await expect(page.getByRole("heading", { name: /^Cards$/ })).toBeVisible();
+  // purchases live here as a section
+  await expect(page.getByRole("button", { name: /New purchase/i })).toBeVisible();
+
+  // each card can be paid on demand, whether or not a reminder is showing
+  const pay = page.getByRole("button", { name: /^Record payment$/ }).first();
+  await expect(pay).toBeVisible();
+  await pay.click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
+  const amount = modal.locator('input[type="number"]');
+  await expect(amount).not.toHaveValue("");
+  await amount.fill("500");
+  await modal.getByRole("button", { name: /^Record payment$/ }).click();
+  await page.waitForTimeout(700);
+
+  // the payment is logged against the card
+  await expect(page.getByText("Payments recorded").first()).toBeVisible();
+  await expect(page.getByText(/statement/).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/cards.png" });
+});
+
+test("settings: the Short threshold drives the planner's tags", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+
+  await page.goto("/planner");
+  await page.waitForTimeout(800);
+  await page.getByRole("button", { name: /Add item/i }).click();
+  await page.getByLabel(/^Name$/i).fill("Runaway");
+  await page.getByRole("button", { name: /^Expense$/ }).click();
+  await page.getByLabel(/Amount/i).first().fill("9000");
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1200);
+  const shortsBefore = await page.locator("table.stack-sm tbody tr").filter({ hasText: "Short" }).count();
+  expect(shortsBefore).toBeGreaterThan(0);
+
+  // raise the bar past anything this plan misses by, and the tags go quiet
+  await page.goto("/settings");
+  await page.getByLabel(/smallest gap worth a tag/i).fill("99999999");
+  await page.waitForTimeout(300);
+  await page.goto("/planner");
+  await page.waitForTimeout(1200);
+  expect(await page.locator("table.stack-sm tbody tr").filter({ hasText: "Short" }).count()).toBe(0);
 });
