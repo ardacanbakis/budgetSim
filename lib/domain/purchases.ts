@@ -165,7 +165,8 @@ export function findDueCardPayments(
     if (account.kind !== "credit_card" || account.archived) continue;
     const txs = transactions.filter((t) => t.accountId === account.id);
     const completed = txs.filter((t) => t.status === "completed");
-    const paidThisMonth = completed.some(
+    // a payment you've already scheduled counts — no need to be nagged twice
+    const paidThisMonth = txs.some(
       (t) => t.direction === "income" && t.transferGroupId != null && t.dueDate.slice(0, 7) === month
     );
     if (paidThisMonth) continue;
@@ -193,4 +194,79 @@ export function findDueCardPayments(
     });
   }
   return result;
+}
+
+/** How a card is doing against its limit, once everything still owed is counted. */
+export interface CardStanding {
+  account: Account;
+  /** already posted and owed today, positive number */
+  postedDebt: number;
+  /** installments still to fall due on this card */
+  scheduled: number;
+  /** payments you've scheduled but not yet made */
+  scheduledPayments: number;
+  /** limit − (posted + scheduled − scheduled payments); null when no limit set */
+  available: number | null;
+  /** days until the statement is due; null when no payment day is set */
+  daysToDue: number | null;
+  /** true when nothing is owed and nothing is scheduled */
+  idle: boolean;
+}
+
+/** Days from `today` to the next occurrence of `day` in the month. */
+export function daysUntilPaymentDay(day: number, today: string): number {
+  const [y, m, d] = today.split("-").map(Number);
+  const inThisMonth = new Date(Date.UTC(y, m - 1, Math.min(day, new Date(Date.UTC(y, m, 0)).getUTCDate())));
+  const now = Date.UTC(y, m - 1, d);
+  const target =
+    inThisMonth.getTime() >= now
+      ? inThisMonth
+      : new Date(Date.UTC(y, m, Math.min(day, new Date(Date.UTC(y, m + 1, 0)).getUTCDate())));
+  return Math.round((target.getTime() - now) / 86_400_000);
+}
+
+/**
+ * What each card owes, what's still coming, and how much of its limit that
+ * leaves. Scheduled payments count against the debt because the money is
+ * already earmarked, even though it hasn't moved yet.
+ */
+export function cardStandings(
+  accounts: Account[],
+  balances: Map<string, number>,
+  transactions: Transaction[],
+  today: string
+): CardStanding[] {
+  return accounts
+    .filter((a) => a.kind === "credit_card" && !a.archived)
+    .map((account) => {
+      const txs = transactions.filter((t) => t.accountId === account.id);
+      const balance = balances.get(account.id) ?? 0;
+      const postedDebt = balance < 0 ? -balance : 0;
+      const scheduled = txs
+        .filter((t) => t.status === "planned" && t.direction === "expense")
+        .reduce((s, t) => s + t.amount, 0);
+      const scheduledPayments = txs
+        .filter((t) => t.status === "planned" && t.direction === "income" && t.transferGroupId != null)
+        .reduce((s, t) => s + t.amount, 0);
+      const owed = postedDebt + scheduled - scheduledPayments;
+      return {
+        account,
+        postedDebt,
+        scheduled,
+        scheduledPayments,
+        available: account.creditLimit != null ? account.creditLimit - owed : null,
+        daysToDue: account.paymentDay != null ? daysUntilPaymentDay(account.paymentDay, today) : null,
+        idle: postedDebt <= 0.005 && scheduled <= 0.005,
+      };
+    });
+}
+
+/**
+ * Cards whose statement is due today or within `within` days and that still
+ * have something to pay. Drives the nudge in the header.
+ */
+export function cardsDueSoon(standings: CardStanding[], within = 5): CardStanding[] {
+  return standings
+    .filter((s) => s.daysToDue != null && s.daysToDue <= within && s.postedDebt > 0.005)
+    .sort((a, b) => (a.daysToDue ?? 0) - (b.daysToDue ?? 0));
 }

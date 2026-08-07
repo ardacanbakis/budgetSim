@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RateTicker } from "@/components/rateTicker";
+import { CardDueBanner } from "@/components/cardDueBanner";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -285,6 +286,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           {showRateTicker ? <RateTicker /> : null}
+          <CardDueBanner />
           </div>
 
           <main className="px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-8">{children}</main>

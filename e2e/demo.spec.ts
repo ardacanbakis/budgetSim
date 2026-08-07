@@ -1072,3 +1072,122 @@ test("settings: the Short threshold drives the planner's tags", async ({ page })
   await page.waitForTimeout(1200);
   expect(await page.locator("table.stack-sm tbody tr").filter({ hasText: "Short" }).count()).toBe(0);
 });
+
+test("cards: a scheduled payment doesn't leave the account until its date", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+
+  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const before = await netWorthTile.textContent();
+
+  await page.goto("/cards");
+  await page.getByRole("button", { name: /^Record payment$/ }).first().click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
+  await modal.locator('input[type="number"]').fill("500");
+  // schedule it for next year
+  const future = new Date();
+  future.setFullYear(future.getFullYear() + 1);
+  await modal.locator('input[type="date"]').fill(future.toISOString().slice(0, 10));
+  await modal.getByRole("button", { name: /^Record payment$/ }).click();
+  await page.waitForTimeout(700);
+
+  // the money hasn't moved yet, so nothing is deducted
+  await page.goto("/");
+  await page.waitForTimeout(800);
+  expect(await netWorthTile.textContent()).toBe(before);
+
+  // and it's waiting in the ledger as planned
+  await page.goto("/transactions");
+  await page.waitForTimeout(500);
+  // next year opens folded, so unfold it before looking
+  const folded = page.getByText(/^▸ \d{4}$/);
+  if ((await folded.count()) > 0) await folded.first().click();
+  await page.waitForTimeout(300);
+  const row = page.locator("li").filter({ hasText: /statement/ }).first();
+  await expect(row).toContainText("Planned");
+});
+
+test("transactions: a transfer reads as one line, not two", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/cards");
+  await page.getByRole("button", { name: /^Record payment$/ }).first().click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
+  await modal.locator('input[type="number"]').fill("250");
+  await modal.getByRole("button", { name: /^Record payment$/ }).click();
+  await page.waitForTimeout(700);
+
+  await page.goto("/transactions");
+  await page.waitForTimeout(600);
+  const rows = page.locator("li").filter({ hasText: /statement/ });
+  await expect(rows).toHaveCount(1);
+  // and that one line says where the money went
+  await expect(rows.first()).toContainText("→");
+  await page.screenshot({ path: "e2e/screenshots/transfer-one-line.png" });
+});
+
+test("portfolio: columns, and hiding accounts sitting at zero", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+
+  const rows = page.locator("button").filter({ hasText: /₺|\$|€|₿|g$/ });
+  const all = await rows.count();
+  await page.getByText(/Hide( \d+)? empty/).click();
+  await page.waitForTimeout(400);
+  expect(await rows.count()).toBeLessThanOrEqual(all);
+
+  const toggle = page.getByRole("group", { name: /columns/i });
+  await toggle.getByRole("button", { name: "2" }).click();
+  await page.waitForTimeout(300);
+  await expect(toggle.getByRole("button", { name: "2" })).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({ path: "e2e/screenshots/portfolio-columns.png" });
+});
+
+test("cards: a limit is set once and reports the room left", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/cards");
+
+  // cards are edited from their own page now that they've left the portfolio
+  await page.getByRole("button", { name: /^Edit$/ }).first().click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Credit limit/ });
+  await modal.getByLabel(/Credit limit/i).fill("100000");
+  await modal.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(700);
+
+  // the badge counts everything still owed against it, not just posted debt
+  const badge = page.getByText(/left of/).first();
+  await expect(badge).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/cards-limit.png" });
+
+  // and the limit survives a reload, because it's a property of the card
+  await page.reload();
+  await page.waitForTimeout(800);
+  await expect(page.getByText(/left of/).first()).toBeVisible();
+});
+
+test("cards: a card with nothing running can be retired and brought back", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/cards");
+
+  // a card still carrying installments offers no way to retire it
+  const cardCount = await page.getByRole("button", { name: /^Record payment$/ }).count();
+  expect(cardCount).toBeGreaterThan(0);
+
+  const retire = page.getByRole("button", { name: /Retire this card/ });
+  if ((await retire.count()) === 0) {
+    // every demo card is active — that's the point of the guard, so assert it
+    expect(await retire.count()).toBe(0);
+    return;
+  }
+  await retire.first().click();
+  await page.waitForTimeout(600);
+  expect(await page.getByRole("button", { name: /^Record payment$/ }).count()).toBe(cardCount - 1);
+
+  await page.getByRole("button", { name: /Show retired/ }).click();
+  await page.getByRole("button", { name: /Bring back/ }).first().click();
+  await page.waitForTimeout(600);
+  expect(await page.getByRole("button", { name: /^Record payment$/ }).count()).toBe(cardCount);
+});

@@ -63,6 +63,14 @@ export default function TransactionsPage() {
   const overduePlanned = (transactions.data ?? []).filter((tx) => tx.status === "planned" && tx.dueDate < todayISO());
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data]);
+  // a transfer is one action written as two rows; pair them so it reads as one
+  const transferLegs = useMemo(() => {
+    const map = new Map<string, Transaction>();
+    for (const tx of transactions.data ?? []) {
+      if (tx.transferGroupId && tx.direction === "income") map.set(tx.transferGroupId, tx);
+    }
+    return map;
+  }, [transactions.data]);
   const categoryById = useMemo(() => new Map((categories.data ?? []).map((c) => [c.id, c])), [categories.data]);
 
   const filtered = useMemo(() => {
@@ -267,10 +275,20 @@ export default function TransactionsPage() {
                         </button>
                         {monthCollapsed ? null : (
                           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                            {items.map((tx) => (
+                            {items
+                              .filter((tx) => tx.transferGroupId == null || tx.direction === "expense")
+                              .map((tx) => (
                               <TxRow
                                 key={tx.id}
                                 tx={tx}
+                                counterpart={
+                                  tx.transferGroupId ? transferLegs.get(tx.transferGroupId) : undefined
+                                }
+                                landingAccount={
+                                  tx.transferGroupId
+                                    ? accountById.get(transferLegs.get(tx.transferGroupId)?.accountId ?? "")
+                                    : undefined
+                                }
                                 account={accountById.get(tx.accountId)}
                                 category={tx.categoryId ? categoryById.get(tx.categoryId) : null}
                                 fmtDate={fmtDate}
@@ -324,6 +342,8 @@ export default function TransactionsPage() {
 
 function TxRow({
   tx,
+  counterpart,
+  landingAccount,
   account,
   category,
   fmtDate,
@@ -335,6 +355,9 @@ function TxRow({
   onDelete,
 }: {
   tx: Transaction;
+  /** the other half of a transfer — the leg that lands, and where */
+  counterpart?: Transaction;
+  landingAccount?: Account;
   account: Account | undefined;
   category: Category | null | undefined;
   fmtDate: (iso: string) => string;
@@ -348,6 +371,7 @@ function TxRow({
   const { t, locale } = useI18n();
   if (!account) return null;
   const isTransfer = tx.transferGroupId != null;
+  const landing = landingAccount;
   return (
     <li className={`flex items-center gap-3 px-4 py-3 ${tx.status === "planned" ? "opacity-70" : ""}`}>
       <div className="min-w-0 flex-1">
@@ -368,16 +392,22 @@ function TxRow({
           {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
         </div>
         <div className="mt-0.5 text-xs text-zinc-500">
-          {account.name} · {fmtDate(tx.dueDate)}
+          {/* one line for the whole move, not one per leg */}
+          {isTransfer && landing ? `${account.name} → ${landing.name}` : account.name} · {fmtDate(tx.dueDate)}
         </div>
       </div>
       <div
         className={`text-right text-sm font-semibold tabular-nums ${
-          tx.direction === "income" ? "text-green-600" : "text-red-600"
+          isTransfer ? "text-zinc-500" : tx.direction === "income" ? "text-green-600" : "text-red-600"
         }`}
       >
-        {tx.direction === "income" ? "+" : "−"}
+        {isTransfer ? "" : tx.direction === "income" ? "+" : "−"}
         {formatAmount(tx.amount, account.currency, locale)}
+        {isTransfer && landing && landing.currency !== account.currency && counterpart ? (
+          <span className="block text-[11px] font-normal text-zinc-400">
+            → {formatAmount(counterpart.amount, landing.currency, locale)}
+          </span>
+        ) : null}
       </div>
       <div className="flex shrink-0 gap-1">
         {tx.status === "planned" ? (

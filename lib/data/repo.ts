@@ -28,6 +28,7 @@ export interface NewAccount {
   openingBalance: number;
   paymentAccountId?: string | null;
   paymentDay?: number | null;
+  creditLimit?: number | null;
 }
 
 export interface NewPurchase {

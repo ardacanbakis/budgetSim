@@ -46,6 +46,7 @@ const accountFromRow = (r: Row): Account => ({
   archived: r.archived,
   paymentAccountId: r.payment_account_id ?? null,
   paymentDay: r.payment_day ?? null,
+  creditLimit: r.credit_limit == null ? null : Number(r.credit_limit),
   createdAt: r.created_at,
 });
 
@@ -185,6 +186,7 @@ export class SupabaseRepo implements Repo {
         opening_balance: input.openingBalance,
         payment_account_id: input.paymentAccountId ?? null,
         payment_day: input.paymentDay ?? null,
+        credit_limit: input.creditLimit ?? null,
       })
       .select()
       .single();
@@ -201,6 +203,7 @@ export class SupabaseRepo implements Repo {
     if (patch.archived != null) row.archived = patch.archived;
     if (patch.paymentAccountId !== undefined) row.payment_account_id = patch.paymentAccountId;
     if (patch.paymentDay !== undefined) row.payment_day = patch.paymentDay;
+    if (patch.creditLimit !== undefined) row.credit_limit = patch.creditLimit;
     const { error } = await this.db.from("accounts").update(row).eq("id", id);
     throwIf(error);
   }
@@ -385,13 +388,16 @@ export class SupabaseRepo implements Repo {
   async createTransfer(input: NewTransfer): Promise<void> {
     const groupId = crypto.randomUUID();
     const now = new Date().toISOString();
+    // a transfer you've scheduled hasn't left your account yet — it lands as
+    // planned and moves the balances on the day you said it would
+    const settled = input.date <= todayISO();
     const base = {
       user_id: this.userId,
       category_id: null,
-      status: "completed",
+      status: settled ? "completed" : "planned",
       due_date: input.date,
-      completed_at: now,
-      fx_snapshot: input.fxSnapshot,
+      completed_at: settled ? now : null,
+      fx_snapshot: settled ? input.fxSnapshot : null,
       transfer_group_id: groupId,
       transfer_market_rate: input.marketRate,
     };

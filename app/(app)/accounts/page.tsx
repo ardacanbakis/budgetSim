@@ -11,6 +11,8 @@ import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/
 import { convert } from "@/lib/domain/fx";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { useLocalToggle } from "@/lib/prefs";
 
 /** Day-of-month as an ordinal: "15th" (en) / "15." (tr). */
 function ordinal(day: number, locale: string): string {
@@ -31,6 +33,8 @@ export default function PortfolioPage() {
   const categories = useCategories();
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
+  const { columns, setColumns } = useColumns("renovator-cols-portfolio");
+  const hideEmpty = useLocalToggle("renovator-portfolio-hide-empty", false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [latestFirst, setLatestFirst] = useState(true);
@@ -49,7 +53,10 @@ export default function PortfolioPage() {
 
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const list = (accounts.data ?? []).filter((a) => !a.archived);
+  // an account sitting at zero is noise on a page about what you hold
+  const all = (accounts.data ?? []).filter((a) => !a.archived);
+  const list = hideEmpty.value ? all.filter((a) => Math.abs(balances.get(a.id) ?? 0) > 1e-9) : all;
+  const emptyCount = all.length - list.length;
   const archived = (accounts.data ?? []).filter((a) => a.archived);
   const sections: Array<{ key: string; title: string; items: Account[] }> = [
     { key: "accounts", title: t("portfolio.accounts"), items: list.filter((a) => a.kind === "fiat") },
@@ -140,17 +147,37 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
-      <div className="flex items-center justify-between">
+    <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-6xl 3xl:max-w-[1700px]" : "max-w-none"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("portfolio.title")}</h1>
-        <Button variant="primary" onClick={() => setModalOpen(true)}>
-          + {t("accounts.newAccount")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-teal-600"
+              checked={hideEmpty.value}
+              onChange={(e) => hideEmpty.setValue(e.target.checked)}
+            />
+            {emptyCount > 0
+              ? t("portfolio.hideEmptyCount", { count: emptyCount })
+              : t("portfolio.hideEmpty")}
+          </label>
+          <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
+          <Button variant="primary" onClick={() => setModalOpen(true)}>
+            + {t("accounts.newAccount")}
+          </Button>
+        </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+      <div
+        className={
+          columns === 1
+            ? "grid items-start gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]"
+            : "space-y-4"
+        }
+      >
         {/* left: sections */}
-        <div className="space-y-4">
+        <div className={columns === 1 ? "space-y-4" : columnClass(columns)}>
           {sections.map((section) =>
             section.items.length === 0 ? null : (
               <Card key={section.key}>
@@ -286,7 +313,7 @@ export default function PortfolioPage() {
   );
 }
 
-function AccountModal({
+export function AccountModal({
   open,
   initial,
   onClose,
@@ -307,6 +334,7 @@ function AccountModal({
   const [isCard, setIsCard] = useState(false);
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [paymentDay, setPaymentDay] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
 
@@ -320,6 +348,7 @@ function AccountModal({
     setIsCard(initial?.kind === "credit_card");
     setPaymentAccountId(initial?.paymentAccountId ?? "");
     setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
+    setCreditLimit(initial?.creditLimit != null ? String(initial.creditLimit) : "");
   }
 
   const fiat = CURRENCY_META[currency].kind === "fiat";
@@ -345,6 +374,7 @@ function AccountModal({
               openingBalance: Number(opening) || 0,
               paymentAccountId: card ? paymentAccountId || null : null,
               paymentDay: card && day >= 1 && day <= 31 ? day : null,
+              creditLimit: card && Number(creditLimit) > 0 ? Number(creditLimit) : null,
             });
           } finally {
             setSaving(false);
@@ -386,6 +416,16 @@ function AccountModal({
                   </option>
                 ))}
               </Select>
+            </Field>
+            <Field label={t("cards.creditLimit")} hint={t("cards.creditLimitHint")}>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                inputMode="decimal"
+                value={creditLimit}
+                onChange={(e) => setCreditLimit(e.target.value)}
+              />
             </Field>
             <Field label={t("accounts.paymentDay")} hint={t("accounts.paymentDayHint")}>
               <Input
