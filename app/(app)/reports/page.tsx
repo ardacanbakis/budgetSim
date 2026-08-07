@@ -438,7 +438,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="stack-sm w-full text-sm tabular-nums">
+              <table className="stack-sm sticky-head w-full text-sm tabular-nums">
                 <thead>
                   <tr className="text-left text-xs text-zinc-400">
                     <th className="px-2 py-1 font-medium">{t("common.date")}</th>
@@ -473,7 +473,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
         <div className="overflow-x-auto p-2">
-          <table className="stack-sm w-full text-sm tabular-nums">
+          <table className="stack-sm sticky-head w-full text-sm tabular-nums">
             <thead>
               <tr className="text-left text-xs text-zinc-400">
                 <th className="px-2 py-1 font-medium">{t("projections.month")}</th>

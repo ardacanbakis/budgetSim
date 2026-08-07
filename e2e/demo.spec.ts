@@ -1191,3 +1191,88 @@ test("cards: a card with nothing running can be retired and brought back", async
   await page.waitForTimeout(600);
   expect(await page.getByRole("button", { name: /^Record payment$/ }).count()).toBe(cardCount);
 });
+
+test("style: picking a v2 skin rebuilds the app, and Classic stays Classic", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await enterDemo(page);
+
+  // Classic is the default, and it has no page title in the header and no
+  // quick jump — those are the two things version 2 adds to the shell
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Quick jump/i })).toHaveCount(0);
+  const classicMarkers = await page.evaluate(() => ({
+    ui: document.documentElement.dataset.ui ?? null,
+    skin: document.documentElement.dataset.skin ?? null,
+  }));
+  expect(classicMarkers).toEqual({ ui: null, skin: null });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /^Terminal/ }).click();
+  await page.waitForTimeout(400);
+  expect(
+    await page.evaluate(() => document.documentElement.dataset.skin)
+  ).toBe("terminal");
+
+  // the skin drives real style, not just an attribute: corners go square and
+  // the accent leaves teal behind
+  const radius = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--radius-xl").trim()
+  );
+  // the minifier drops the leading zero, so compare on the value not the text
+  expect(parseFloat(radius)).toBeCloseTo(0.25);
+
+  // the version-2 shell: page title in the header, quick jump available
+  await page.goto("/");
+  await page.waitForTimeout(1200);
+  await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Quick jump/i })).toBeVisible();
+
+  // and the version-2 dashboard, which leads with one figure over a ledger
+  // rather than ten equal cards
+  await expect(page.getByText(/Net worth · USD/)).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/style-terminal.png" });
+
+  // it survives a reload, because the choice is stored per device
+  await page.reload();
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => document.documentElement.dataset.skin)).toBe("terminal");
+
+  // going back to Classic restores the original grid exactly
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /^Classic/ }).click();
+  await page.waitForTimeout(400);
+  await page.goto("/");
+  await page.waitForTimeout(1200);
+  await expect(page.getByRole("button", { name: /Quick jump/i })).toHaveCount(0);
+  await expect(page.getByText(/Edit layout/)).toBeVisible();
+});
+
+test("style: quick jump finds a page and an account by a few letters", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /^Calm/ }).click();
+  await page.waitForTimeout(400);
+
+  await page.goto("/transactions");
+  await page.waitForTimeout(1000);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: /Quick jump/i });
+  await expect(palette).toBeVisible();
+
+  // a subsequence is enough — you don't have to type the name in full
+  await page.keyboard.type("plnr");
+  await expect(palette.getByRole("button", { name: /Planner/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(1200);
+  await expect(page).toHaveURL(/\/planner/);
+
+  // accounts are in the same list, so you can jump straight to where one lives
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("ziraat");
+  await expect(
+    page.getByRole("dialog", { name: /Quick jump/i }).getByRole("button", { name: /Ziraat/ })
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: /Quick jump/i })).toHaveCount(0);
+});

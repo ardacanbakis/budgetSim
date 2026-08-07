@@ -20,16 +20,13 @@ import {
   useRates,
   useTransactions,
   useUserSettings,
-  useVictvsSessions,
 } from "@/lib/data/queries";
+import { DashboardV2 } from "@/components/dashboardV2";
 import { DashboardLayout } from "@/lib/data/types";
-import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
-import { safeToSpend } from "@/lib/domain/budgets";
 import { formatAmount } from "@/lib/domain/currencies";
-import { convert, snapshotFromTable } from "@/lib/domain/fx";
-import { sumAmounts } from "@/lib/domain/money";
-import { computePurchaseLiability, findDueCardPayments } from "@/lib/domain/purchases";
-import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { snapshotFromTable } from "@/lib/domain/fx";
+import { todayISO } from "@/lib/domain/recurrence";
+import { useDashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
@@ -97,10 +94,9 @@ export default function DashboardPage() {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();
-  const { displayCurrency } = useApp();
+  const { displayCurrency, uiVersion } = useApp();
   const accounts = useAccounts();
   const transactions = useTransactions();
-  const victvs = useVictvsSessions();
   const rates = useRates();
   const settings = useUserSettings();
 
@@ -128,73 +124,14 @@ export default function DashboardPage() {
 
   const today = todayISO();
 
-  // recomputed every render: a few hundred rows of arithmetic, well under a
-  // frame at personal scale. Memoize if the ledger ever grows past ~10k rows.
-  const derived = (() => {
-    if (!accounts.data || !transactions.data || !rates.data) return null;
-    const balances = computeBalances(accounts.data, transactions.data);
-    const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
-    // remaining reflected installments count as debt now (current stat only —
-    // the projector spreads them month by month, so it stays unadjusted)
-    const liability = computePurchaseLiability(transactions.data, accounts.data, rates.data.usdPer, displayCurrency);
-    const netWorth = { ...rawNetWorth, total: rawNetWorth.total - liability };
-    let ccPostedDebt = 0;
-    for (const a of accounts.data) {
-      if (a.kind !== "credit_card" || a.archived) continue;
-      const balance = balances.get(a.id) ?? 0;
-      if (balance < 0) {
-        const converted = convert(-balance, a.currency, displayCurrency, rates.data.usdPer);
-        if (converted != null) ccPostedDebt += converted;
-      }
-    }
-    const duePayments = findDueCardPayments(accounts.data, balances, transactions.data, today);
-    const safe = safeToSpend({
-      accounts: accounts.data,
-      balances,
-      transactions: transactions.data,
-      usdPer: rates.data.usdPer,
-      display: displayCurrency,
-      today,
-    });
+  // both dashboards run on the same derivation; only the arrangement differs
+  const derived = useDashboardData(displayCurrency);
 
-    const upcoming = transactions.data
-      .filter((tx) => tx.status === "planned" && tx.dueDate <= addDays(today, 30))
-      .sort((a, b) => (a.dueDate > b.dueDate ? 1 : -1))
-      .slice(0, 6);
+  const unpaidVictvs = derived?.unpaidVictvs ?? 0;
 
-    // last 6 completed months of income/expense in display currency (transfers excluded)
-    const byMonth = new Map<string, { income: number; expense: number }>();
-    for (let i = 5; i >= 0; i--) {
-      byMonth.set(addMonthsClamped(today, -i).slice(0, 7), { income: 0, expense: 0 });
-    }
-    const currencyOf = new Map(accounts.data.map((a) => [a.id, a.currency] as const));
-    for (const tx of transactions.data) {
-      // legacy = imported history, usually stamped with the import date; it
-      // would pile onto whichever month you happened to import in
-      if (tx.status !== "completed" || tx.transferGroupId || tx.legacy) continue;
-      const bucket = byMonth.get(tx.dueDate.slice(0, 7));
-      const currency = currencyOf.get(tx.accountId);
-      if (!bucket || !currency) continue;
-      // historical figures use the snapshot captured at completion, so they never drift
-      const usdPer = tx.fxSnapshot?.usdPer ?? rates.data.usdPer;
-      const converted = convert(tx.amount, currency, displayCurrency, usdPer);
-      if (converted == null) continue;
-      if (tx.direction === "income") bucket.income += converted;
-      else bucket.expense += converted;
-    }
-    const flow = [...byMonth.entries()].map(([month, v]) => ({
-      month,
-      income: Math.round(v.income * 100) / 100,
-      expense: Math.round(v.expense * 100) / 100,
-    }));
-
-    return { balances, netWorth, liability, ccPostedDebt, duePayments, safe, upcoming, flow };
-  })();
-
-  const unpaidVictvs = sumAmounts(
-    "USD",
-    (victvs.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount)
-  );
+  // Classic keeps the card grid below; every v2 skin gets the rebuilt layout.
+  // Placed after every hook above so the hook order never changes with style.
+  if (uiVersion === "v2") return <DashboardV2 />;
 
   if (!derived || !layout || accounts.isLoading || transactions.isLoading) return <Spinner />;
 

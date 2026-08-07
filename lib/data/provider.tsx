@@ -4,6 +4,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useQueryClient } from "@tanstack/react-query";
 import { Currency, isCurrency } from "@/lib/domain/currencies";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase/client";
+import {
+  applyUiStyle,
+  DEFAULT_UI_STYLE,
+  isUiStyle,
+  UI_STYLE_KEY,
+  UiStyle,
+  UiVersion,
+  versionOf,
+} from "@/lib/ui/style";
 import { DemoRepo } from "./demoRepo";
 import { Repo } from "./repo";
 import { SupabaseRepo } from "./supabaseRepo";
@@ -61,6 +70,10 @@ interface AppContextValue {
   setTheme: (t: Theme) => void;
   compact: boolean;
   setCompact: (c: boolean) => void;
+  uiStyle: UiStyle;
+  setUiStyle: (s: UiStyle) => void;
+  /** "v2" for every skin but Classic — gates shell and page layout */
+  uiVersion: UiVersion;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -70,6 +83,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [displayCurrency, setDisplayCurrencyState] = useState<Currency>("USD");
   const [theme, setThemeState] = useState<Theme>("system");
   const [compact, setCompactState] = useState(false);
+  const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -84,6 +98,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const savedCompact = window.localStorage.getItem(COMPACT_KEY) === "true";
       setCompactState(savedCompact);
       applyCompact(savedCompact);
+      const savedStyle = window.localStorage.getItem(UI_STYLE_KEY);
+      const style: UiStyle = savedStyle && isUiStyle(savedStyle) ? savedStyle : DEFAULT_UI_STYLE;
+      setUiStyleState(style);
+      applyUiStyle(style);
     });
 
     if (window.localStorage.getItem(MODE_KEY) === "demo") {
@@ -167,9 +185,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [session]
   );
 
+  // device-local: which screen you're sitting at is the thing that decides
+  // whether you want the dense layout, so this one doesn't follow the account
+  const setUiStyle = useCallback((s: UiStyle) => {
+    setUiStyleState(s);
+    window.localStorage.setItem(UI_STYLE_KEY, s);
+    applyUiStyle(s);
+  }, []);
+
   const value = useMemo(
-    () => ({ session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact }),
-    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact]
+    () => ({
+      session,
+      enterDemo,
+      signOut,
+      resetDemo,
+      displayCurrency,
+      setDisplayCurrency,
+      theme,
+      setTheme,
+      compact,
+      setCompact,
+      uiStyle,
+      setUiStyle,
+      uiVersion: versionOf(uiStyle),
+    }),
+    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact, uiStyle, setUiStyle]
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

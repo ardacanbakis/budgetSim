@@ -18,6 +18,7 @@ import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
+import { UI_STYLES } from "@/lib/ui/style";
 
 const SETTINGS_TABS = ["preferences", "categories", "victvs", "data", "account"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -91,6 +92,7 @@ export default function SettingsPage() {
       {tab === "preferences" ? (
         <>
           <PreferencesCard />
+          <StyleCard />
           <AppearanceCard />
           <SidebarOrderCard />
         </>
@@ -327,6 +329,66 @@ function PreferencesCard() {
             <span className="block text-xs text-zinc-500">{t("settings.rateTickerHint")}</span>
           </span>
         </label>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Style is a bigger decision than theme — it changes layout, not just colour —
+ * so it gets its own card above the theme picker, with a swatch that actually
+ * shows what each one does to a card's corners and accent.
+ */
+function StyleCard() {
+  const { t } = useI18n();
+  const { uiStyle, setUiStyle } = useApp();
+  return (
+    <Card>
+      <CardHeader title={t("style.title")} />
+      <div className="space-y-3 p-4">
+        <p className="text-xs text-zinc-500">{t("style.hint")}</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {UI_STYLES.map(({ id, version, key, preview }) => {
+            const selected = uiStyle === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setUiStyle(id)}
+                aria-pressed={selected}
+                className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                  selected ? "border-teal-500 ring-1 ring-teal-500/50" : "border-[var(--edge)] hover:border-teal-500/40"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className="flex h-11 w-11 shrink-0 items-center justify-center border border-black/10"
+                  style={{ backgroundColor: preview.bg, borderRadius: preview.radius }}
+                >
+                  <span
+                    className="flex h-7 w-7 items-end justify-center border border-black/10 pb-1"
+                    style={{ backgroundColor: preview.surface, borderRadius: Math.max(1, preview.radius - 2) }}
+                  >
+                    <span
+                      className="h-1.5 w-4"
+                      style={{ backgroundColor: preview.accent, borderRadius: Math.max(1, preview.radius - 4) }}
+                    />
+                  </span>
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{t(`style.${key}`)}</span>
+                    <Badge tone={version === "v2" ? "sky" : "zinc"}>
+                      {t("style.version", { n: version === "v2" ? 2 : 1 })}
+                    </Badge>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{t(`style.${key}Desc`)}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-zinc-400">{t("style.v2Note")}</p>
       </div>
     </Card>
   );
