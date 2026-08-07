@@ -33,9 +33,10 @@ import {
   retentionFactor,
 } from "@/lib/domain/planner";
 import { usePlanScenarios } from "@/lib/usePlanScenarios";
-import { SHORT_THRESHOLD_KEY, useLocalNumber } from "@/lib/prefs";
+import { SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { ScenarioBar } from "@/components/scenarioBar";
 import { FundingList } from "@/components/fundingList";
+import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
@@ -56,6 +57,9 @@ const HORIZON_KEY = "renovator-plan-horizon";
 const COMPARE_KEY = "renovator-plan-compare";
 const VIEW_KEY = "renovator-plan-view";
 const TILES_KEY = "renovator-plan-tiles";
+// what-if list: grouped by direction, and optionally as two cards
+const GROUP_ITEMS_KEY = "renovator-plan-group-items";
+const SPLIT_ITEMS_KEY = "renovator-plan-split-items";
 
 const TILE_IDS = ["start", "end", "delta", "sold", "avg", "runway", "lowest", "income", "expense"] as const;
 type TileId = (typeof TILE_IDS)[number];
@@ -95,7 +99,8 @@ export default function PlannerPage() {
   // custom arrangement exists it becomes the default instead.
   const [view, setView] = useState<PlannerView>("two");
   const [editingLayout, setEditingLayout] = useState(false);
-  const [groupItems, setGroupItems] = useState(false);
+  const groupItems = useLocalToggle(GROUP_ITEMS_KEY, true);
+  const splitItems = useLocalToggle(SPLIT_ITEMS_KEY, false);
   const [pickingTiles, setPickingTiles] = useState(false);
   const [shownTiles, setShownTiles] = useState<TileId[]>(DEFAULT_TILES);
   const grid = usePlannerGrid();
@@ -271,7 +276,7 @@ export default function PlannerPage() {
   // direction is a switch because sometimes you want all the outgoings together
   const byStart = (a: PlanItem, b: PlanItem) =>
     a.startMonth < b.startMonth ? -1 : a.startMonth > b.startMonth ? 1 : 0;
-  const itemGroups = groupItems
+  const itemGroups = groupItems.value || splitItems.value
     ? (["income", "expense"] as const)
         .map((direction) => ({
           direction,
@@ -389,6 +394,137 @@ export default function PlannerPage() {
     });
     setEditing(null);
     setAdding(false);
+  };
+
+  /**
+   * The what-if list, for one direction or both. Split out so the combined
+   * card and the two separate ones are the same code — a bug fixed in one
+   * can't survive in the other.
+   */
+  const itemsCard = (only: "all" | TxDirection) => {
+    const groups = only === "all" ? itemGroups : itemGroups.filter((g) => g.direction === only);
+    const count = groups.reduce((n, g) => n + g.items.length, 0);
+    const title =
+      only === "income"
+        ? t("planner.itemsIncomeTitle")
+        : only === "expense"
+          ? t("planner.itemsExpenseTitle")
+          : t("planner.itemsTitle");
+    return (
+      <Card>
+        <CardHeader
+          title={title}
+          action={
+            <div className="flex items-center gap-2">
+              {only === "all" ? (
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-600"
+                    checked={groupItems.value}
+                    onChange={(e) => groupItems.setValue(e.target.checked)}
+                  />
+                  {t("planner.groupByType")}
+                </label>
+              ) : null}
+              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-teal-600"
+                  checked={splitItems.value}
+                  onChange={(e) => splitItems.setValue(e.target.checked)}
+                />
+                {t("planner.splitItems")}
+              </label>
+              <Button variant="primary" onClick={() => setAdding(true)}>
+                + {t("planner.addItem")}
+              </Button>
+            </div>
+          }
+        />
+        {count === 0 ? (
+          <div className="p-4">
+            <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
+          </div>
+        ) : (
+          <ul className="divide-y divide-[var(--edge-soft)]">
+            {groups.map(({ direction, items }) => (
+              <Fragment key={direction}>
+                {/* the heading is noise on a card that only holds one kind */}
+                {groupItems.value && only === "all" && direction !== "all" ? (
+                  <li className="bg-[var(--edge-soft)]/60 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {direction === "income" ? t("tx.income") : t("tx.expense")}
+                  </li>
+                ) : null}
+                {items.map((item) => (
+                  <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-teal-600"
+                      checked={item.enabled}
+                      onChange={(e) =>
+                        persist({
+                          ...plan,
+                          items: plan.items.map((i) => (i.id === item.id ? { ...i, enabled: e.target.checked } : i)),
+                        })
+                      }
+                      aria-label={item.label}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-medium">{item.label}</span>
+                        <Badge tone={item.direction === "income" ? "green" : "red"}>
+                          {t(`tx.${item.direction}`)}
+                        </Badge>
+                        <Badge tone="zinc">{t(`planner.freq_${item.frequency}`)}</Badge>
+                      </div>
+                      <div className="mt-0.5 text-xs text-zinc-500">
+                        {t("planner.startsOn", { month: monthLabelOf(item.startMonth, locale) })}
+                        {item.frequency !== "once"
+                          ? ` · ${
+                              item.durationMonths != null
+                                ? t("planner.untilMonth", {
+                                    month: monthLabelOf(addMonthKey(item.startMonth, item.durationMonths - 1), locale),
+                                  })
+                                : t("planner.ongoing")
+                            }`
+                          : ""}
+                        {" · "}
+                        {t("planner.horizonTotal", {
+                          amount: formatAmount(
+                            itemHorizonTotal(item, months, plan.devaluation, firstMonth),
+                            item.currency,
+                            locale
+                          ),
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        item.direction === "income" ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {item.direction === "income" ? "+" : "−"}
+                      {formatAmount(item.amount, item.currency, locale)}
+                    </span>
+                    <Button variant="ghost" aria-label={t("common.edit")} onClick={() => setEditing(item)}>
+                      ✎
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      aria-label={t("common.delete")}
+                      onClick={() => persist({ ...plan, items: plan.items.filter((i) => i.id !== item.id) })}
+                    >
+                      ✕
+                    </Button>
+                  </li>
+                ))}
+              </Fragment>
+            ))}
+          </ul>
+        )}
+      </Card>
+    );
   };
 
   // every placeable card, so the classic columns and the custom grid
@@ -917,101 +1053,43 @@ export default function PlannerPage() {
         </>
       ),
     },
+    // one card or two: sometimes you want the outgoings on their own, and on
+    // the custom canvas two cards can sit in two different places
+    ...(splitItems.value
+      ? ([
+          {
+            id: "itemsIncome",
+            title: t("planner.itemsIncomeTitle"),
+            defaultSize: { w: 2, h: 3 },
+            node: itemsCard("income"),
+          },
+          {
+            id: "itemsExpense",
+            title: t("planner.itemsExpenseTitle"),
+            defaultSize: { w: 2, h: 3 },
+            node: itemsCard("expense"),
+          },
+        ] as GridBlock[])
+      : ([
+          {
+            id: "items",
+            title: t("planner.itemsTitle"),
+            defaultSize: { w: 2, h: 3 },
+            node: itemsCard("all"),
+          },
+        ] as GridBlock[])),
     {
-      id: "items",
-      title: t("planner.itemsTitle"),
+      id: "debt",
+      title: t("planner.loansTitle"),
       defaultSize: { w: 2, h: 3 },
       node: (
-        <>
-
-        {/* what-if items */}
-        <Card>
-          <CardHeader
-            title={t("planner.itemsTitle")}
-            action={
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-teal-600"
-                    checked={groupItems}
-                    onChange={(e) => setGroupItems(e.target.checked)}
-                  />
-                  {t("planner.groupByType")}
-                </label>
-                <Button variant="primary" onClick={() => setAdding(true)}>
-                  + {t("planner.addItem")}
-                </Button>
-              </div>
-            }
-          />
-          {plan.items.length === 0 ? (
-            <div className="p-4">
-              <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
-            </div>
-          ) : (
-            <ul className="divide-y divide-[var(--edge-soft)]">
-              {itemGroups.map(({ direction, items }) => (
-                <Fragment key={direction}>
-                  {groupItems ? (
-                    <li className="bg-[var(--edge-soft)]/60 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                      {direction === "income" ? t("tx.income") : t("tx.expense")}
-                    </li>
-                  ) : null}
-                  {items.map((item) => (
-                <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-teal-600"
-                    checked={item.enabled}
-                    onChange={(e) => persist({ ...plan, items: plan.items.map((i) => (i.id === item.id ? { ...i, enabled: e.target.checked } : i)) })}
-                    aria-label={item.label}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-medium">{item.label}</span>
-                      <Badge tone={item.direction === "income" ? "green" : "red"}>
-                        {t(`tx.${item.direction}`)}
-                      </Badge>
-                      <Badge tone="zinc">{t(`planner.freq_${item.frequency}`)}</Badge>
-                    </div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
-                      {t("planner.startsOn", { month: monthLabelOf(item.startMonth, locale) })}
-                      {item.frequency !== "once"
-                        ? ` · ${
-                            item.durationMonths != null
-                              ? t("planner.untilMonth", {
-                                  month: monthLabelOf(addMonthKey(item.startMonth, item.durationMonths - 1), locale),
-                                })
-                              : t("planner.ongoing")
-                          }`
-                        : ""}
-                      {" · "}
-                      {t("planner.horizonTotal", { amount: formatAmount(itemHorizonTotal(item, months, plan.devaluation, firstMonth), item.currency, locale) })}
-                    </div>
-                  </div>
-                  <span className={`text-sm font-semibold tabular-nums ${item.direction === "income" ? "text-green-600" : "text-red-600"}`}>
-                    {item.direction === "income" ? "+" : "−"}
-                    {formatAmount(item.amount, item.currency, locale)}
-                  </span>
-                  <Button variant="ghost" aria-label={t("common.edit")} onClick={() => setEditing(item)}>
-                    ✎
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    aria-label={t("common.delete")}
-                    onClick={() => persist({ ...plan, items: plan.items.filter((i) => i.id !== item.id) })}
-                  >
-                    ✕
-                  </Button>
-                </li>
-                  ))}
-                </Fragment>
-              ))}
-            </ul>
-          )}
-        </Card>
-        </>
+        <PlanLoansCard
+          loans={plan.loans ?? []}
+          accounts={drawable}
+          displayCurrency={displayCurrency}
+          firstMonth={firstMonth}
+          onChange={(loans) => persist({ ...plan, loans })}
+        />
       ),
     },
     {
@@ -1245,6 +1323,9 @@ export default function PlannerPage() {
               {block("funding")}
               {block("sales")}
               {block("items")}
+              {block("itemsIncome")}
+              {block("itemsExpense")}
+              {block("debt")}
               {block("budgets")}
             </div>
             <div className={view === "two" ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>

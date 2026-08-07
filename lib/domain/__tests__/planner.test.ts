@@ -120,7 +120,7 @@ describe("devaluation maths", () => {
 describe("planExtraFlows", () => {
   it("emits one flow per hit month, in the item's own currency", () => {
     const flows = planExtraFlows(
-      { items: [item({ amount: 900, currency: "TRY", inflates: false, durationMonths: 2 })], budgets: [], devaluation: off, lostIncome: [], funding: NO_FUNDING },
+      { items: [item({ amount: 900, currency: "TRY", inflates: false, durationMonths: 2 })], budgets: [], devaluation: off, lostIncome: [], loans: [], funding: NO_FUNDING },
       6,
       FIRST
     );
@@ -133,7 +133,7 @@ describe("planExtraFlows", () => {
       {
         items: [],
         budgets: [{ categoryId: "groceries", label: "Groceries", monthlyAmount: 10_000, currency: "TRY", enabled: true }],
-        devaluation: deval30, lostIncome: [], funding: NO_FUNDING,
+        devaluation: deval30, lostIncome: [], loans: [], funding: NO_FUNDING,
       },
       13,
       FIRST
@@ -151,12 +151,12 @@ describe("planExtraFlows", () => {
         { categoryId: "a", label: "A", monthlyAmount: 100, currency: "TRY" as const, enabled: true },
         { categoryId: "b", label: "B", monthlyAmount: 0, currency: "TRY" as const, enabled: true },
       ],
-      devaluation: off, lostIncome: [], funding: NO_FUNDING,
+      devaluation: off, lostIncome: [], loans: [], funding: NO_FUNDING,
     };
     expect(planExtraFlows(plan, 3, FIRST)).toHaveLength(3); // only budget "a"
     expect([...planReplacedCategories(plan)]).toEqual(["a"]);
-    expect(planIsEmpty({ items: [], budgets: [], devaluation: off, lostIncome: [], funding: NO_FUNDING })).toBe(true);
-    expect(planIsEmpty({ items: [], budgets: [], devaluation: deval30, lostIncome: [], funding: NO_FUNDING })).toBe(false);
+    expect(planIsEmpty({ items: [], budgets: [], devaluation: off, lostIncome: [], loans: [], funding: NO_FUNDING })).toBe(true);
+    expect(planIsEmpty({ items: [], budgets: [], devaluation: deval30, lostIncome: [], loans: [], funding: NO_FUNDING })).toBe(false);
   });
 });
 
@@ -191,7 +191,7 @@ describe("projection under devaluation", () => {
     const plan = {
       items: [],
       budgets: [{ categoryId: "groceries", label: "Groceries", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
-      devaluation: deval30, lostIncome: [], funding: NO_FUNDING,
+      devaluation: deval30, lostIncome: [], loans: [], funding: NO_FUNDING,
     };
     const result = project({
       ratePath: buildRatePath(rates, deval30),
@@ -209,7 +209,7 @@ describe("projection under devaluation", () => {
         item({ direction: "expense" as const, amount: 20_000, currency: "TRY" as const, inflates: false }),
       ],
       budgets: [],
-      devaluation: deval30, lostIncome: [], funding: NO_FUNDING,
+      devaluation: deval30, lostIncome: [], loans: [], funding: NO_FUNDING,
     };
     const result = project({
       ratePath: buildRatePath(rates, deval30),
@@ -240,7 +240,7 @@ describe("projection under devaluation", () => {
     const plan = {
       items: [],
       budgets: [{ categoryId: "rent", label: "Rent", monthlyAmount: 10_000, currency: "TRY" as const, enabled: true }],
-      devaluation: off, lostIncome: [], funding: NO_FUNDING,
+      devaluation: off, lostIncome: [], loans: [], funding: NO_FUNDING,
     };
     const replaced = project({
       templates: [rent],
