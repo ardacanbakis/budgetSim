@@ -25,8 +25,9 @@ import {
   purchaseProgress,
 } from "@/lib/domain/purchases";
 import { averageMonthlySpend } from "@/lib/domain/stats";
-import { findDueCardPayments } from "@/lib/domain/purchases";
+import { cardStandings, findDueCardPayments } from "@/lib/domain/purchases";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
+import { AccountModal } from "@/app/(app)/accounts/page";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
@@ -46,8 +47,18 @@ export default function PurchasesPage() {
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [paying, setPaying] = useState<Account | null>(null);
+  const [showRetired, setShowRetired] = useState(false);
+  const [editingCard, setEditingCard] = useState<Account | null>(null);
   const { columns, setColumns } = useColumns("renovator-cols-purchases");
 
+  const updateAccount = useAppMutation(
+    (v: { id: string; patch: Parameters<typeof repo.updateAccount>[1] }) => repo.updateAccount(v.id, v.patch),
+    [KEYS.accounts]
+  );
+  const setArchived = useAppMutation(
+    (v: { id: string; archived: boolean }) => repo.updateAccount(v.id, { archived: v.archived }),
+    [KEYS.accounts]
+  );
   const setReflected = useAppMutation(
     (v: { id: string; reflected: boolean }) =>
       repo.setPurchaseReflected(v.id, v.reflected, rates.data ? snapshotFromTable(rates.data) : null),
@@ -80,6 +91,10 @@ export default function PurchasesPage() {
 
   const accountList = accounts.data ?? [];
   const cards = accountList.filter((a) => a.kind === "credit_card" && !a.archived);
+  const retired = (accounts.data ?? []).filter((a) => a.kind === "credit_card" && a.archived);
+  const standings = new Map(
+    cardStandings(accountList, balances, transactions.data ?? [], todayISO()).map((s) => [s.account.id, s])
+  );
 
   // what each card still owes, month by month, and what you've already paid it
   const schedule = (() => {
@@ -252,6 +267,18 @@ export default function PurchasesPage() {
                       {t("purchases.avgMonthlySpend")}: {formatAmount(avg, displayCurrency, locale)}
                     </Badge>
                   ) : null}
+                  {standings.get(card.id)?.available != null ? (
+                    <Badge tone={standings.get(card.id)!.available! < 0 ? "red" : "green"}>
+                      {standings.get(card.id)!.available! < 0
+                        ? t("cards.limitOver", {
+                            amount: formatAmount(-standings.get(card.id)!.available!, card.currency, locale),
+                          })
+                        : t("cards.limitLeft", {
+                            amount: formatAmount(standings.get(card.id)!.available!, card.currency, locale),
+                            limit: formatAmount(card.creditLimit ?? 0, card.currency, locale),
+                          })}
+                    </Badge>
+                  ) : null}
                   {card.paymentDay ? (
                     <span className="text-xs font-normal text-zinc-400">
                       {t("accounts.paymentDueOn", { day: card.paymentDay })}
@@ -260,7 +287,21 @@ export default function PurchasesPage() {
                 </span>
               }
               action={
-                <Button onClick={() => setPaying(card)}>{t("cards.recordPayment")}</Button>
+                <div className="flex items-center gap-2">
+                  {standings.get(card.id)?.idle ? (
+                    <Button
+                      variant="ghost"
+                      title={t("cards.inactiveHint")}
+                      onClick={() => setArchived.mutate({ id: card.id, archived: true })}
+                    >
+                      {t("cards.markInactive")}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" onClick={() => setEditingCard(card)}>
+                    {t("common.edit")}
+                  </Button>
+                  <Button onClick={() => setPaying(card)}>{t("cards.recordPayment")}</Button>
+                </div>
               }
             />
 
@@ -328,6 +369,41 @@ export default function PurchasesPage() {
           </div>
         </Card>
       ) : null}
+
+      {retired.length > 0 ? (
+        <Card>
+          <CardHeader
+            title={`${t("cards.inactive")} (${retired.length})`}
+            action={
+              <Button variant="ghost" onClick={() => setShowRetired((v) => !v)}>
+                {showRetired ? t("common.close") : t("cards.showRetired")}
+              </Button>
+            }
+          />
+          {showRetired ? (
+            <ul className="divide-y divide-[var(--edge-soft)] p-2">
+              {retired.map((card) => (
+                <li key={card.id} className="flex items-center gap-3 px-2 py-2">
+                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-500">{card.name}</span>
+                  <Button onClick={() => setArchived.mutate({ id: card.id, archived: false })}>
+                    {t("cards.markActive")}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <AccountModal
+        open={editingCard != null}
+        initial={editingCard}
+        onClose={() => setEditingCard(null)}
+        onSave={async (input) => {
+          if (editingCard) await updateAccount.mutateAsync({ id: editingCard.id, patch: input });
+          setEditingCard(null);
+        }}
+      />
 
       <PurchaseModal open={modalOpen} onClose={() => setModalOpen(false)} />
 

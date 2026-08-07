@@ -16,8 +16,12 @@ export interface Account {
   archived: boolean;
   /** credit cards: default account the bill is paid from */
   paymentAccountId: string | null;
-  /** credit cards: day of month the statement bill is due (1–31), or null */
+  /** credit cards: day of month the statement bill is due (1–31), or null.
+   * This is the last day you can pay without penalty, so it's what reminders
+   * count down to. */
   paymentDay: number | null;
+  /** credit cards: the agreed limit, in the account's currency. Null = unset. */
+  creditLimit?: number | null;
   createdAt: string;
 }
 

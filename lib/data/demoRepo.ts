@@ -86,6 +86,7 @@ export class DemoRepo implements Repo {
       ...input,
       paymentAccountId: input.paymentAccountId ?? null,
       paymentDay: input.paymentDay ?? null,
+      creditLimit: input.creditLimit ?? null,
     };
     this.store.accounts.push(account);
     this.save();
@@ -259,12 +260,14 @@ export class DemoRepo implements Repo {
     const now = new Date().toISOString();
     const from = this.store.accounts.find((a) => a.id === input.fromAccountId);
     const to = this.store.accounts.find((a) => a.id === input.toAccountId);
+    // a transfer you've scheduled hasn't left your account yet
+    const settled = input.date <= todayISO();
     const base = {
       categoryId: null,
-      status: "completed" as const,
+      status: (settled ? "completed" : "planned") as "completed" | "planned",
       dueDate: input.date,
-      completedAt: now,
-      fxSnapshot: input.fxSnapshot,
+      completedAt: settled ? now : null,
+      fxSnapshot: settled ? input.fxSnapshot : null,
       transferGroupId: groupId,
       transferMarketRate: input.marketRate,
       recurringTemplateId: null,
