@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RateTicker } from "@/components/rateTicker";
 import { CardDueBanner } from "@/components/cardDueBanner";
+import { CommandPalette } from "@/components/commandPalette";
+import { navTitleKey, orderedNav as orderNav } from "@/components/shell.nav";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -19,33 +21,7 @@ import { useI18n } from "@/lib/i18n";
 
 const SIDEBAR_KEY = "renovator-sidebar";
 
-export const NAV = [
-  { href: "/", key: "nav.dashboard", icon: "◧" },
-  { href: "/accounts", key: "nav.accounts", icon: "▤" },
-  { href: "/transactions", key: "nav.transactions", icon: "⇄" },
-  { href: "/cards", key: "nav.cards", icon: "💳" },
-  { href: "/victvs", key: "nav.victvs", icon: "✓" },
-  { href: "/recurring", key: "nav.recurring", icon: "↻" },
-  { href: "/loans", key: "nav.loans", icon: "⌂" },
-  { href: "/reports", key: "nav.reports", icon: "◔" },
-  { href: "/planner", key: "nav.planner", icon: "◈" },
-  { href: "/settings", key: "nav.settings", icon: "⚙" },
-] as const;
-
-/** Apply the user's saved sidebar order; unknown ids dropped, missing appended. */
-export function orderedNav(navOrder: string[] | null | undefined): (typeof NAV)[number][] {
-  if (!navOrder?.length) return [...NAV];
-  const byHref = new Map<string, (typeof NAV)[number]>(NAV.map((item) => [item.href, item]));
-  const result: (typeof NAV)[number][] = [];
-  for (const href of navOrder) {
-    const item = byHref.get(href);
-    if (item) {
-      result.push(item);
-      byHref.delete(href);
-    }
-  }
-  return [...result, ...byHref.values()];
-}
+export { NAV, orderedNav } from "@/components/shell.nav";
 
 /**
  * Runs once per session when data is ready: seed default categories,
@@ -124,13 +100,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function ShellChrome({ children }: { children: React.ReactNode }) {
-  const { session, displayCurrency, setDisplayCurrency, signOut } = useApp();
+  const { session, displayCurrency, setDisplayCurrency, signOut, uiVersion } = useApp();
+  const v2 = uiVersion === "v2";
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const rates = useRates();
   const settings = useUserSettings();
-  const nav = orderedNav(settings.data?.navOrder);
+  const nav = orderNav(settings.data?.navOrder);
   // phone bar: the first four, plus More — except that the page you're on is
   // always one of the four, so you can see where you are without opening it
   const primaryNav = nav.slice(0, 4);
@@ -140,6 +117,23 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [quickTx, setQuickTx] = useState(false);
   const [quickTransfer, setQuickTransfer] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const titleKey = navTitleKey(pathname);
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  // Sticky table headers have to stop below this bar, and the bar's height
+  // moves with the ticker, the demo banner and the due nudge — so measure it
+  // rather than guessing a constant that goes stale.
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const publish = () =>
+      document.documentElement.style.setProperty("--app-header-h", `${el.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   // icons-only sidebar: a property of the screen you're at, so device-local
   const [railed, setRailed] = useState(false);
 
@@ -154,9 +148,15 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
     });
   }
 
-  // desktop shortcuts: n = new transaction, t = transfer (unless typing)
+  // desktop shortcuts: ⌘K/Ctrl-K opens the quick jump from anywhere (including
+  // mid-field, which is the point of it); n = new transaction, t = transfer
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
@@ -220,11 +220,15 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   title={railed ? t(item.key) : undefined}
-                  className={`flex items-center rounded-lg py-2 text-sm font-medium transition-colors ${
-                    railed ? "justify-center px-0" : "gap-2.5 px-2.5"
-                  } ${
+                  className={`flex items-center rounded-lg text-sm font-medium transition-colors ${
+                    // v2 pays the nav from the same density token as everything
+                    // else, so Terminal's rows are tight and Calm's are roomy
+                    v2 ? "py-[var(--ui-row-py)]" : "py-2"
+                  } ${railed ? "justify-center px-0" : "gap-2.5 px-2.5"} ${
                     active
-                      ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                      ? v2
+                        ? "bg-teal-50 text-teal-700 shadow-[inset_2px_0_0_0_var(--color-teal-600)] dark:bg-teal-950 dark:text-teal-300"
+                        : "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
                       : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   }`}
                 >
@@ -257,10 +261,38 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
 
         <div className="min-w-0 flex-1">
           {/* header (+ optional market ticker) stay pinned together */}
-          <div className="sticky top-0 z-40">
+          <div ref={headerRef} className="sticky top-0 z-40">
           <header className="flex items-center justify-between gap-3 border-b border-[var(--edge)] bg-[var(--page)]/90 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:px-6">
-            <Link href="/welcome" className="text-base font-semibold md:hidden">BudgetSim</Link>
+            {v2 ? (
+              // wayfinding: the header used to say nothing at all, so on a
+              // narrow screen with the sidebar gone there was no answer to
+              // "where am I". The title is that answer.
+              <h1
+                className="truncate text-[length:var(--ui-head-size)] text-[color:var(--ui-head-color)]"
+                style={{
+                  fontWeight: "var(--ui-head-weight)" as unknown as number,
+                  letterSpacing: "var(--ui-head-tracking)",
+                  textTransform: "var(--ui-head-transform)" as React.CSSProperties["textTransform"],
+                }}
+              >
+                {titleKey ? t(titleKey) : "BudgetSim"}
+              </h1>
+            ) : (
+              <Link href="/welcome" className="text-base font-semibold md:hidden">BudgetSim</Link>
+            )}
             <div className="flex flex-1 items-center justify-end gap-3">
+              {v2 ? (
+                <button
+                  onClick={() => setPaletteOpen(true)}
+                  aria-label={t("palette.title")}
+                  title={`${t("palette.title")} (⌘K)`}
+                  className="hidden items-center gap-2 rounded-lg border border-[var(--edge)] px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-600 sm:flex dark:hover:text-zinc-200"
+                >
+                  <span aria-hidden>⌕</span>
+                  <span>{t("palette.title")}</span>
+                  <kbd className="rounded border border-[var(--edge)] px-1 font-sans text-[10px]">⌘K</kbd>
+                </button>
+              ) : null}
               {rates.data ? (
                 <span
                   className={`hidden text-xs sm:block ${ratesStale ? "text-amber-600" : "text-zinc-400"}`}
@@ -305,6 +337,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       ) : null}
       <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
       <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
+      {v2 && paletteOpen ? (
+        <CommandPalette
+          onClose={() => setPaletteOpen(false)}
+          onNewTransaction={() => setQuickTx(true)}
+          onNewTransfer={() => setQuickTransfer(true)}
+        />
+      ) : null}
 
       {/* bottom nav — mobile. Four fixed destinations plus More: a row that
           scrolls sideways hides half its own targets, and a phone thumb wants

@@ -502,7 +502,7 @@ function PasteModal({
             {blankRows > 0 ? <p className="text-xs text-zinc-400">{t("victvs.fillHint")}</p> : null}
             {rows.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="stack-sm w-full text-sm">
+                <table className="stack-sm sticky-head w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-zinc-400">
                       <th className="py-1 pr-2 font-medium">{t("common.date")}</th>

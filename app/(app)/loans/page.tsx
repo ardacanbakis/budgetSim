@@ -177,7 +177,7 @@ export default function LoansPage() {
                 <details>
                   <summary className="cursor-pointer text-sm text-zinc-500">{t("loans.schedule")}</summary>
                   <div className="mt-2 max-h-64 overflow-y-auto">
-                    <table className="stack-sm w-full text-xs tabular-nums">
+                    <table className="stack-sm sticky-head w-full text-xs tabular-nums">
                       <thead className="sticky top-0 bg-white dark:bg-zinc-900">
                         <tr className="text-left text-zinc-400">
                           <th className="py-1 pr-2 font-medium">#</th>
