@@ -940,17 +940,24 @@ test("planner: short only past ₺1,000, grouped detail, sorted what-if items", 
   }
   await page.waitForTimeout(900);
 
-  // date ascending by default, whatever order they were entered in
+  // grouped by type is the default, so the headings are already there
+  const grouping = page.getByRole("checkbox", { name: "Group by type" });
+  await expect(grouping).toBeChecked();
+  await expect(page.locator("li").filter({ hasText: /^Income$/ })).toBeVisible();
+  await expect(page.locator("li").filter({ hasText: /^Expense$/ })).toBeVisible();
+
+  // untick and it collapses to one date-ascending list, whatever order they
+  // were entered in
+  await grouping.uncheck();
+  await page.waitForTimeout(400);
+  await expect(page.locator("li").filter({ hasText: /^Income$/ })).toHaveCount(0);
   const items = page.locator("li").filter({ hasText: /Later expense|Earlier income/ });
   const names = await items.allTextContents();
   expect(names[0]).toContain("Earlier income");
   expect(names[1]).toContain("Later expense");
 
-  // and they can be split into income and expense
-  await page.getByText("Group by type").click();
-  await page.waitForTimeout(300);
-  await expect(page.locator("li").filter({ hasText: /^Income$/ })).toBeVisible();
-  await expect(page.locator("li").filter({ hasText: /^Expense$/ })).toBeVisible();
+  await grouping.check();
+  await page.waitForTimeout(400);
 
   // the month breakdown keeps what came in apart from what went out
   await page.locator("table.stack-sm tbody tr").first().locator("button").first().click();
@@ -1275,4 +1282,91 @@ test("style: quick jump finds a page and an account by a few letters", async ({ 
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: /Quick jump/i })).toHaveCount(0);
+});
+
+test("planner: a loan pays out, then bills you back with interest", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(1800);
+
+  // the headline tile is a label div followed by a value div inside one card
+  const endWorth = async (): Promise<number> => {
+    const text = await page.evaluate(() => {
+      const label = [...document.querySelectorAll("div")].find(
+        (d) => d.children.length === 0 && d.textContent?.startsWith("Net worth at horizon")
+      );
+      return label?.parentElement?.innerText ?? "";
+    });
+    const figure = text.split("\n")[1] ?? "";
+    return Number(figure.replace(/[^\d.-]/g, "")) * (figure.includes("-") ? -1 : 1);
+  };
+
+  const before = await endWorth();
+
+  await page.getByRole("button", { name: /Add loan/ }).click();
+  await page.getByLabel("Name").fill("Car loan");
+  await page.getByLabel("Amount").first().fill("500000");
+  await page.waitForTimeout(400);
+
+  // the modal prices it before you commit, not after
+  await expect(page.getByText("Total paid")).toBeVisible();
+  await expect(page.getByText(/Pays .+ → .+/)).toBeVisible();
+
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await page.waitForTimeout(1800);
+
+  // the card carries the derived schedule, not the numbers you typed
+  await expect(page.getByText("2.89%/mo")).toBeVisible();
+  await expect(page.getByText("24 installments")).toBeVisible();
+
+  // ₺500k over 24 months at 2.89%/month costs about ₺200k in interest, and at
+  // ~41.8 TRY/USD that is what the horizon has to lose — the loan is only
+  // real if it reached the projector
+  const after = await endWorth();
+  expect(after).toBeLessThan(before);
+  expect(before - after).toBeGreaterThan(4_000);
+  expect(before - after).toBeLessThan(6_000);
+  await page.screenshot({ path: "e2e/screenshots/planner-loan.png" });
+
+  // switching it off puts the projection back exactly where it was
+  await page.getByRole("checkbox", { name: "Car loan" }).uncheck();
+  await page.waitForTimeout(1500);
+  expect(await endWorth()).toBeCloseTo(before, 0);
+});
+
+test("planner: what-if items group by type by default and split into two cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.waitForTimeout(1800);
+
+  // grouping is the default now — it's how the list reads best
+  await expect(page.getByRole("checkbox", { name: "Group by type" })).toBeChecked();
+
+  for (const [name, kind] of [["Bonus", "Income"], ["School fees", "Expense"]] as const) {
+    await page.getByRole("button", { name: /\+ Add item/ }).first().click();
+    await page.getByLabel("Name").fill(name);
+    await page.getByRole("button", { name: kind, exact: true }).click();
+    await page.getByLabel("Amount").first().fill("1000");
+    await page.getByRole("button", { name: /^Save$/ }).click();
+    await page.waitForTimeout(900);
+  }
+
+  const heading = (name: string) => page.getByRole("heading", { name, exact: true });
+  await expect(heading("What-if items")).toBeVisible();
+
+  await page.getByRole("checkbox", { name: "Separate cards" }).first().check();
+  await page.waitForTimeout(1000);
+
+  // one card each, and the combined one is gone
+  await expect(heading("What-if income")).toBeVisible();
+  await expect(heading("What-if expenses")).toBeVisible();
+  await expect(heading("What-if items")).toHaveCount(0);
+  await page.screenshot({ path: "e2e/screenshots/planner-items-split.png" });
+
+  // the choice is device-local, so it survives a reload
+  await page.reload();
+  await page.waitForTimeout(2000);
+  await expect(heading("What-if expenses")).toBeVisible();
 });

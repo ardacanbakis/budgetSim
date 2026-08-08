@@ -50,7 +50,10 @@ configured"):
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `COLLECT_API_KEY` (optional — live gram-gold rate)
+- `COLLECT_API_KEY` (optional — live gram-gold rate, and current Turkish
+  bank loan rates in the planner's Borrowing card)
+- `COLLECT_API_LOAN_URL` (optional — override the loan-rate endpoint if your
+  CollectAPI plan exposes it under a different path)
 - `SUPABASE_SERVICE_ROLE_KEY` (optional — fx rate history)
 
 ### Demo mode

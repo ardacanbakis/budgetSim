@@ -1,6 +1,7 @@
 import { TxDirection } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
+import { monthlyInstallment } from "./loan";
 import { ExtraFlow, ProjectionResult } from "./projector";
 
 /**
@@ -43,6 +44,112 @@ export interface PlanItem {
    */
   accountId?: string | null;
   enabled: boolean;
+}
+
+/**
+ * "What if I borrowed for this?" — an annuity loan you're considering, or one
+ * you already carry and want the projection to know about.
+ *
+ * Rates use the Turkish bank convention of a MONTHLY percentage (2.89%/month),
+ * which is how every rate you'll be quoted here is written. The money arrives
+ * in `receivedMonth` and the installments run from `firstPaymentMonth` for
+ * `termMonths` — kept as two separate fields because banks routinely pay out
+ * weeks before the first payment falls due, and a plan that assumes otherwise
+ * puts cash in the wrong month.
+ *
+ * Set `receivedMonth` before the horizon starts to model a loan you're already
+ * paying: the payout is behind you, so only the remaining installments land.
+ */
+export interface PlanLoan {
+  id: string;
+  label: string;
+  /** what you receive, in `currency` */
+  principal: number;
+  currency: Currency;
+  /** monthly interest rate as a percentage, e.g. 2.89 */
+  monthlyRatePct: number;
+  /** number of equal installments */
+  termMonths: number;
+  /** "yyyy-MM" the principal lands in your account */
+  receivedMonth: string;
+  /** "yyyy-MM" the first installment is due */
+  firstPaymentMonth: string;
+  /** account the cash lands in and the installments are paid from */
+  accountId?: string | null;
+  enabled: boolean;
+}
+
+export interface PlanLoanSummary {
+  /** the equal monthly payment */
+  installment: number;
+  totalPaid: number;
+  totalInterest: number;
+  /** "yyyy-MM" of the final installment */
+  lastPaymentMonth: string;
+  /** the monthly rate compounded out to a year, which is what you'd compare */
+  annualRatePct: number;
+}
+
+/**
+ * What the loan actually costs. Annuity math, same as the one on the Debt
+ * page — a plan and a real loan should never disagree about an installment.
+ */
+export function planLoanSummary(loan: PlanLoan): PlanLoanSummary {
+  const term = Math.max(0, Math.floor(loan.termMonths));
+  const installment = term > 0 ? monthlyInstallment(loan.principal, loan.monthlyRatePct, term) : 0;
+  const totalPaid = installment * term;
+  const r = loan.monthlyRatePct / 100;
+  return {
+    installment,
+    totalPaid,
+    totalInterest: totalPaid - loan.principal,
+    lastPaymentMonth: addMonthKey(loan.firstPaymentMonth, Math.max(0, term - 1)),
+    annualRatePct: (Math.pow(1 + r, 12) - 1) * 100,
+  };
+}
+
+/**
+ * The flows a loan puts on the timeline: the payout once, then a level
+ * installment every month of the term.
+ *
+ * Installments never inflate. A fixed-rate loan is a fixed nominal amount, and
+ * that's the whole reason a weakening lira quietly pays off Turkish debt — if
+ * these tracked inflation the planner would hide the single biggest effect
+ * borrowing in lira has on you.
+ */
+export function planLoanFlows(loan: PlanLoan, months: number, firstMonth: string): ExtraFlow[] {
+  const flows: ExtraFlow[] = [];
+  if (!loan.enabled || !(loan.principal > 0) || !(loan.termMonths > 0)) return flows;
+
+  const payoutOffset = monthsBetween(firstMonth, loan.receivedMonth);
+  if (payoutOffset >= 0 && payoutOffset < months) {
+    flows.push({
+      monthOffset: payoutOffset,
+      direction: "income",
+      amount: loan.principal,
+      currency: loan.currency,
+      accountId: loan.accountId ?? null,
+      categoryId: "",
+      label: loan.label,
+    });
+  }
+
+  const { installment } = planLoanSummary(loan);
+  const firstOffset = monthsBetween(firstMonth, loan.firstPaymentMonth);
+  for (let n = 0; n < Math.floor(loan.termMonths); n++) {
+    const offset = firstOffset + n;
+    if (offset < 0 || offset >= months) continue;
+    flows.push({
+      monthOffset: offset,
+      direction: "expense",
+      amount: installment,
+      currency: loan.currency,
+      accountId: loan.accountId ?? null,
+      categoryId: "",
+      label: loan.label,
+    });
+  }
+  return flows;
 }
 
 /**
@@ -97,6 +204,8 @@ export interface Funding {
 
 export interface Plan {
   items: PlanItem[];
+  /** borrowing you're considering, or already carry */
+  loans: PlanLoan[];
   budgets: CategoryBudget[];
   devaluation: Devaluation;
   /** income category ids to model as lost — "what if the VICTVS work dried up" */
@@ -115,6 +224,7 @@ export const NO_FUNDING: Funding = {
 };
 export const EMPTY_PLAN: Plan = {
   items: [],
+  loans: [],
   budgets: [],
   devaluation: NO_DEVALUATION,
   lostIncome: [],
@@ -236,6 +346,10 @@ export function planExtraFlows(plan: Plan, months: number, firstMonth: string): 
     }
   }
 
+  for (const loan of plan.loans ?? []) {
+    flows.push(...planLoanFlows(loan, months, firstMonth));
+  }
+
   for (const budget of plan.budgets) {
     if (!budget.enabled || !(budget.monthlyAmount > 0)) continue;
     for (let offset = 0; offset < months; offset++) {
@@ -270,6 +384,7 @@ export function planIsEmpty(plan: Plan): boolean {
   return (
     !plan.items.some((i) => i.enabled && i.amount > 0) &&
     !plan.budgets.some((b) => b.enabled && b.monthlyAmount > 0) &&
+    !(plan.loans ?? []).some((l) => l.enabled && l.principal > 0 && l.termMonths > 0) &&
     (plan.lostIncome ?? []).length === 0 &&
     activeRate(plan.devaluation) === 0
   );
@@ -322,6 +437,15 @@ export function normalizePlan(raw: unknown, thisMonth: string): Plan {
         typeof i.startMonth === "number" ? addMonthKey(thisMonth, i.startMonth) : i.startMonth,
     })),
     budgets: saved.budgets.map((b) => ({ ...b, currency: b.currency ?? "USD", label: b.label ?? "" })),
+    // plans saved before loans existed simply have none
+    loans: (saved.loans ?? []).map((l) => ({
+      ...l,
+      currency: l.currency ?? "TRY",
+      enabled: l.enabled ?? true,
+      // an older shape may have carried only one month; paying from the month
+      // the money lands is the safe reading
+      firstPaymentMonth: l.firstPaymentMonth ?? l.receivedMonth,
+    })),
   };
 }
 
