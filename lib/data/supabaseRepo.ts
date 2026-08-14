@@ -271,6 +271,38 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  async listSavingsPlans(): Promise<PlanRecord[]> {
+    const { data, error } = await this.db
+      .from("savings_plans")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    throwIf(error);
+    return (data ?? []).map(planFromRow);
+  }
+
+  async createSavingsPlan(name: string, body: unknown): Promise<PlanRecord> {
+    const { data, error } = await this.db
+      .from("savings_plans")
+      .insert({ user_id: this.userId, name, body })
+      .select()
+      .single();
+    throwIf(error);
+    return planFromRow(data!);
+  }
+
+  async updateSavingsPlan(id: string, patch: { name?: string; body?: unknown }): Promise<void> {
+    const row: Row = { updated_at: new Date().toISOString() };
+    if (patch.name != null) row.name = patch.name;
+    if (patch.body !== undefined) row.body = patch.body;
+    const { error } = await this.db.from("savings_plans").update(row).eq("id", id);
+    throwIf(error);
+  }
+
+  async deleteSavingsPlan(id: string): Promise<void> {
+    const { error } = await this.db.from("savings_plans").delete().eq("id", id);
+    throwIf(error);
+  }
+
   async listTransactions(): Promise<Transaction[]> {
     const { data, error } = await this.db
       .from("transactions")

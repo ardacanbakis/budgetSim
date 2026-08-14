@@ -148,6 +148,15 @@ export interface Repo {
   updatePlan(id: string, patch: { name?: string; body?: unknown }): Promise<void>;
   deletePlan(id: string): Promise<void>;
 
+  /**
+   * Saved tasarruf-finansman scenarios. Inputs only — the schedule is derived,
+   * so it is recomputed rather than stored.
+   */
+  listSavingsPlans(): Promise<PlanRecord[]>;
+  createSavingsPlan(name: string, body: unknown): Promise<PlanRecord>;
+  updateSavingsPlan(id: string, patch: { name?: string; body?: unknown }): Promise<void>;
+  deleteSavingsPlan(id: string): Promise<void>;
+
   listTransactions(): Promise<Transaction[]>;
   createTransaction(input: NewTransaction): Promise<Transaction>;
   /** insert many at once (bulk paste import); returns count */

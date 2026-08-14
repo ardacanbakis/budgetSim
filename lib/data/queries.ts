@@ -19,6 +19,7 @@ export const KEYS = {
   userSettings: ["user-settings"] as const,
   snapshots: ["snapshots"] as const,
   plans: ["plans"] as const,
+  savingsPlans: ["savingsPlans"] as const,
   rates: ["rates"] as const,
 };
 
@@ -30,6 +31,11 @@ export function useAccounts() {
 export function usePlans() {
   const repo = useRepo();
   return useQuery({ queryKey: KEYS.plans, queryFn: () => repo.listPlans() });
+}
+
+export function useSavingsPlans() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.savingsPlans, queryFn: () => repo.listSavingsPlans() });
 }
 
 export function useCategories() {

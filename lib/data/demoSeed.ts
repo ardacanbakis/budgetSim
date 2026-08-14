@@ -33,6 +33,7 @@ export interface DemoStore {
   snapshots: NetWorthSnapshot[];
   /** saved planner scenarios (absent in older sandboxes) */
   plans?: PlanRecord[];
+  savingsPlans?: PlanRecord[];
 }
 
 const uuid = () =>
