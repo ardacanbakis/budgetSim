@@ -5,7 +5,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { HorizonSlider, horizonLabel } from "@/components/horizonSlider";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
-import { useAccounts, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
+import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions } from "@/lib/data/queries";
 import { TxDirection } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import {
@@ -36,6 +36,8 @@ import { usePlanScenarios } from "@/lib/usePlanScenarios";
 import { SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { ScenarioBar } from "@/components/scenarioBar";
 import { FundingList } from "@/components/fundingList";
+import { SavingsOverlayCard, savingsOverlayFlows } from "@/components/savingsOverlayCard";
+import { buildSavingsPlan, normalizeSavingsBody } from "@/lib/domain/savingsFinance";
 import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
@@ -101,6 +103,9 @@ export default function PlannerPage() {
   const [editingLayout, setEditingLayout] = useState(false);
   const groupItems = useLocalToggle(GROUP_ITEMS_KEY, true);
   const splitItems = useLocalToggle(SPLIT_ITEMS_KEY, false);
+  const savingsPlans = useSavingsPlans();
+  // not persisted: an overlay is a question you're asking right now
+  const [overlaidSavings, setOverlaidSavings] = useState<string[]>([]);
   const [pickingTiles, setPickingTiles] = useState(false);
   const [shownTiles, setShownTiles] = useState<TileId[]>(DEFAULT_TILES);
   const grid = usePlannerGrid();
@@ -186,6 +191,19 @@ export default function PlannerPage() {
   });
   // the plan re-runs the same engine with its own rate path and flows, so the
   // two lines differ only by the assumptions themselves
+  // Savings-finance overlay: pure, ephemeral, one-directional. Toggling a plan
+  // on adds its cash-out schedule to this render and nothing else — no
+  // transactions, no templates, nothing written anywhere.
+  const savingsFlows = (savingsPlans.data ?? [])
+    .filter((record) => overlaidSavings.includes(record.id))
+    .flatMap((record) =>
+      savingsOverlayFlows(
+        buildSavingsPlan(normalizeSavingsBody(record.body, todayISO()).input),
+        months,
+        firstMonth
+      )
+    );
+
   const planned = projectCashflow({
     accounts: accounts.data,
     transactions: transactions.data,
@@ -195,7 +213,7 @@ export default function PlannerPage() {
     fromDate: todayISO(),
     months,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
-    extraFlows: planExtraFlows(plan, months, firstMonth),
+    extraFlows: [...planExtraFlows(plan, months, firstMonth), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
     dropIncomeCategories: planDroppedIncome(plan),
     funding: fundingArg,
@@ -1079,6 +1097,21 @@ export default function PlannerPage() {
           },
         ] as GridBlock[])),
     {
+      id: "savings",
+      title: t("savings.overlayTitle"),
+      defaultSize: { w: 2, h: 3 },
+      node: (
+        <SavingsOverlayCard
+          plans={savingsPlans.data ?? []}
+          enabled={overlaidSavings}
+          today={todayISO()}
+          onToggle={(id) =>
+            setOverlaidSavings((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+          }
+        />
+      ),
+    },
+    {
       id: "debt",
       title: t("planner.loansTitle"),
       defaultSize: { w: 2, h: 3 },
@@ -1326,6 +1359,7 @@ export default function PlannerPage() {
               {block("itemsIncome")}
               {block("itemsExpense")}
               {block("debt")}
+              {block("savings")}
               {block("budgets")}
             </div>
             <div className={view === "two" ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>

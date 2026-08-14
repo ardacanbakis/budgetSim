@@ -158,6 +158,33 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
+  async listSavingsPlans(): Promise<PlanRecord[]> {
+    return [...(this.store.savingsPlans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  }
+
+  async createSavingsPlan(name: string, body: unknown): Promise<PlanRecord> {
+    const now = new Date().toISOString();
+    const plan: PlanRecord = { id: uuid(), name, body, createdAt: now, updatedAt: now };
+    this.store.savingsPlans = [...(this.store.savingsPlans ?? []), plan];
+    this.save();
+    return plan;
+  }
+
+  async updateSavingsPlan(id: string, patch: { name?: string; body?: unknown }): Promise<void> {
+    const plan = (this.store.savingsPlans ?? []).find((p) => p.id === id);
+    if (plan) {
+      if (patch.name != null) plan.name = patch.name;
+      if (patch.body !== undefined) plan.body = patch.body;
+      plan.updatedAt = new Date().toISOString();
+    }
+    this.save();
+  }
+
+  async deleteSavingsPlan(id: string): Promise<void> {
+    this.store.savingsPlans = (this.store.savingsPlans ?? []).filter((p) => p.id !== id);
+    this.save();
+  }
+
   async listTransactions(): Promise<Transaction[]> {
     return [...this.store.transactions];
   }

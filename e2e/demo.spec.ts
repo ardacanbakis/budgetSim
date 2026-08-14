@@ -300,17 +300,21 @@ test("planner: year jumps on the slider and expandable month detail", async ({ p
   await page.waitForTimeout(400);
   await expect(page.locator("tbody tr")).toHaveCount(36);
 
-  // months read as real dates and expand to show what makes them up
-  const firstRow = page.locator("tbody tr").first();
-  await expect(firstRow).toContainText(/\w{3} 20\d\d/);
-  await firstRow.click();
-  const detail = page.locator("tbody tr").nth(1);
+  // months read as real dates and expand to show what makes them up.
+  // The second month, not the first: the current month has already had its
+  // rent auto-completed by the time anyone runs this after the 10th, so
+  // asserting on the first month makes the test depend on today's date.
+  await expect(page.locator("tbody tr").first()).toContainText(/\w{3} 20\d\d/);
+  const monthRow = page.locator("tbody tr").nth(1);
+  await expect(monthRow).toContainText(/\w{3} 20\d\d/);
+  await monthRow.click();
+  const detail = page.locator("tbody tr").nth(2);
   await expect(detail).toContainText("Rent");
   await page.screenshot({ path: "e2e/screenshots/planner-timeline.png" });
 
   // collapsing hides it again
-  await firstRow.click();
-  await expect(page.locator("tbody tr").nth(1)).not.toContainText("Rent");
+  await monthRow.click();
+  await expect(page.locator("tbody tr").nth(2)).not.toContainText("Rent");
 
   // two columns by default, with the stacked view still available
   await expect(page.getByRole("button", { name: "Two columns" })).toBeVisible();
@@ -1369,4 +1373,158 @@ test("planner: what-if items group by type by default and split into two cards",
   await page.reload();
   await page.waitForTimeout(2000);
   await expect(heading("What-if expenses")).toBeVisible();
+});
+
+test("savings: three modes, at every screen size", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/savings");
+  await page.waitForTimeout(1500);
+
+  const sizes = [
+    { w: 390, h: 844, name: "390" },
+    { w: 768, h: 1024, name: "768" },
+    { w: 1280, h: 900, name: "1280" },
+    { w: 3440, h: 1440, name: "3440" },
+  ];
+  const modes = ["Price → instalment", "Budget → price", "From a delivery date"] as const;
+
+  for (const size of sizes) {
+    await page.setViewportSize({ width: size.w, height: size.h });
+    for (const mode of modes) {
+      await page.getByRole("tab", { name: mode }).click();
+      await page.waitForTimeout(500);
+      const slug = mode.split(" ")[0].toLowerCase();
+      await page.screenshot({ path: `e2e/screenshots/savings-${slug}-${size.name}.png` });
+      // nothing may scroll sideways at any width
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+      );
+      expect(overflow, `${mode} at ${size.name} scrolls sideways`).toBe(false);
+    }
+  }
+});
+
+test("savings: the schedule reproduces a real quote to the kuruş", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await enterDemo(page);
+  await page.goto("/savings");
+  await page.waitForTimeout(1500);
+
+  // fixture B, with the signing date pinned so the dates are deterministic
+  await page.getByLabel("Signing date").fill("2026-08-12");
+  await page.waitForTimeout(600);
+
+  const rows = page.locator("table tbody tr");
+  await expect(rows).toHaveCount(22);
+
+  // the tiers, including the one that only lands right with 10-kuruş rounding
+  await expect(rows.nth(0)).toContainText("125,000.00");
+  await expect(rows.nth(6)).toContainText("143,750.00");
+  await expect(rows.nth(12)).toContainText("165,312.50");
+  await expect(rows.nth(18)).toContainText("190,109.40");
+  await expect(rows.nth(21)).toContainText("325,296.80");
+
+  // period 6 sits at exactly 45.00% and is still locked out at 153 days;
+  // period 7 is the one that delivers
+  await expect(rows.nth(5)).toContainText("45.00%");
+  await expect(rows.nth(5)).toContainText("153");
+  await expect(rows.nth(6)).toContainText("184");
+  await expect(rows.nth(6)).toHaveAttribute("data-delivery", "true");
+  await expect(rows.nth(5)).not.toHaveAttribute("data-delivery", "true");
+
+  await expect(page.getByText("2027-02-12").first()).toBeVisible();
+  await expect(page.getByText("2.6024x", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/savings-fixture-b.png", fullPage: true });
+});
+
+test("savings: a flat schedule collapses the tier tags", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/savings");
+  await page.waitForTimeout(1500);
+
+  const stepper = page.getByRole("group", { name: /step-up/i });
+  await expect(stepper.getByRole("button", { name: "15%" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("+15%").first()).toBeVisible();
+
+  await stepper.getByRole("button", { name: "0%", exact: true }).click();
+  await page.waitForTimeout(700);
+
+  // flat: 28 equal instalments, no tier tags, no balloon
+  await expect(page.locator("table tbody tr")).toHaveCount(28);
+  await expect(page.getByText("+15%")).toHaveCount(0);
+  await expect(page.getByText("1.0000x", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/savings-flat.png" });
+});
+
+test("savings: a violation offers a fix that writes back into the form", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/savings");
+  await page.waitForTimeout(1500);
+
+  // ₺100,000 stretches the term and breaks the one-third spread
+  await page.getByLabel("First instalment (exact)").fill("100000");
+  await page.waitForTimeout(700);
+  await expect(page.getByText("Not compliant")).toBeVisible();
+  await expect(page.getByText(/Spread 3\.29/)).toBeVisible();
+
+  const fix = page.getByRole("button", { name: /Raise first instalment to/ });
+  await expect(fix).toBeVisible();
+  await fix.click();
+  await page.waitForTimeout(700);
+
+  await expect(page.getByText("Compliant", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("First instalment (exact)")).toHaveValue("101000");
+  await page.screenshot({ path: "e2e/screenshots/savings-fix.png" });
+});
+
+test("savings: a saved scenario survives a deep link and overlays the planner", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/savings");
+  await page.waitForTimeout(1500);
+
+  await page.getByLabel("Scenario name").fill("Evim 5M");
+  await page.getByRole("button", { name: /Save scenario/ }).click();
+  await page.waitForTimeout(1200);
+
+  // saving claims a URL, which is the share link
+  await expect(page).toHaveURL(/\/savings\?plan=/);
+  const url = page.url();
+
+  // and that link reopens it from cold
+  await page.goto("/");
+  await page.waitForTimeout(800);
+  await page.goto(url);
+  await page.waitForTimeout(1500);
+  await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
+
+  // the planner can lay it over the projection without writing anything
+  await page.goto("/planner");
+  await page.waitForTimeout(2000);
+  const toggle = page.getByRole("checkbox", { name: "Evim 5M" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+
+  const txBefore = await page.evaluate(() => {
+    const raw = window.localStorage.getItem("renovator-demo-store");
+    return raw ? (JSON.parse(raw).transactions ?? []).length : 0;
+  });
+
+  await toggle.check();
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: "e2e/screenshots/savings-overlay.png" });
+
+  // ephemeral: not one transaction was created
+  const txAfter = await page.evaluate(() => {
+    const raw = window.localStorage.getItem("renovator-demo-store");
+    return raw ? (JSON.parse(raw).transactions ?? []).length : 0;
+  });
+  expect(txAfter).toBe(txBefore);
+
+  // and toggling off leaves no trace
+  await toggle.uncheck();
+  await page.waitForTimeout(1000);
+  await expect(toggle).not.toBeChecked();
 });
