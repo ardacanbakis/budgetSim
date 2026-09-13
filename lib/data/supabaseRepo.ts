@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FxSnapshot } from "@/lib/domain/fx";
-import { amortizationSchedule } from "@/lib/domain/loan";
+import { buildSchedule } from "@/lib/domain/loanSchedule";
 import { computeMissingOccurrences, findAutoCompletable } from "@/lib/domain/materialize";
 import {
   BackupFile,
@@ -140,6 +140,12 @@ const loanFromRow = (r: Row): Loan => ({
   termMonths: r.term_months,
   startDate: r.start_date,
   installment: Number(r.installment),
+  // rows written before schedules existed are untaxed annuities, which is
+  // exactly what they were
+  scheduleKind: (r.schedule_kind ?? "annuity") as Loan["scheduleKind"],
+  kkdfPct: Number(r.kkdf_pct ?? 0),
+  bsmvPct: Number(r.bsmv_pct ?? 0),
+  customInstalments: Array.isArray(r.custom_instalments) ? (r.custom_instalments as number[]) : null,
   recurringTemplateId: r.recurring_template_id,
   createdAt: r.created_at,
 });
@@ -896,13 +902,19 @@ export class SupabaseRepo implements Repo {
   }
 
   async createLoan(input: NewLoan): Promise<Loan> {
-    const schedule = amortizationSchedule(
-      input.principal,
-      input.monthlyRatePct,
-      input.termMonths,
-      input.startDate,
-      input.currency
-    );
+    const schedule = buildSchedule({
+      kind: input.scheduleKind ?? "annuity",
+      principal: input.principal,
+      monthlyRatePct: input.monthlyRatePct,
+      termMonths: input.termMonths,
+      startDate: input.startDate,
+      currency: input.currency,
+      kkdfPct: input.kkdfPct ?? 0,
+      bsmvPct: input.bsmvPct ?? 0,
+      customInstalments: input.customInstalments ?? undefined,
+    });
+    if (schedule.rows.length === 0) throw new Error("loan schedule is empty");
+
     const { data: loanRow, error: loanError } = await this.db
       .from("loans")
       .insert({
@@ -915,33 +927,75 @@ export class SupabaseRepo implements Repo {
         term_months: input.termMonths,
         start_date: input.startDate,
         installment: schedule.installment,
+        schedule_kind: input.scheduleKind ?? "annuity",
+        kkdf_pct: input.kkdfPct ?? 0,
+        bsmv_pct: input.bsmvPct ?? 0,
+        custom_instalments: input.customInstalments ?? null,
       })
       .select()
       .single();
     throwIf(loanError);
-    const template = await this.createTemplate({
-      name: `${input.name} installment`,
-      accountId: input.accountId,
-      direction: "expense",
-      categoryId: input.categoryId,
-      amount: schedule.installment,
-      frequency: "monthly",
-      startDate: schedule.rows[0].date,
-      endDate: schedule.rows[schedule.rows.length - 1].date,
-      autoComplete: input.autoComplete,
-      loanId: loanRow!.id,
-    });
-    const { error: linkError } = await this.db
-      .from("loans")
-      .update({ recurring_template_id: template.id })
-      .eq("id", loanRow!.id);
-    throwIf(linkError);
-    return { ...loanFromRow(loanRow!), recurringTemplateId: template.id };
+    const loanId = loanRow!.id as string;
+
+    /*
+     * A level schedule is one repeating payment, so a recurring template says
+     * it in a single row and keeps saying it past any materialization window.
+     *
+     * A schedule whose payments differ cannot be said that way at all — an
+     * equal-principal loan falls by a little every month — so those are posted
+     * as dated rows, one per installment. Both end up as ordinary planned
+     * transactions, which is what makes a loan show up in next April whichever
+     * shape it has.
+     */
+    if (schedule.level) {
+      const template = await this.createTemplate({
+        name: `${input.name} installment`,
+        accountId: input.accountId,
+        direction: "expense",
+        categoryId: input.categoryId,
+        amount: schedule.installment,
+        frequency: "monthly",
+        startDate: schedule.rows[0].date,
+        endDate: schedule.rows[schedule.rows.length - 1].date,
+        autoComplete: input.autoComplete,
+        loanId,
+      });
+      const { error: linkError } = await this.db
+        .from("loans")
+        .update({ recurring_template_id: template.id })
+        .eq("id", loanId);
+      throwIf(linkError);
+      return { ...loanFromRow(loanRow!), recurringTemplateId: template.id };
+    }
+
+    const { error: rowsError } = await this.db.from("transactions").insert(
+      schedule.rows.map((row) => ({
+        user_id: this.userId,
+        account_id: input.accountId,
+        direction: "expense",
+        category_id: input.categoryId,
+        amount: row.payment,
+        status: "planned",
+        due_date: row.date,
+        description: `${input.name} ${row.n}/${schedule.rows.length}`,
+        loan_id: loanId,
+      }))
+    );
+    throwIf(rowsError);
+    return loanFromRow(loanRow!);
   }
 
   async deleteLoan(id: string): Promise<void> {
     const { data: loan } = await this.db.from("loans").select("recurring_template_id").eq("id", id).single();
     if (loan?.recurring_template_id) await this.deleteTemplate(loan.recurring_template_id, true);
+    // dated rows for a varying schedule: only the unpaid ones go, so a
+    // deleted loan does not rewrite what already left the account
+    const { error: txError } = await this.db
+      .from("transactions")
+      .delete()
+      .eq("loan_id", id)
+      .eq("status", "planned");
+    throwIf(txError);
     const { error } = await this.db.from("loans").delete().eq("id", id);
     throwIf(error);
   }

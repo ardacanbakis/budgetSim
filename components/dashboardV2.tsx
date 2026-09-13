@@ -6,6 +6,7 @@ import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
+import { GoldLensCard } from "@/components/goldLens";
 import { Badge, Card, CardHeader, EmptyState, Figure, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { formatAmount } from "@/lib/domain/currencies";
@@ -212,6 +213,7 @@ export function DashboardV2() {
       </Card>
 
       <div className="grid gap-[var(--ui-gap)] lg:grid-cols-3">
+        <GoldLensCard />
         <BudgetsCard />
         <GoalsCard />
         <AvgSpendCard />

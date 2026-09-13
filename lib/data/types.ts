@@ -159,7 +159,16 @@ export interface Loan {
   monthlyRatePct: number;
   termMonths: number;
   startDate: string;
+  /** the first payment; the only payment, when the schedule is level */
   installment: number;
+  /** how the loan repays — annuity, equal principal, interest-only, … */
+  scheduleKind: import("@/lib/domain/loanSchedule").ScheduleKind;
+  /** levies on the interest portion; Turkish consumer credit pays both */
+  kkdfPct: number;
+  bsmvPct: number;
+  /** for a `custom` schedule: the payments as written on the paperwork */
+  customInstalments: number[] | null;
+  /** set only for a level schedule, which one template can represent */
   recurringTemplateId: string | null;
   createdAt: string;
 }

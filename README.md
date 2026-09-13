@@ -50,10 +50,21 @@ configured"):
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `COLLECT_API_KEY` (optional — live gram-gold rate, and current Turkish
-  bank loan rates in the planner's Borrowing card)
+- `COLLECT_API_KEY` (optional — current Turkish bank loan rates in the
+  planner's Borrowing card, and a third gold provider. Gold no longer needs
+  it: Truncgil and GenelPara are free and keyless, and are tried first.)
 - `COLLECT_API_LOAN_URL` (optional — override the loan-rate endpoint if your
   CollectAPI plan exposes it under a different path)
+
+- `TCMB_EVDS_KEY` (optional — Turkish loan rates from the central bank's
+  weekly weighted averages. Free key from evds2.tcmb.gov.tr; gives market
+  averages by loan type, not per-bank offers.)
+
+Market-data endpoints can all be overridden if a provider moves, without a
+code change — `TRUNCGIL_URL`, `GENELPARA_GOLD_URL`, `GENELPARA_FX_URL`,
+`COLLECT_API_GOLD_URL`, `TCMB_EVDS_URL`, `TCMB_EVDS_SERIES`. Settings → Market data shows which provider actually
+served each number, and every attempt that failed, so you can tell a moved
+endpoint from a rate limit without reading server logs.
 
 Set `COLLECT_API_LOAN_URL` only if the default endpoint is wrong. Visit
 `/api/loan-rates` once `COLLECT_API_KEY` is set: `{"status":"ok"}` means the

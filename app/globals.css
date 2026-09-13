@@ -124,6 +124,11 @@ html[data-compact="true"] {
   --ui-num: normal;
   --ui-row-py: 0.5rem;
   --ui-gap: 1rem;
+  /* what density multiplies; each skin restates these with its own numbers */
+  --ui-pad-x-base: 1rem;
+  --ui-pad-y-base: 0.75rem;
+  --ui-row-base: 0.5rem;
+  --ui-gap-base: 1rem;
   --ui-pos: var(--color-emerald-600);
   --ui-neg: var(--color-red-600);
 }
@@ -163,6 +168,10 @@ html[data-skin="terminal"] {
   --ui-num: tabular-nums;
   --ui-row-py: 0.3125rem;
   --ui-gap: 0.625rem;
+  --ui-pad-x-base: 0.75rem;
+  --ui-pad-y-base: 0.5rem;
+  --ui-row-base: 0.3125rem;
+  --ui-gap-base: 0.625rem;
 }
 
 /* --- Calm: room to breathe. Larger type, soft corners, fewer hard edges. */
@@ -194,6 +203,10 @@ html[data-skin="calm"] {
   --ui-num: tabular-nums;
   --ui-row-py: 0.875rem;
   --ui-gap: 1.5rem;
+  --ui-pad-x-base: 1.5rem;
+  --ui-pad-y-base: 1.25rem;
+  --ui-row-base: 0.875rem;
+  --ui-gap-base: 1.5rem;
 }
 
 /* --- Editorial: the number is the headline. Colour blocks, confident heads. */
@@ -225,6 +238,10 @@ html[data-skin="editorial"] {
   --ui-num: tabular-nums;
   --ui-row-py: 0.625rem;
   --ui-gap: 1rem;
+  --ui-pad-x-base: 1.125rem;
+  --ui-pad-y-base: 0.875rem;
+  --ui-row-base: 0.625rem;
+  --ui-gap-base: 1rem;
 }
 html[data-skin="editorial"].dark {
   --ui-head-color: var(--color-zinc-50);
@@ -263,6 +280,10 @@ html[data-skin="contrast"] {
   --edge: #0a0a0a;
   --edge-soft: #d4d4d8;
   --page: #ffffff;
+  --ui-pad-x-base: 1rem;
+  --ui-pad-y-base: 0.75rem;
+  --ui-row-base: 0.5rem;
+  --ui-gap-base: 1rem;
 }
 html[data-skin="contrast"].dark {
   /* the ramp is written light-mode-first (accent = near-black), so on black
@@ -316,6 +337,44 @@ html[data-skin="editorial"] [data-figure="xl"] {
 }
 html[data-skin="editorial"] [data-figure="lg"] {
   font-weight: 800;
+}
+
+/* ==========================================================================
+   Density
+   ==========================================================================
+   A multiplier over the same --ui-* tokens the interface styles set, not a
+   second set of paddings. Composing rather than overriding is what keeps
+   Terminal-at-spacious recognisably Terminal: the skin still decides the
+   proportions, density only decides how much room they get.
+
+   Declared after the skins so it multiplies whatever they landed on, and
+   applied on <html> so it reaches portals too.
+   ========================================================================== */
+html[data-density="spacious"] {
+  --ui-card-pad-x: calc(var(--ui-pad-x-base, 1rem) * 1.5);
+  --ui-card-pad-y: calc(var(--ui-pad-y-base, 0.75rem) * 1.5);
+  --ui-row-py: calc(var(--ui-row-base, 0.5rem) * 1.6);
+  --ui-gap: calc(var(--ui-gap-base, 1rem) * 1.4);
+}
+html[data-density="compact"] {
+  --ui-card-pad-x: calc(var(--ui-pad-x-base, 1rem) * 0.7);
+  --ui-card-pad-y: calc(var(--ui-pad-y-base, 0.75rem) * 0.6);
+  --ui-row-py: calc(var(--ui-row-base, 0.5rem) * 0.55);
+  --ui-gap: calc(var(--ui-gap-base, 1rem) * 0.6);
+}
+
+/* Compact also tightens the table rows that set their own padding, which is
+   most of them — otherwise the setting would visibly do nothing on exactly the
+   screens people reach for it on. */
+html[data-density="compact"] table.stack-sm td,
+html[data-density="compact"] table.stack-sm th {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+html[data-density="spacious"] table.stack-sm td,
+html[data-density="spacious"] table.stack-sm th {
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
 }
 
 /* Figures line up column-to-column once digits stop being proportional. */

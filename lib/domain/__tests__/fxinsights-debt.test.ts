@@ -78,6 +78,10 @@ describe("computeDebtOverview", () => {
     termMonths: 36,
     startDate: "2026-03-01",
     installment: 0,
+    scheduleKind: "annuity",
+    kkdfPct: 0,
+    bsmvPct: 0,
+    customInstalments: null,
     recurringTemplateId: null,
     createdAt: "2026-03-01",
   };

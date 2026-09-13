@@ -1508,7 +1508,7 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await expect(toggle).not.toBeChecked();
 
   const txBefore = await page.evaluate(() => {
-    const raw = window.localStorage.getItem("renovator-demo-store");
+    const raw = window.localStorage.getItem("renovator-demo-v5");
     return raw ? (JSON.parse(raw).transactions ?? []).length : 0;
   });
 
@@ -1518,7 +1518,7 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
 
   // ephemeral: not one transaction was created
   const txAfter = await page.evaluate(() => {
-    const raw = window.localStorage.getItem("renovator-demo-store");
+    const raw = window.localStorage.getItem("renovator-demo-v5");
     return raw ? (JSON.parse(raw).transactions ?? []).length : 0;
   });
   expect(txAfter).toBe(txBefore);
@@ -1527,4 +1527,209 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await toggle.uncheck();
   await page.waitForTimeout(1000);
   await expect(toggle).not.toBeChecked();
+});
+
+test("views: every screen's shape can be set from Settings and sticks", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1200);
+
+  // one place listing every list-shaped screen
+  const panel = page.getByRole("group", { name: /View — cards/ });
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Table" }).click();
+  await page.waitForTimeout(400);
+  await expect(panel.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+
+  // and the screen itself honours it
+  await page.goto("/cards");
+  await page.waitForTimeout(1500);
+  const table = page.locator("table").filter({ hasText: /Limit left/ });
+  await expect(table).toBeVisible();
+
+  // the page's own switcher is the same setting, not a second one
+  const switcher = page.getByRole("group", { name: /^View$/ });
+  await expect(switcher.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+  await switcher.getByRole("button", { name: "Rows" }).click();
+  await page.waitForTimeout(600);
+  await expect(page.locator("table").filter({ hasText: /Limit left/ })).toHaveCount(0);
+
+  // device-local, so it survives a reload
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await expect(page.getByRole("group", { name: /^View$/ }).getByRole("button", { name: "Rows" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
+
+test("views: portfolio takes three shapes", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.waitForTimeout(1500);
+
+  const switcher = page.getByRole("group", { name: /^View$/ });
+
+  // the column picker belongs to the grid, so it only appears with it
+  await expect(page.getByRole("group", { name: /Grid columns/i })).toHaveCount(0);
+  await switcher.getByRole("button", { name: "Grid" }).click();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("group", { name: /Grid columns/i }).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/portfolio-grid.png" });
+
+  await switcher.getByRole("button", { name: "Table" }).click();
+  await page.waitForTimeout(500);
+  await expect(page.locator("table").first()).toBeVisible();
+  await expect(page.getByRole("group", { name: /Grid columns/i })).toHaveCount(0);
+  await page.screenshot({ path: "e2e/screenshots/portfolio-table.png" });
+});
+
+test("views: density tightens rows across the app", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1200);
+
+  const density = page.getByRole("group", { name: "Density" });
+  const rowPad = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--ui-row-py").trim()
+    );
+
+  await density.getByRole("button", { name: "Compact" }).click();
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+  const compact = await rowPad();
+
+  await density.getByRole("button", { name: "Spacious" }).click();
+  await page.waitForTimeout(400);
+  const spacious = await rowPad();
+
+  // the token really moved, so every screen that reads it moved with it
+  expect(compact).not.toBe(spacious);
+  await page.screenshot({ path: "e2e/screenshots/density-spacious.png" });
+});
+
+test("rates: the market-data panel names who served each number", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1500);
+
+  await expect(page.getByText("Market data")).toBeVisible();
+
+  // gram gold is quoted in lira, not as a fraction of a gram per dollar
+  const goldRow = page.locator("tr").filter({ hasText: "Gram gold" });
+  await expect(goldRow).toBeVisible();
+  await expect(goldRow).not.toContainText(/0\.0\d+ g/);
+
+  // both Turkish providers are offered, and neither needs a key
+  const goldSelect = page.getByLabel("Gold prices");
+  await expect(goldSelect.locator("option", { hasText: "Truncgil" })).toHaveCount(1);
+  await expect(goldSelect.locator("option", { hasText: "GenelPara" })).toHaveCount(1);
+  await expect(goldSelect.locator("option", { hasText: /CollectAPI.*needs a key/ })).toHaveCount(1);
+
+  // switching provider refetches rather than reusing the other one's answer
+  const requests: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/rates")) requests.push(r.url());
+  });
+  await goldSelect.selectOption("genelpara");
+  await page.waitForTimeout(1500);
+  expect(requests.some((u) => u.includes("gold=genelpara"))).toBe(true);
+  await page.screenshot({ path: "e2e/screenshots/settings-rates.png" });
+});
+
+/**
+ * The simulator's numeric fields, by role. Not getByLabel: "Principal" also
+ * appears inside the repayment-shape options. Not an exact name either, since
+ * Field folds its hint text into the accessible name.
+ */
+const num = (page: Page, name: string) =>
+  page.getByRole("spinbutton", { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) });
+/** A result tile's figure: a caption div followed by the value div. */
+const tile = (page: Page, caption: string) =>
+  page.locator("div").filter({ hasText: new RegExp(`^${caption}$`) }).first().locator("xpath=following-sibling::div[1]");
+
+test("loans: a custom schedule posts its own payments into future months", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1200 });
+  await enterDemo(page);
+  await page.goto("/loans");
+  await page.waitForTimeout(1800);
+
+  // an equal-principal loan pays a different amount every month, which is the
+  // case a single repeating template cannot express
+  await page.getByLabel("Repayment shape").selectOption("equalPrincipal");
+  await num(page, "Principal").fill("120000");
+  await num(page, "Term (months)").fill("6");
+  await page.waitForTimeout(900);
+
+  expect(await tile(page, "Installment").innerText()).not.toBe(
+    await tile(page, "Final payment").innerText()
+  );
+
+  await page.getByRole("button", { name: "Track this loan" }).click();
+  await page.waitForTimeout(500);
+  await page.getByLabel("Name").fill("Declining loan");
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await page.waitForTimeout(2500);
+
+  // the loan's payments are real planned rows, each its own amount
+  const amounts: number[] = await page.evaluate(() => {
+    const raw = window.localStorage.getItem("renovator-demo-v5");
+    if (!raw) return [];
+    const store = JSON.parse(raw);
+    return (store.transactions ?? [])
+      .filter((tx: { description?: string }) => (tx.description ?? "").startsWith("Declining loan"))
+      .map((tx: { amount: number }) => tx.amount);
+  });
+  expect(amounts).toHaveLength(6);
+  // falling, and no two the same — that is the whole point of this shape
+  expect(new Set(amounts).size).toBe(6);
+  expect(amounts[0]).toBeGreaterThan(amounts[5]);
+
+  await page.screenshot({ path: "e2e/screenshots/loans-custom-schedule.png" });
+});
+
+test("loans: Turkish levies are on by default and move the installment", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1200 });
+  await enterDemo(page);
+  await page.goto("/loans");
+  await page.waitForTimeout(1800);
+
+  // consumer credit pays KKDF 15 and BSMV 10, which is why a bank's quote
+  // never matches a plain annuity calculator
+  await expect(num(page, "KKDF %")).toHaveValue("15");
+  await expect(num(page, "BSMV %")).toHaveValue("10");
+  await expect(page.getByText("KKDF + BSMV")).toBeVisible();
+
+  const money = async () =>
+    Number((await tile(page, "Installment").innerText()).replace(/[^\d,.]/g, "").replace(/\./g, "").replace(",", "."));
+  const taxed = await money();
+
+  await num(page, "KKDF %").fill("0");
+  await num(page, "BSMV %").fill("0");
+  await page.waitForTimeout(900);
+  expect(await money()).toBeLessThan(taxed);
+  await expect(page.getByText("KKDF + BSMV")).toHaveCount(0);
+});
+
+test("loans: an interest-free plan charges no interest and no levies", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1200 });
+  await enterDemo(page);
+  await page.goto("/loans");
+  await page.waitForTimeout(1800);
+
+  await num(page, "Principal").fill("120000");
+  await num(page, "Term (months)").fill("12");
+  await page.getByLabel("Repayment shape").selectOption("zeroInterest");
+  await page.waitForTimeout(900);
+
+  // no interest means no levies either — they ride on interest, not principal
+  await expect(num(page, "KKDF %")).toHaveCount(0);
+  await expect(page.getByText("KKDF + BSMV")).toHaveCount(0);
+  await expect(page.getByText("Effective /year")).toHaveCount(0);
+  expect(await tile(page, "Total payback").innerText()).toContain("120,000");
 });

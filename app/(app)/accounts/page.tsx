@@ -12,6 +12,8 @@ import { convert } from "@/lib/domain/fx";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { ViewSwitcher } from "@/components/viewSwitcher";
+import { useSurfaceView } from "@/lib/ui/useViews";
 import { useLocalToggle } from "@/lib/prefs";
 
 /** Day-of-month as an ordinal: "15th" (en) / "15." (tr). */
@@ -34,6 +36,9 @@ export default function PortfolioPage() {
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const { columns, setColumns } = useColumns("renovator-cols-portfolio");
+  // shape is how each holding is drawn; `columns` above is the page's own
+  // master-detail vs stacked layout, which is a different question
+  const view = useSurfaceView("accounts");
   const hideEmpty = useLocalToggle("renovator-portfolio-hide-empty", false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -95,6 +100,93 @@ export default function PortfolioPage() {
         </span>
       </button>
     );
+  }
+
+  /** A holding as a card — roomier, and the shape that survives a phone best. */
+  function itemCard(account: Account) {
+    const balance = balances.get(account.id) ?? 0;
+    const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
+    const isCard = account.kind === "credit_card";
+    const active = selectedId === account.id;
+    return (
+      <button
+        key={account.id}
+        onClick={() => setSelectedId(account.id)}
+        className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors ${
+          active
+            ? "border-teal-500 bg-teal-50 dark:bg-teal-950"
+            : "border-[var(--edge)] hover:border-teal-500/40"
+        }`}
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-base">{isCard ? "💳" : account.kind === "crypto" ? "₿" : account.kind === "gold" ? "🪙" : "🏦"}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{account.name}</span>
+        </span>
+        <span className={`tnum text-lg font-semibold ${isCard && balance < 0 ? "text-red-600" : ""}`}>
+          {formatAmount(balance, account.currency, locale)}
+        </span>
+        {account.currency !== displayCurrency && converted != null ? (
+          <span className="tnum text-[11px] text-zinc-400">≈ {formatAmount(converted, displayCurrency, locale)}</span>
+        ) : null}
+      </button>
+    );
+  }
+
+  /** A holding as a table row, for when you're comparing figures not browsing. */
+  function itemTableRow(account: Account) {
+    const balance = balances.get(account.id) ?? 0;
+    const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
+    const isCard = account.kind === "credit_card";
+    return (
+      <tr
+        key={account.id}
+        onClick={() => setSelectedId(account.id)}
+        className={`cursor-pointer border-b border-[var(--edge-soft)] ${
+          selectedId === account.id ? "bg-teal-50 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
+        }`}
+      >
+        <td className="px-3 py-1.5 text-sm" data-label={t("common.account")}>
+          {account.name}
+        </td>
+        <td className="px-3 py-1.5 text-xs text-zinc-500" data-label={t("common.currency")}>
+          {account.currency === "XAU_G" ? "GOLD g" : account.currency}
+        </td>
+        <td
+          className={`px-3 py-1.5 text-right text-sm font-semibold tnum ${isCard && balance < 0 ? "text-red-600" : ""}`}
+          data-label={t("common.balance")}
+        >
+          {formatAmount(balance, account.currency, locale)}
+        </td>
+        <td className="px-3 py-1.5 text-right text-xs tnum text-zinc-400" data-label={displayCurrency}>
+          {converted != null ? formatAmount(converted, displayCurrency, locale) : "—"}
+        </td>
+      </tr>
+    );
+  }
+
+  /** One section's holdings, in whichever shape is selected. */
+  function sectionBody(items: Account[]) {
+    if (view.shape === "grid") {
+      return <div className={`grid gap-2 p-2 ${columnClass(view.columns)}`}>{items.map(itemCard)}</div>;
+    }
+    if (view.shape === "table") {
+      return (
+        <div className="overflow-x-auto">
+          <table className="stack-sm w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
+                <th className="px-3 py-2 font-medium">{t("common.account")}</th>
+                <th className="px-3 py-2 font-medium">{t("common.currency")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("common.balance")}</th>
+                <th className="px-3 py-2 text-right font-medium">{displayCurrency}</th>
+              </tr>
+            </thead>
+            <tbody>{items.map(itemTableRow)}</tbody>
+          </table>
+        </div>
+      );
+    }
+    return <div className="space-y-0.5 p-2">{items.map(itemRow)}</div>;
   }
 
   const history = selected
@@ -162,6 +254,13 @@ export default function PortfolioPage() {
               ? t("portfolio.hideEmptyCount", { count: emptyCount })
               : t("portfolio.hideEmpty")}
           </label>
+          <ViewSwitcher
+            surface="accounts"
+            shape={view.shape}
+            onShape={view.setShape}
+            columns={view.columns}
+            onColumns={view.setColumns}
+          />
           <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
           <Button variant="primary" onClick={() => setModalOpen(true)}>
             + {t("accounts.newAccount")}
@@ -182,7 +281,7 @@ export default function PortfolioPage() {
             section.items.length === 0 ? null : (
               <Card key={section.key}>
                 <CardHeader title={section.title} />
-                <div className="space-y-0.5 p-2">{section.items.map(itemRow)}</div>
+                {sectionBody(section.items)}
               </Card>
             )
           )}
@@ -193,7 +292,7 @@ export default function PortfolioPage() {
                 {t("accounts.archived")} ({archived.length})
               </summary>
               <Card className="mt-2">
-                <div className="space-y-0.5 p-2">{archived.map(itemRow)}</div>
+                {sectionBody(archived)}
               </Card>
             </details>
           ) : null}

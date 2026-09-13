@@ -184,6 +184,34 @@ export function Field({
   );
 }
 
+/**
+ * A caption over a group of controls.
+ *
+ * Deliberately not a <label>: a label associates itself with the first
+ * labelable element inside it, and buttons are labelable. Wrapping a segmented
+ * control in Field therefore renames its first button after the group — the
+ * "Spacious / Comfortable / Compact" row announces its first option as
+ * "Density" — which is wrong for anyone listening to the page rather than
+ * looking at it. Use Field for a single input, Fieldset for a set of buttons.
+ */
+export function Fieldset({
+  label,
+  children,
+  hint,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  hint?: ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+      {children}
+      {hint ? <span className="block text-xs text-zinc-400 dark:text-zinc-500">{hint}</span> : null}
+    </div>
+  );
+}
+
 export function Badge({
   children,
   tone = "zinc",

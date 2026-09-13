@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Select, Spinner, Textarea } from "@/components/ui";
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
@@ -19,6 +19,8 @@ import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, form
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
 import { UI_STYLES } from "@/lib/ui/style";
+import { RateSourcesCard } from "@/components/settingsRates";
+import { ViewsCard } from "@/components/settingsViews";
 
 const SETTINGS_TABS = ["preferences", "categories", "victvs", "data", "account"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -93,7 +95,9 @@ export default function SettingsPage() {
         <>
           <PreferencesCard />
           <StyleCard />
+          <ViewsCard />
           <AppearanceCard />
+          <RateSourcesCard />
           <SidebarOrderCard />
         </>
       ) : null}
@@ -396,14 +400,14 @@ function StyleCard() {
 
 function AppearanceCard() {
   const { t } = useI18n();
-  const { theme, setTheme, compact, setCompact } = useApp();
+  const { theme, setTheme } = useApp();
   const collapseHistory = useLocalToggle(COLLAPSE_HISTORY_KEY, true);
   const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, 1000);
   return (
     <Card>
       <CardHeader title={t("theme.title")} />
       <div className="space-y-3 p-4">
-        <Field label={t("theme.theme")}>
+        <Fieldset label={t("theme.theme")}>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {THEMES.map(({ id, preview }) => (
               <button
@@ -424,19 +428,7 @@ function AppearanceCard() {
               </button>
             ))}
           </div>
-        </Field>
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-teal-600"
-            checked={compact}
-            onChange={(e) => setCompact(e.target.checked)}
-          />
-          <span>
-            <span className="block text-sm font-medium">{t("theme.compact")}</span>
-            <span className="block text-xs text-zinc-500">{t("theme.compactHint")}</span>
-          </span>
-        </label>
+        </Fieldset>
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
