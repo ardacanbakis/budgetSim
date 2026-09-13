@@ -16,7 +16,7 @@ import {
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
 import { buildDemoSeed, DemoStore } from "./demoSeed";
-import { amortizationSchedule } from "@/lib/domain/loan";
+import { buildSchedule } from "@/lib/domain/loanSchedule";
 import {
   Account,
   Budget,
@@ -644,26 +644,53 @@ export class DemoRepo implements Repo {
 
   async createLoan(input: NewLoan): Promise<Loan> {
     const now = new Date().toISOString();
-    const schedule = amortizationSchedule(
-      input.principal,
-      input.monthlyRatePct,
-      input.termMonths,
-      input.startDate,
-      input.currency
-    );
-    const loanId = uuid();
-    const template = await this.createTemplate({
-      name: `${input.name} installment`,
-      accountId: input.accountId,
-      direction: "expense",
-      categoryId: input.categoryId,
-      amount: schedule.installment,
-      frequency: "monthly",
-      startDate: schedule.rows[0].date,
-      endDate: schedule.rows[schedule.rows.length - 1].date,
-      autoComplete: input.autoComplete,
-      loanId,
+    const schedule = buildSchedule({
+      kind: input.scheduleKind ?? "annuity",
+      principal: input.principal,
+      monthlyRatePct: input.monthlyRatePct,
+      termMonths: input.termMonths,
+      startDate: input.startDate,
+      currency: input.currency,
+      kkdfPct: input.kkdfPct ?? 0,
+      bsmvPct: input.bsmvPct ?? 0,
+      customInstalments: input.customInstalments ?? undefined,
     });
+    if (schedule.rows.length === 0) throw new Error("loan schedule is empty");
+    const loanId = uuid();
+
+    // level payments become one repeating template; varying ones become dated
+    // rows, because no single template can say "a bit less every month"
+    let templateId: string | null = null;
+    if (schedule.level) {
+      const template = await this.createTemplate({
+        name: `${input.name} installment`,
+        accountId: input.accountId,
+        direction: "expense",
+        categoryId: input.categoryId,
+        amount: schedule.installment,
+        frequency: "monthly",
+        startDate: schedule.rows[0].date,
+        endDate: schedule.rows[schedule.rows.length - 1].date,
+        autoComplete: input.autoComplete,
+        loanId,
+      });
+      templateId = template.id;
+    } else {
+      for (const row of schedule.rows) {
+        await this.createTransaction({
+          accountId: input.accountId,
+          direction: "expense",
+          categoryId: input.categoryId,
+          amount: row.payment,
+          status: "planned",
+          dueDate: row.date,
+          description: `${input.name} ${row.n}/${schedule.rows.length}`,
+          loanId,
+          fxSnapshot: null,
+        });
+      }
+    }
+
     const loan: Loan = {
       id: loanId,
       name: input.name,
@@ -674,7 +701,11 @@ export class DemoRepo implements Repo {
       termMonths: input.termMonths,
       startDate: input.startDate,
       installment: schedule.installment,
-      recurringTemplateId: template.id,
+      scheduleKind: input.scheduleKind ?? "annuity",
+      kkdfPct: input.kkdfPct ?? 0,
+      bsmvPct: input.bsmvPct ?? 0,
+      customInstalments: input.customInstalments ?? null,
+      recurringTemplateId: templateId,
       createdAt: now,
     };
     this.store.loans.push(loan);
@@ -686,6 +717,10 @@ export class DemoRepo implements Repo {
     const loan = this.store.loans.find((l) => l.id === id);
     this.store.loans = this.store.loans.filter((l) => l.id !== id);
     if (loan?.recurringTemplateId) await this.deleteTemplate(loan.recurringTemplateId, true);
+    // unpaid rows only: a deleted loan must not rewrite what already left
+    this.store.transactions = this.store.transactions.filter(
+      (tx) => !(tx.loanId === id && tx.status === "planned")
+    );
     this.save();
   }
 

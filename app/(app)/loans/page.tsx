@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useLoans, useRates, useTransactions } from "@/lib/data/queries";
 import { NewLoan } from "@/lib/data/repo";
@@ -10,8 +10,16 @@ import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeBalances } from "@/lib/domain/balances";
 import { computeDebtOverview } from "@/lib/domain/debt";
-import { amortizationSchedule } from "@/lib/domain/loan";
+import {
+  BSMV_CONSUMER_PCT,
+  buildSchedule,
+  effectiveAnnualPct,
+  KKDF_CONSUMER_PCT,
+  SCHEDULE_KINDS,
+  ScheduleKind,
+} from "@/lib/domain/loanSchedule";
 import { todayISO } from "@/lib/domain/recurrence";
+import { LoanRatePicker } from "@/components/loanRatePicker";
 import { useI18n } from "@/lib/i18n";
 
 export default function LoansPage() {
@@ -31,6 +39,12 @@ export default function LoansPage() {
   const [currency, setCurrency] = useState<Currency>("TRY");
   const [kind, setKind] = useState<LoanKind>("house");
   const [startDate, setStartDate] = useState(todayISO());
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("annuity");
+  // Turkish consumer credit carries both levies; commercial pays BSMV only.
+  // They default on because that is what a personal loan actually costs.
+  const [kkdf, setKkdf] = useState(String(KKDF_CONSUMER_PCT));
+  const [bsmv, setBsmv] = useState(String(BSMV_CONSUMER_PCT));
+  const [customText, setCustomText] = useState("");
 
   const createLoan = useAppMutation((input: NewLoan) => repo.createLoan(input), [
     KEYS.loans,
@@ -39,13 +53,48 @@ export default function LoansPage() {
   ]);
   const deleteLoan = useAppMutation((id: string) => repo.deleteLoan(id), [KEYS.loans, KEYS.templates, KEYS.transactions]);
 
+  /** "12.500, 12.500, 40.000" — one payment per line or comma, as written. */
+  const customInstalments = useMemo(
+    () =>
+      customText
+        .split(/[\n,;]+/)
+        .map((piece) => Number(piece.replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", ".")))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    [customText]
+  );
+
   const sim = useMemo(() => {
     const p = Number(principal);
     const r = Number(rate);
-    const n = Math.floor(Number(term));
+    const n = scheduleKind === "custom" ? customInstalments.length : Math.floor(Number(term));
     if (!(p > 0) || !(r >= 0) || !(n > 0) || n > 600) return null;
-    return amortizationSchedule(p, r, n, startDate, currency);
-  }, [principal, rate, term, startDate, currency]);
+    return buildSchedule({
+      kind: scheduleKind,
+      principal: p,
+      monthlyRatePct: r,
+      termMonths: n,
+      startDate,
+      currency,
+      kkdfPct: Number(kkdf) || 0,
+      bsmvPct: Number(bsmv) || 0,
+      customInstalments,
+    });
+  }, [principal, rate, term, startDate, currency, scheduleKind, kkdf, bsmv, customInstalments]);
+
+  const effectiveApr = useMemo(
+    () =>
+      effectiveAnnualPct({
+        kind: scheduleKind,
+        principal: Number(principal) || 0,
+        monthlyRatePct: Number(rate) || 0,
+        termMonths: Math.floor(Number(term)) || 0,
+        startDate,
+        currency,
+        kkdfPct: Number(kkdf) || 0,
+        bsmvPct: Number(bsmv) || 0,
+      }),
+    [scheduleKind, principal, rate, term, startDate, currency, kkdf, bsmv]
+  );
 
   if (loans.isLoading || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
@@ -155,6 +204,51 @@ export default function LoansPage() {
               </Field>
             </div>
 
+            <LoanRatePicker
+              currency={currency}
+              amount={Number(principal) || 0}
+              termMonths={Math.floor(Number(term)) || 0}
+              onPick={(offer) => setRate(offer.monthlyRatePct.toFixed(2))}
+            />
+
+            <Field label={t("loans.scheduleKind")} hint={t(`loans.kindHint_${scheduleKind}`)}>
+              <Select value={scheduleKind} onChange={(e) => setScheduleKind(e.target.value as ScheduleKind)}>
+                {SCHEDULE_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {t(`loans.kind_${k}`)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            {scheduleKind === "custom" ? (
+              <Field
+                label={t("loans.customInstalments")}
+                hint={t("loans.customHint", { count: customInstalments.length })}
+              >
+                <Textarea
+                  rows={4}
+                  value={customText}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCustomText(e.target.value)}
+                  placeholder={"12500\n12500\n40000"}
+                />
+              </Field>
+            ) : null}
+
+            {/* the levies are why a bank's quote never matches a plain
+                annuity calculator; they are editable because commercial
+                credit pays BSMV only, and the statutory rates move */}
+            {scheduleKind !== "zeroInterest" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t("loans.kkdf")} hint={t("loans.kkdfHint")}>
+                  <Input type="number" step="0.5" min="0" max="100" value={kkdf} onChange={(e) => setKkdf(e.target.value)} />
+                </Field>
+                <Field label={t("loans.bsmv")} hint={t("loans.bsmvHint")}>
+                  <Input type="number" step="0.5" min="0" max="100" value={bsmv} onChange={(e) => setBsmv(e.target.value)} />
+                </Field>
+              </div>
+            ) : null}
+
             {sim ? (
               <>
                 <div className="grid grid-cols-3 gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
@@ -170,6 +264,28 @@ export default function LoansPage() {
                     <div className="text-xs text-zinc-500">{t("loans.totalInterest")}</div>
                     <div className="text-lg font-bold tabular-nums text-red-600">{formatAmount(sim.totalInterest, currency, locale)}</div>
                   </div>
+                  {sim.totalTaxes > 0 ? (
+                    <div>
+                      <div className="text-xs text-zinc-500">{t("loans.totalTaxes")}</div>
+                      <div className="text-lg font-bold tabular-nums text-red-600">
+                        {formatAmount(sim.totalTaxes, currency, locale)}
+                      </div>
+                    </div>
+                  ) : null}
+                  {effectiveApr > 0 ? (
+                    <div>
+                      <div className="text-xs text-zinc-500">{t("loans.effectiveApr")}</div>
+                      <div className="text-lg font-bold tabular-nums">{effectiveApr.toFixed(1)}%</div>
+                    </div>
+                  ) : null}
+                  {!sim.level ? (
+                    <div>
+                      <div className="text-xs text-zinc-500">{t("loans.varies")}</div>
+                      <div className="text-sm font-medium tabular-nums">
+                        {formatAmount(sim.rows.at(-1)!.payment, currency, locale)}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 <Button variant="primary" className="w-full" onClick={() => setTrackOpen(true)}>
                   {t("loans.startTracking")}
@@ -236,7 +352,20 @@ export default function LoansPage() {
       <TrackModal
         open={trackOpen}
         onClose={() => setTrackOpen(false)}
-        defaults={{ kind, currency, principal: Number(principal), monthlyRatePct: Number(rate), termMonths: Math.floor(Number(term)), startDate }}
+        defaults={{
+          kind,
+          currency,
+          principal: Number(principal),
+          monthlyRatePct: Number(rate),
+          termMonths: scheduleKind === "custom" ? customInstalments.length : Math.floor(Number(term)),
+          startDate,
+          // the shape you simulated is the shape that gets tracked; dropping
+          // it here would quietly file every loan as a plain annuity
+          scheduleKind,
+          kkdfPct: Number(kkdf) || 0,
+          bsmvPct: Number(bsmv) || 0,
+          customInstalments: scheduleKind === "custom" ? customInstalments : null,
+        }}
         onConfirm={async (input) => {
           await createLoan.mutateAsync(input);
           setTrackOpen(false);
@@ -261,7 +390,18 @@ function TrackedLoan({
 }) {
   const { t, locale } = useI18n();
   const schedule = useMemo(
-    () => amortizationSchedule(loan.principal, loan.monthlyRatePct, loan.termMonths, loan.startDate, loan.currency),
+    () =>
+      buildSchedule({
+        kind: loan.scheduleKind,
+        principal: loan.principal,
+        monthlyRatePct: loan.monthlyRatePct,
+        termMonths: loan.termMonths,
+        startDate: loan.startDate,
+        currency: loan.currency,
+        kkdfPct: loan.kkdfPct,
+        bsmvPct: loan.bsmvPct,
+        customInstalments: loan.customInstalments ?? undefined,
+      }),
     [loan]
   );
   const paid = Math.min(paidCount, loan.termMonths);
@@ -313,7 +453,19 @@ function TrackModal({
 }: {
   open: boolean;
   onClose: () => void;
-  defaults: Pick<NewLoan, "kind" | "currency" | "principal" | "monthlyRatePct" | "termMonths" | "startDate">;
+  defaults: Pick<
+    NewLoan,
+    | "kind"
+    | "currency"
+    | "principal"
+    | "monthlyRatePct"
+    | "termMonths"
+    | "startDate"
+    | "scheduleKind"
+    | "kkdfPct"
+    | "bsmvPct"
+    | "customInstalments"
+  >;
   onConfirm: (input: NewLoan) => Promise<void>;
 }) {
   const { t } = useI18n();

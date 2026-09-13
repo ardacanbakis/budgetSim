@@ -121,6 +121,11 @@ export interface NewLoan {
   accountId: string;
   categoryId: string | null;
   autoComplete: boolean;
+  /** defaults to an untaxed annuity, which is what loans were before */
+  scheduleKind?: import("@/lib/domain/loanSchedule").ScheduleKind;
+  kkdfPct?: number;
+  bsmvPct?: number;
+  customInstalments?: number[] | null;
 }
 
 /**
