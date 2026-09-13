@@ -8,6 +8,9 @@ import { NewTemplate } from "@/lib/data/repo";
 import { Frequency, RecurringTemplate, TxDirection } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { todayISO } from "@/lib/domain/recurrence";
+import { columnClass } from "@/components/columns";
+import { ViewSwitcher } from "@/components/viewSwitcher";
+import { useSurfaceView } from "@/lib/ui/useViews";
 import { useI18n } from "@/lib/i18n";
 
 export default function RecurringPage() {
@@ -15,6 +18,7 @@ export default function RecurringPage() {
   const repo = useRepo();
   const templates = useTemplates();
   const accounts = useAccounts();
+  const view = useSurfaceView("recurring");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
 
@@ -49,6 +53,13 @@ export default function RecurringPage() {
           <h1 className="text-xl font-bold">{t("recurring.title")}</h1>
           <p className="text-sm text-zinc-500">{t("recurring.materialized")}</p>
         </div>
+        <ViewSwitcher
+          surface="recurring"
+          shape={view.shape}
+          onShape={view.setShape}
+          columns={view.columns}
+          onColumns={view.setColumns}
+        />
         <Button variant="primary" onClick={() => setModalOpen(true)}>
           + {t("recurring.newTemplate")}
         </Button>
@@ -56,8 +67,67 @@ export default function RecurringPage() {
 
       {list.length === 0 ? (
         <EmptyState>{t("recurring.empty")}</EmptyState>
+      ) : view.shape === "table" ? (
+        /* one line each, for when you are auditing what repeats rather than
+           reading any single template */
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="stack-sm w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
+                  <th className="px-3 py-2 font-medium">{t("common.name")}</th>
+                  <th className="px-3 py-2 font-medium">{t("common.account")}</th>
+                  <th className="px-3 py-2 font-medium">{t("recurring.frequency")}</th>
+                  <th className="px-3 py-2 font-medium">{t("common.date")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("common.amount")}</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((tpl) => {
+                  const account = accountById.get(tpl.accountId);
+                  return (
+                    <tr key={tpl.id} className="border-b border-[var(--edge-soft)]">
+                      <td className="px-3 py-1.5" data-label={t("common.name")}>
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          {tpl.name}
+                          {tpl.loanId ? <Badge tone="sky">{t("recurring.linkedLoan")}</Badge> : null}
+                          {tpl.autoComplete ? <Badge tone="green">{t("recurring.autoComplete")}</Badge> : null}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-zinc-500" data-label={t("common.account")}>
+                        {account?.name ?? "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-zinc-500" data-label={t("recurring.frequency")}>
+                        {t(`recurring.${tpl.frequency}`)}
+                      </td>
+                      <td className="px-3 py-1.5 text-zinc-500 tnum" data-label={t("common.date")}>
+                        {tpl.startDate}
+                        {tpl.endDate ? ` → ${tpl.endDate}` : ""}
+                      </td>
+                      <td
+                        className={`px-3 py-1.5 text-right font-semibold tnum ${tpl.direction === "income" ? "text-emerald-600" : ""}`}
+                        data-label={t("common.amount")}
+                      >
+                        {tpl.direction === "income" ? "+" : "−"}
+                        {account ? formatAmount(tpl.amount, account.currency, locale) : tpl.amount}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        {!tpl.loanId ? (
+                          <Button variant="ghost" onClick={() => setEditing(tpl)}>
+                            {t("common.edit")}
+                          </Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
+        <div className={`grid gap-3 ${columnClass(view.columns)}`}>
           {list.map((tpl) => {
             const account = accountById.get(tpl.accountId);
             return (

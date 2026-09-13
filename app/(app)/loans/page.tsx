@@ -19,7 +19,10 @@ import {
   ScheduleKind,
 } from "@/lib/domain/loanSchedule";
 import { todayISO } from "@/lib/domain/recurrence";
+import { columnClass } from "@/components/columns";
 import { LoanRatePicker } from "@/components/loanRatePicker";
+import { ViewSwitcher } from "@/components/viewSwitcher";
+import { useSurfaceView } from "@/lib/ui/useViews";
 import { useI18n } from "@/lib/i18n";
 
 export default function LoansPage() {
@@ -31,6 +34,7 @@ export default function LoansPage() {
   const rates = useRates();
   const { displayCurrency } = useApp();
   const [trackOpen, setTrackOpen] = useState(false);
+  const view = useSurfaceView("loans");
 
   // simulator state
   const [principal, setPrincipal] = useState("1000000");
@@ -325,8 +329,19 @@ export default function LoansPage() {
 
         {/* tracked loans */}
         <Card>
-          <CardHeader title={t("loans.tracked")} />
-          <div className="space-y-3 p-4">
+          <CardHeader
+            title={t("loans.tracked")}
+            action={
+              <ViewSwitcher
+                surface="loans"
+                shape={view.shape}
+                onShape={view.setShape}
+                columns={view.columns}
+                onColumns={view.setColumns}
+              />
+            }
+          />
+          <div className={view.shape === "grid" ? `grid gap-3 p-4 ${columnClass(view.columns)}` : "space-y-3 p-4"}>
             {(loans.data ?? []).length === 0 ? (
               <EmptyState>{t("loans.empty")}</EmptyState>
             ) : (

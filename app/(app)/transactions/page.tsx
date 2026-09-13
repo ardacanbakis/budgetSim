@@ -12,6 +12,8 @@ import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useApp } from "@/lib/data/provider";
 import { useFormatDate } from "@/lib/useFormatDate";
+import { ViewSwitcher } from "@/components/viewSwitcher";
+import { useSurfaceView } from "@/lib/ui/useViews";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
@@ -26,6 +28,7 @@ export default function TransactionsPage() {
   const transactions = useTransactions();
   const rates = useRates();
 
+  const view = useSurfaceView("transactions");
   const [filterAccount, setFilterAccount] = useState("all");
   const [filterStatus, setFilterStatus] = useState<"all" | TxStatus>("all");
   const [filterDirection, setFilterDirection] = useState<"all" | TxDirection>("all");
@@ -163,6 +166,7 @@ export default function TransactionsPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("tx.title")}</h1>
         <div className="flex items-center gap-2">
+          <ViewSwitcher surface="transactions" shape={view.shape} onShape={view.setShape} />
           <ColumnsToggle columns={columns} onChange={setColumns} />
           <Button onClick={() => setTransferModal(true)}>⇄ {t("tx.newTransfer")}</Button>
           <Button variant="primary" onClick={() => setTxModal(true)}>
@@ -274,6 +278,67 @@ export default function TransactionsPage() {
                           </span>
                         </button>
                         {monthCollapsed ? null : (
+                          view.shape === "table" ? (
+                          /* the ledger flattened: one line per entry, for
+                             scanning a month rather than acting on any single
+                             row. Clicking a row still opens it to edit. */
+                          <div className="overflow-x-auto">
+                            <table className="stack-sm w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
+                                  <th className="px-3 py-1.5 font-medium">{t("common.date")}</th>
+                                  <th className="px-3 py-1.5 font-medium">{t("common.description")}</th>
+                                  <th className="px-3 py-1.5 font-medium">{t("common.account")}</th>
+                                  <th className="px-3 py-1.5 font-medium">{t("common.category")}</th>
+                                  <th className="px-3 py-1.5 text-right font-medium">{t("common.amount")}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items
+                                  .filter((tx) => tx.transferGroupId == null || tx.direction === "expense")
+                                  .map((tx) => {
+                                    const account = accountById.get(tx.accountId);
+                                    const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
+                                    return (
+                                      <tr
+                                        key={tx.id}
+                                        onClick={() => setEditing(tx)}
+                                        className={`cursor-pointer border-b border-[var(--edge-soft)] hover:bg-[var(--edge-soft)] ${
+                                          tx.status === "planned" ? "opacity-70" : ""
+                                        }`}
+                                      >
+                                        <td className="px-3 py-1 tnum" data-label={t("common.date")}>
+                                          {fmtDate(tx.dueDate)}
+                                        </td>
+                                        <td className="px-3 py-1" data-label={t("common.description")}>
+                                          {tx.description || (tx.transferGroupId ? t("tx.transfer") : "—")}
+                                        </td>
+                                        <td className="px-3 py-1 text-zinc-500" data-label={t("common.account")}>
+                                          {account?.name ?? "—"}
+                                        </td>
+                                        <td className="px-3 py-1 text-zinc-500" data-label={t("common.category")}>
+                                          {category?.name ?? "—"}
+                                        </td>
+                                        <td
+                                          className={`px-3 py-1 text-right font-semibold tnum ${
+                                            tx.transferGroupId
+                                              ? "text-zinc-500"
+                                              : tx.direction === "income"
+                                                ? "text-emerald-600"
+                                                : "text-red-600"
+                                          }`}
+                                          data-label={t("common.amount")}
+                                        >
+                                          {tx.transferGroupId ? "" : tx.direction === "income" ? "+" : "−"}
+                                          {account ? formatAmount(tx.amount, account.currency, locale) : tx.amount}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                              </tbody>
+                            </table>
+                          </div>
+                          ) : (
                           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
                             {items
                               .filter((tx) => tx.transferGroupId == null || tx.direction === "expense")
@@ -301,6 +366,7 @@ export default function TransactionsPage() {
                               />
                             ))}
                           </ul>
+                          )
                         )}
                       </Card>
                     );
