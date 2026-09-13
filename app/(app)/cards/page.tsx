@@ -28,6 +28,8 @@ import { averageMonthlySpend } from "@/lib/domain/stats";
 import { cardStandings, findDueCardPayments } from "@/lib/domain/purchases";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { AccountModal } from "@/app/(app)/accounts/page";
+import { ViewSwitcher } from "@/components/viewSwitcher";
+import { useSurfaceView } from "@/lib/ui/useViews";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
@@ -50,6 +52,7 @@ export default function PurchasesPage() {
   const [showRetired, setShowRetired] = useState(false);
   const [editingCard, setEditingCard] = useState<Account | null>(null);
   const { columns, setColumns } = useColumns("renovator-cols-purchases");
+  const view = useSurfaceView("cards");
 
   const updateAccount = useAppMutation(
     (v: { id: string; patch: Parameters<typeof repo.updateAccount>[1] }) => repo.updateAccount(v.id, v.patch),
@@ -223,11 +226,75 @@ export default function PurchasesPage() {
     );
   }
 
+  /**
+   * Every card on one line. The full cards answer "what is going on with this
+   * card"; this answers "which card needs me first", which is a different
+   * question and a worse fit for a page of tall cards you have to scroll.
+   */
+  const cardsTable = (
+    <Card>
+      <div className="overflow-x-auto">
+        <table className="stack-sm w-full text-sm">
+          <thead>
+            <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
+              <th className="px-3 py-2 font-medium">{t("cards.title")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("purchases.postedDebt")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colScheduled")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colLimitLeft")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colDueIn")}</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {cards.map((card) => {
+              const standing = standings.get(card.id);
+              const debt = -(balances.get(card.id) ?? 0);
+              const available = standing?.available ?? null;
+              const days = standing?.daysToDue ?? null;
+              return (
+                <tr key={card.id} className="border-b border-[var(--edge-soft)]">
+                  <td className="px-3 py-1.5 font-medium" data-label={t("cards.title")}>
+                    {card.name}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tnum" data-label={t("purchases.postedDebt")}>
+                    {formatAmount(debt, card.currency, locale)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tnum text-zinc-500" data-label={t("cards.colScheduled")}>
+                    {formatAmount(standing?.scheduled ?? 0, card.currency, locale)}
+                  </td>
+                  <td
+                    className={`px-3 py-1.5 text-right tnum ${available != null && available < 0 ? "text-red-600" : ""}`}
+                    data-label={t("cards.colLimitLeft")}
+                  >
+                    {available != null ? formatAmount(available, card.currency, locale) : "—"}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tnum" data-label={t("cards.colDueIn")}>
+                    {days != null ? days : "—"}
+                  </td>
+                  <td className="px-3 py-1.5 text-right">
+                    <Button onClick={() => setPaying(card)}>{t("cards.recordPayment")}</Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+
   return (
     <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-5xl 3xl:max-w-7xl" : "max-w-none"}`}>
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("cards.title")}</h1>
         <div className="flex items-center gap-2">
+          <ViewSwitcher
+            surface="cards"
+            shape={view.shape}
+            onShape={view.setShape}
+            columns={view.columns}
+            onColumns={view.setColumns}
+          />
           <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
           <Button variant="primary" onClick={() => setModalOpen(true)}>
             + {t("purchases.newPurchase")}
@@ -237,7 +304,9 @@ export default function PurchasesPage() {
 
       {(purchases.data ?? []).length === 0 && cards.length === 0 ? <EmptyState>{t("purchases.empty")}</EmptyState> : null}
 
-      <div className={columnClass(columns)}>
+      {view.shape === "table" ? cardsTable : null}
+
+      <div className={view.shape === "table" ? "hidden" : view.shape === "grid" ? columnClass(view.columns) : columnClass(columns)}>
       {cards.map((card) => {
         const cardPurchases = byAccount.get(card.id) ?? [];
         const debt = balances.get(card.id) ?? 0;

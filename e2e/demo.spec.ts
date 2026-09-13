@@ -1528,3 +1528,116 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.waitForTimeout(1000);
   await expect(toggle).not.toBeChecked();
 });
+
+test("views: every screen's shape can be set from Settings and sticks", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1200);
+
+  // one place listing every list-shaped screen
+  const panel = page.getByRole("group", { name: /View — cards/ });
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Table" }).click();
+  await page.waitForTimeout(400);
+  await expect(panel.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+
+  // and the screen itself honours it
+  await page.goto("/cards");
+  await page.waitForTimeout(1500);
+  const table = page.locator("table").filter({ hasText: /Limit left/ });
+  await expect(table).toBeVisible();
+
+  // the page's own switcher is the same setting, not a second one
+  const switcher = page.getByRole("group", { name: /^View$/ });
+  await expect(switcher.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+  await switcher.getByRole("button", { name: "Rows" }).click();
+  await page.waitForTimeout(600);
+  await expect(page.locator("table").filter({ hasText: /Limit left/ })).toHaveCount(0);
+
+  // device-local, so it survives a reload
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await expect(page.getByRole("group", { name: /^View$/ }).getByRole("button", { name: "Rows" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
+
+test("views: portfolio takes three shapes", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.waitForTimeout(1500);
+
+  const switcher = page.getByRole("group", { name: /^View$/ });
+
+  // the column picker belongs to the grid, so it only appears with it
+  await expect(page.getByRole("group", { name: /Grid columns/i })).toHaveCount(0);
+  await switcher.getByRole("button", { name: "Grid" }).click();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("group", { name: /Grid columns/i }).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/portfolio-grid.png" });
+
+  await switcher.getByRole("button", { name: "Table" }).click();
+  await page.waitForTimeout(500);
+  await expect(page.locator("table").first()).toBeVisible();
+  await expect(page.getByRole("group", { name: /Grid columns/i })).toHaveCount(0);
+  await page.screenshot({ path: "e2e/screenshots/portfolio-table.png" });
+});
+
+test("views: density tightens rows across the app", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1200);
+
+  const density = page.getByRole("group", { name: "Density" });
+  const rowPad = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--ui-row-py").trim()
+    );
+
+  await density.getByRole("button", { name: "Compact" }).click();
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+  const compact = await rowPad();
+
+  await density.getByRole("button", { name: "Spacious" }).click();
+  await page.waitForTimeout(400);
+  const spacious = await rowPad();
+
+  // the token really moved, so every screen that reads it moved with it
+  expect(compact).not.toBe(spacious);
+  await page.screenshot({ path: "e2e/screenshots/density-spacious.png" });
+});
+
+test("rates: the market-data panel names who served each number", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1100 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  await page.waitForTimeout(1500);
+
+  await expect(page.getByText("Market data")).toBeVisible();
+
+  // gram gold is quoted in lira, not as a fraction of a gram per dollar
+  const goldRow = page.locator("tr").filter({ hasText: "Gram gold" });
+  await expect(goldRow).toBeVisible();
+  await expect(goldRow).not.toContainText(/0\.0\d+ g/);
+
+  // both Turkish providers are offered, and neither needs a key
+  const goldSelect = page.getByLabel("Gold prices");
+  await expect(goldSelect.locator("option", { hasText: "Truncgil" })).toHaveCount(1);
+  await expect(goldSelect.locator("option", { hasText: "GenelPara" })).toHaveCount(1);
+  await expect(goldSelect.locator("option", { hasText: /CollectAPI.*needs a key/ })).toHaveCount(1);
+
+  // switching provider refetches rather than reusing the other one's answer
+  const requests: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/rates")) requests.push(r.url());
+  });
+  await goldSelect.selectOption("genelpara");
+  await page.waitForTimeout(1500);
+  expect(requests.some((u) => u.includes("gold=genelpara"))).toBe(true);
+  await page.screenshot({ path: "e2e/screenshots/settings-rates.png" });
+});

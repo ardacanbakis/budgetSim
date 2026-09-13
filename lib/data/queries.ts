@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RateTable } from "@/lib/domain/fx";
 import { FALLBACK_SOURCE, FALLBACK_USD_PER } from "@/lib/rates/fallback";
-import { useRepo } from "./provider";
+import { useApp, useRepo } from "./provider";
 
 export const KEYS = {
   accounts: ["accounts"] as const,
@@ -95,11 +95,16 @@ export function useSnapshots() {
 
 /** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */
 export function useRates() {
+  // The chosen providers are part of the identity of the answer: switching
+  // gold from Truncgil to GenelPara has to refetch, not hand back the cached
+  // numbers from the other one.
+  const { ratePrefs } = useApp();
   return useQuery<RateTable & { stale?: boolean }>({
-    queryKey: KEYS.rates,
+    queryKey: [...KEYS.rates, ratePrefs.gold, ratePrefs.fx],
     queryFn: async () => {
       try {
-        const res = await fetch("/api/rates");
+        const params = new URLSearchParams({ gold: ratePrefs.gold, fx: ratePrefs.fx });
+        const res = await fetch(`/api/rates?${params}`);
         if (!res.ok) throw new Error(`rates ${res.status}`);
         return (await res.json()) as RateTable;
       } catch {

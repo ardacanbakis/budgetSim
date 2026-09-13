@@ -18,6 +18,21 @@ export interface RateTable {
   /** roughly 24h-old rates, when the sources could supply them — drives the
    * ticker's change indicator; absent entries simply show no change */
   prevUsdPer?: Partial<UsdPerMap>;
+  /**
+   * Every provider attempt, successes and failures alike. "Why is my gold
+   * price stale" has no answer from the outside without this.
+   */
+  diagnostics?: RateDiagnostic[];
+}
+
+export interface RateDiagnostic {
+  kind: "fx" | "gold" | "btc";
+  source: string;
+  ok: boolean;
+  /** the provider's own timestamp, when it gives one */
+  asOf?: string;
+  /** why it failed */
+  detail?: string;
 }
 
 /** Snapshot stored on a transaction at completion time; never mutated after. */

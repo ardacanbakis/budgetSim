@@ -5,6 +5,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Currency, isCurrency } from "@/lib/domain/currencies";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase/client";
 import {
+  DEFAULT_FX_SOURCE,
+  DEFAULT_GOLD_SOURCE,
+  FxSourceId,
+  GoldSourceId,
+  isFxSource,
+  isGoldSource,
+} from "@/lib/rates/sources";
+import {
+  applyDensity,
+  DEFAULT_DENSITY,
+  Density,
+  DENSITY_KEY,
+  isDensity,
+} from "@/lib/ui/views";
+import {
   applyUiStyle,
   DEFAULT_UI_STYLE,
   isUiStyle,
@@ -21,6 +36,7 @@ const MODE_KEY = "renovator-mode";
 const DISPLAY_KEY = "renovator-display-currency";
 const THEME_KEY = "renovator-theme";
 const COMPACT_KEY = "renovator-compact";
+const RATE_SOURCE_KEY = "renovator-rate-sources";
 
 export type Theme = "system" | "light" | "dark" | "slate" | "ocean" | "forest" | "mocha";
 
@@ -54,6 +70,27 @@ function applyCompact(compact: boolean): void {
   document.documentElement.dataset.compact = compact ? "true" : "false";
 }
 
+export interface RatePrefs {
+  gold: GoldSourceId;
+  fx: FxSourceId;
+}
+
+const DEFAULT_RATE_PREFS: RatePrefs = { gold: DEFAULT_GOLD_SOURCE, fx: DEFAULT_FX_SOURCE };
+
+function readRatePrefs(): RatePrefs {
+  try {
+    const raw = window.localStorage.getItem(RATE_SOURCE_KEY);
+    if (!raw) return DEFAULT_RATE_PREFS;
+    const saved = JSON.parse(raw) as Partial<RatePrefs>;
+    return {
+      gold: typeof saved.gold === "string" && isGoldSource(saved.gold) ? saved.gold : DEFAULT_GOLD_SOURCE,
+      fx: typeof saved.fx === "string" && isFxSource(saved.fx) ? saved.fx : DEFAULT_FX_SOURCE,
+    };
+  } catch {
+    return DEFAULT_RATE_PREFS;
+  }
+}
+
 export type Session =
   | { status: "loading" }
   | { status: "signedOut"; supabaseAvailable: boolean }
@@ -72,6 +109,12 @@ interface AppContextValue {
   setCompact: (c: boolean) => void;
   uiStyle: UiStyle;
   setUiStyle: (s: UiStyle) => void;
+  /** which provider serves gold and the lira — device-local, like the theme */
+  ratePrefs: RatePrefs;
+  setRatePrefs: (p: RatePrefs) => void;
+  /** how tight every row and card is, everywhere at once */
+  density: Density;
+  setDensity: (d: Density) => void;
   /** "v2" for every skin but Classic — gates shell and page layout */
   uiVersion: UiVersion;
 }
@@ -84,6 +127,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("system");
   const [compact, setCompactState] = useState(false);
   const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
+  const [ratePrefs, setRatePrefsState] = useState<RatePrefs>(DEFAULT_RATE_PREFS);
+  const [density, setDensityState] = useState<Density>(DEFAULT_DENSITY);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -102,6 +147,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const style: UiStyle = savedStyle && isUiStyle(savedStyle) ? savedStyle : DEFAULT_UI_STYLE;
       setUiStyleState(style);
       applyUiStyle(style);
+      setRatePrefsState(readRatePrefs());
+      // Density replaced the old on/off "compact" switch. Anyone who had that
+      // turned on starts at compact rather than being silently reset to the
+      // middle setting the first time they open the app after the change.
+      const savedDensity = window.localStorage.getItem(DENSITY_KEY);
+      const startingDensity: Density =
+        savedDensity && isDensity(savedDensity) ? savedDensity : savedCompact ? "compact" : DEFAULT_DENSITY;
+      setDensityState(startingDensity);
+      applyDensity(startingDensity);
     });
 
     if (window.localStorage.getItem(MODE_KEY) === "demo") {
@@ -193,6 +247,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     applyUiStyle(s);
   }, []);
 
+  const setDensity = useCallback((d: Density) => {
+    setDensityState(d);
+    window.localStorage.setItem(DENSITY_KEY, d);
+    applyDensity(d);
+  }, []);
+
+  const setRatePrefs = useCallback((p: RatePrefs) => {
+    setRatePrefsState(p);
+    window.localStorage.setItem(RATE_SOURCE_KEY, JSON.stringify(p));
+  }, []);
+
   const value = useMemo(
     () => ({
       session,
@@ -208,8 +273,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       uiStyle,
       setUiStyle,
       uiVersion: versionOf(uiStyle),
+      ratePrefs,
+      setRatePrefs,
+      density,
+      setDensity,
     }),
-    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact, uiStyle, setUiStyle]
+    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact, uiStyle, setUiStyle, ratePrefs, setRatePrefs, density, setDensity]
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
