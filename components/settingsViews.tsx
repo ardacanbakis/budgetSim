@@ -2,6 +2,7 @@
 
 import { Card, CardHeader, Fieldset } from "@/components/ui";
 import { ColumnCount } from "@/components/columns";
+import { LabelColorSettings } from "@/components/labelColorPicker";
 import { useApp } from "@/lib/data/provider";
 import { useSurfaceView } from "@/lib/ui/useViews";
 import { DENSITIES, Density, Shape, SURFACES, SURFACE_SPECS, SurfaceId } from "@/lib/ui/views";
@@ -52,6 +53,10 @@ export function ViewsCard() {
             ))}
           </ul>
         </div>
+
+        <Fieldset label={t("recurring.labelColors")} hint={t("recurring.labelColorsHint")}>
+          <LabelColorSettings />
+        </Fieldset>
       </div>
     </Card>
   );

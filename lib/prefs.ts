@@ -55,6 +55,35 @@ export function useLocalNumber(key: string, fallback: number) {
   return { value, setValue: update, loaded };
 }
 
+/**
+ * One of a fixed set of choices kept on the device — which filter a list
+ * opens on. A stored value that is no longer one of the options is ignored.
+ * `loaded` works the same way as for a toggle.
+ */
+export function useLocalChoice<T extends string>(key: string, options: readonly T[], fallback: T) {
+  const [value, setValue] = useState<T>(fallback);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      const saved = window.localStorage.getItem(key);
+      if (saved != null && (options as readonly string[]).includes(saved)) setValue(saved as T);
+      setLoaded(true);
+    });
+  }, [key, options]);
+
+  function update(next: T) {
+    setValue(next);
+    window.localStorage.setItem(key, next);
+  }
+
+  return { value, setValue: update, loaded };
+}
+
+/** Which recurring items the Recurring screen shows: by status, and by direction. */
+export const RECURRING_STATUS_FILTER_KEY = "renovator-recurring-status";
+export const RECURRING_DIRECTION_FILTER_KEY = "renovator-recurring-direction";
+
 /** Below this many lira, a month's shortfall is rounding rather than trouble. */
 export const SHORT_THRESHOLD_KEY = "renovator-short-threshold";
 

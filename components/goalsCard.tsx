@@ -141,6 +141,9 @@ function GoalModal({
   );
 
   const targetKey = initial?.id ?? (open ? "new" : "closed");
+  // Forget the last form once closed, so the next open starts from `initial`
+  // again instead of the previous entry's leftovers.
+  if (!open && initialized !== null) setInitialized(null);
   if (open && initialized !== targetKey) {
     setInitialized(targetKey);
     setName(initial?.name ?? "");

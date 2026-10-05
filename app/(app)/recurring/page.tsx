@@ -1,22 +1,56 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { LabelColorSettings } from "@/components/labelColorPicker";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useTemplates } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCategories, useTemplates, useTransactions } from "@/lib/data/queries";
 import { NewTemplate } from "@/lib/data/repo";
 import { Frequency, RecurringTemplate, TxDirection } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { todayISO } from "@/lib/domain/recurrence";
+import { TemplateProgress, TemplateStatus, templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
+import { RECURRING_DIRECTION_FILTER_KEY, RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
+import { LABELED_STATUSES, LabelColor, LabeledStatus, SWATCH_CLASS, useLabelColor } from "@/lib/ui/labelColors";
+import { useFormatDate } from "@/lib/useFormatDate";
+
+type StatusFilter = "all" | TemplateStatus;
+const STATUS_FILTERS: readonly StatusFilter[] = ["all", "active", "notStarted", "toConfirm", "completed"];
+type DirectionFilter = "all" | TxDirection;
+const DIRECTION_FILTERS: readonly DirectionFilter[] = ["all", "income", "expense"];
+
+/** Under "All": what needs a tap first, finished items last. */
+const STATUS_RANK: Record<TemplateStatus, number> = { toConfirm: 0, active: 1, notStarted: 2, completed: 3 };
+
+const segmentClass = (on: boolean) =>
+  `whitespace-nowrap rounded-md px-2.5 py-1 text-sm transition-colors ${
+    on ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "text-zinc-500 hover:bg-[var(--edge-soft)]"
+  }`;
 
 export default function RecurringPage() {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const templates = useTemplates();
   const accounts = useAccounts();
+  const transactions = useTransactions();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
+  const [colorsOpen, setColorsOpen] = useState(false);
+  const statusFilter = useLocalChoice<StatusFilter>(RECURRING_STATUS_FILTER_KEY, STATUS_FILTERS, "all");
+  const directionFilter = useLocalChoice<DirectionFilter>(RECURRING_DIRECTION_FILTER_KEY, DIRECTION_FILTERS, "all");
+  const labelColors: Record<LabeledStatus, LabelColor> = {
+    completed: useLabelColor("completed")[0],
+    notStarted: useLabelColor("notStarted")[0],
+    toConfirm: useLabelColor("toConfirm")[0],
+  };
+
+  const progressById = useMemo(() => {
+    const today = todayISO();
+    const map = new Map<string, TemplateProgress>();
+    for (const tpl of templates.data ?? []) map.set(tpl.id, templateProgress(tpl, transactions.data ?? [], today));
+    return map;
+  }, [templates.data, transactions.data]);
 
   const keys = [KEYS.templates, KEYS.transactions];
   const createTemplate = useAppMutation(
@@ -37,10 +71,25 @@ export default function RecurringPage() {
     keys
   );
 
-  if (templates.isLoading || accounts.isLoading) return <Spinner />;
+  if (templates.isLoading || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
   const list = templates.data ?? [];
   const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
+  const statusOf = (tpl: RecurringTemplate) => progressById.get(tpl.id)?.status ?? "active";
+
+  // Counts follow the direction filter, so each number matches what its chip shows.
+  const byDirection = list.filter((tpl) => directionFilter.value === "all" || tpl.direction === directionFilter.value);
+  const counts: Record<StatusFilter, number> = { all: byDirection.length, active: 0, notStarted: 0, toConfirm: 0, completed: 0 };
+  for (const tpl of byDirection) counts[statusOf(tpl)]++;
+  const shown = byDirection
+    .filter((tpl) => statusFilter.value === "all" || statusOf(tpl) === statusFilter.value)
+    .map((tpl, i) => ({ tpl, i }))
+    .sort((a, b) => STATUS_RANK[statusOf(a.tpl)] - STATUS_RANK[statusOf(b.tpl)] || a.i - b.i)
+    .map(({ tpl }) => tpl);
+  // Rare statuses only get a chip when there is something under them (or it's the one selected).
+  const statusChips = STATUS_FILTERS.filter(
+    (s) => s === "all" || s === "active" || s === "completed" || counts[s] > 0 || statusFilter.value === s
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 3xl:max-w-7xl">
@@ -57,40 +106,72 @@ export default function RecurringPage() {
       {list.length === 0 ? (
         <EmptyState>{t("recurring.empty")}</EmptyState>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
-          {list.map((tpl) => {
-            const account = accountById.get(tpl.accountId);
-            return (
-              <Card key={tpl.id} className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{tpl.name}</span>
-                      {tpl.loanId ? <Badge tone="sky">{t("recurring.linkedLoan")}</Badge> : null}
-                      {tpl.autoComplete ? <Badge tone="green">{t("recurring.autoComplete")}</Badge> : null}
-                    </div>
-                    <div
-                      className={`mt-1 text-lg font-bold tabular-nums ${tpl.direction === "income" ? "text-emerald-600" : ""}`}
-                    >
-                      {tpl.direction === "income" ? "+" : "−"}
-                      {account ? formatAmount(tpl.amount, account.currency, locale) : tpl.amount}
-                    </div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
-                      {t(`recurring.${tpl.frequency}`)} · {account?.name} · {tpl.startDate}
-                      {tpl.endDate ? ` → ${tpl.endDate}` : ""}
-                    </div>
-                  </div>
-                  {!tpl.loanId ? (
-                    <Button variant="ghost" onClick={() => setEditing(tpl)}>
-                      {t("common.edit")}
-                    </Button>
-                  ) : null}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="group" aria-label={t("recurring.filterStatus")} className="flex flex-wrap rounded-lg border border-[var(--edge)] p-0.5">
+              {statusChips.map((s) => (
+                <button key={s} type="button" aria-pressed={statusFilter.value === s} onClick={() => statusFilter.setValue(s)} className={segmentClass(statusFilter.value === s)}>
+                  {t(`recurring.status_${s}`)} <span className="tabular-nums opacity-70">{counts[s]}</span>
+                </button>
+              ))}
+            </div>
+            <div role="group" aria-label={t("recurring.filterDirection")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+              {DIRECTION_FILTERS.map((d) => (
+                <button key={d} type="button" aria-pressed={directionFilter.value === d} onClick={() => directionFilter.setValue(d)} className={segmentClass(directionFilter.value === d)}>
+                  {d === "all" ? t("recurring.status_all") : t(`tx.${d}`)}
+                </button>
+              ))}
+            </div>
+            <Button variant="ghost" className="ml-auto" onClick={() => setColorsOpen(true)}>
+              <span aria-hidden className="inline-flex -space-x-1">
+                {LABELED_STATUSES.map((s) => (
+                  <span key={s} className={`h-3 w-3 rounded-full ring-2 ring-[var(--surface)] ${SWATCH_CLASS[labelColors[s]]}`} />
+                ))}
+              </span>
+              {t("recurring.labelColors")}
+            </Button>
+          </div>
+
+          {shown.length === 0 ? (
+            <EmptyState
+              action={
+                <Button
+                  onClick={() => {
+                    statusFilter.setValue("all");
+                    directionFilter.setValue("all");
+                  }}
+                >
+                  {t("recurring.showAll")}
+                </Button>
+              }
+            >
+              {t("recurring.noneMatch")}
+            </EmptyState>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
+              {shown.map((tpl) => {
+                const account = accountById.get(tpl.accountId);
+                return (
+                  <TemplateCard
+                    key={tpl.id}
+                    tpl={tpl}
+                    progress={progressById.get(tpl.id)}
+                    amount={account ? formatAmount(tpl.amount, account.currency, locale) : String(tpl.amount)}
+                    accountName={account?.name}
+                    colors={labelColors}
+                    onEdit={() => setEditing(tpl)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
+
+      <Modal open={colorsOpen} onClose={() => setColorsOpen(false)} title={t("recurring.labelColors")}>
+        <p className="mb-3 text-sm text-zinc-500">{t("recurring.labelColorsHint")}</p>
+        <LabelColorSettings />
+      </Modal>
 
       <TemplateModal
         open={modalOpen || editing != null}
@@ -115,6 +196,94 @@ export default function RecurringPage() {
             : undefined
         }
       />
+    </div>
+  );
+}
+
+function TemplateCard({
+  tpl,
+  progress,
+  amount,
+  accountName,
+  colors,
+  onEdit,
+}: {
+  tpl: RecurringTemplate;
+  progress: TemplateProgress | undefined;
+  amount: string;
+  accountName: string | undefined;
+  colors: Record<LabeledStatus, LabelColor>;
+  onEdit: () => void;
+}) {
+  const { t } = useI18n();
+  const status = progress?.status ?? "active";
+  const finished = status === "completed";
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">{tpl.name}</span>
+            {finished ? <Badge tone={colors.completed}>✓ {t("recurring.status_completed")}</Badge> : null}
+            {status === "notStarted" ? <Badge tone={colors.notStarted}>{t("recurring.status_notStarted")}</Badge> : null}
+            {progress && progress.open > 0 ? (
+              <Badge tone={colors.toConfirm}>{t("recurring.openCount", { count: progress.open })}</Badge>
+            ) : null}
+            {tpl.loanId ? <Badge tone="sky">{t("recurring.linkedLoan")}</Badge> : null}
+            {/* nothing left to auto-complete once it's finished */}
+            {tpl.autoComplete && !finished ? <Badge tone="green">{t("recurring.autoComplete")}</Badge> : null}
+          </div>
+          <div className={finished ? "opacity-60" : undefined}>
+            <div className={`mt-1 text-lg font-bold tabular-nums ${tpl.direction === "income" ? "text-emerald-600" : ""}`}>
+              {tpl.direction === "income" ? "+" : "−"}
+              {amount}
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500">
+              {t(`recurring.${tpl.frequency}`)} · {accountName} · {tpl.startDate}
+              {tpl.endDate ? ` → ${tpl.endDate}` : ""}
+            </div>
+            {progress ? (
+              <ProgressLine progress={progress} barClass={finished ? SWATCH_CLASS[colors.completed] : "bg-teal-600 dark:bg-teal-500"} />
+            ) : null}
+          </div>
+        </div>
+        {!tpl.loanId ? (
+          <Button variant="ghost" onClick={onEdit}>
+            {t("common.edit")}
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+/** "3 of 7 done · Next 26 Oct" with a thin bar when the schedule has an end. */
+function ProgressLine({ progress, barClass }: { progress: TemplateProgress; barClass: string }) {
+  const { t } = useI18n();
+  const formatDate = useFormatDate();
+  const { done, total, next, last } = progress;
+  const parts: string[] = [];
+  if (total != null) parts.push(t("recurring.progress", { done, total }));
+  if (next) parts.push(t("recurring.next", { date: formatDate(next) }));
+  else if (last) parts.push(t("recurring.lastOn", { date: formatDate(last) }));
+  if (!parts.length) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      {total ? (
+        <div
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={Math.min(done, total)}
+          aria-label={t("recurring.progress", { done, total })}
+          className="h-1 overflow-hidden rounded-full bg-[var(--edge-soft)]"
+        >
+          <div className={`h-full rounded-full ${barClass}`} style={{ width: `${Math.min(100, (done / total) * 100)}%` }} />
+        </div>
+      ) : null}
+      <div className="text-xs tabular-nums text-zinc-500">{parts.join(" · ")}</div>
     </div>
   );
 }
@@ -148,6 +317,9 @@ function TemplateModal({
   const [initialized, setInitialized] = useState<string | null>(null);
 
   const targetKey = initial?.id ?? (open ? "new" : "closed");
+  // Forget the last form once closed, so the next open starts from `initial`
+  // again instead of the previous entry's leftovers.
+  if (!open && initialized !== null) setInitialized(null);
   if (open && initialized !== targetKey) {
     setInitialized(targetKey);
     setName(initial?.name ?? "");

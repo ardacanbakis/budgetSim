@@ -40,6 +40,15 @@ const STORAGE_KEY = "renovator-demo-v5";
 
 const uuid = () => crypto.randomUUID();
 
+/**
+ * Reads hand out copies, the way a network response would. Returning the
+ * store's own objects let in-place updates (auto-complete, template edits)
+ * reach into data already sitting in the query cache: the refetch then looked
+ * identical to it, so screens that hadn't re-rendered for another reason
+ * kept showing the old values.
+ */
+const copy = <T>(value: T): T => structuredClone(value);
+
 function load(): DemoStore {
   if (typeof window === "undefined") return buildDemoSeed();
   const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -75,7 +84,7 @@ export class DemoRepo implements Repo {
   }
 
   async listAccounts(): Promise<Account[]> {
-    return [...this.store.accounts];
+    return copy(this.store.accounts);
   }
 
   async createAccount(input: NewAccount): Promise<Account> {
@@ -109,7 +118,7 @@ export class DemoRepo implements Repo {
   }
 
   async listCategories(): Promise<Category[]> {
-    return [...this.store.categories];
+    return copy(this.store.categories);
   }
 
   async createCategory(input: { name: string; direction: TxDirection; color: string }): Promise<Category> {
@@ -132,7 +141,7 @@ export class DemoRepo implements Repo {
   }
 
   async listPlans(): Promise<PlanRecord[]> {
-    return [...(this.store.plans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    return copy([...(this.store.plans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)));
   }
 
   async createPlan(name: string, body: unknown): Promise<PlanRecord> {
@@ -159,7 +168,7 @@ export class DemoRepo implements Repo {
   }
 
   async listSavingsPlans(): Promise<PlanRecord[]> {
-    return [...(this.store.savingsPlans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    return copy([...(this.store.savingsPlans ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)));
   }
 
   async createSavingsPlan(name: string, body: unknown): Promise<PlanRecord> {
@@ -186,7 +195,7 @@ export class DemoRepo implements Repo {
   }
 
   async listTransactions(): Promise<Transaction[]> {
-    return [...this.store.transactions];
+    return copy(this.store.transactions);
   }
 
   async createTransaction(input: NewTransaction): Promise<Transaction> {
@@ -326,7 +335,7 @@ export class DemoRepo implements Repo {
   }
 
   async listTemplates(): Promise<RecurringTemplate[]> {
-    return [...this.store.templates];
+    return copy(this.store.templates);
   }
 
   async createTemplate(input: NewTemplate): Promise<RecurringTemplate> {
@@ -399,11 +408,11 @@ export class DemoRepo implements Repo {
   }
 
   async listVictvsSessions(): Promise<VictvsSession[]> {
-    return [...this.store.victvsSessions];
+    return copy(this.store.victvsSessions);
   }
 
   async listVictvsPayouts(): Promise<VictvsPayout[]> {
-    return [...this.store.victvsPayouts];
+    return copy(this.store.victvsPayouts);
   }
 
   async createVictvsSessions(inputs: NewVictvsSession[]): Promise<number> {
@@ -508,7 +517,7 @@ export class DemoRepo implements Repo {
   }
 
   async listBudgets(): Promise<Budget[]> {
-    return [...this.store.budgets];
+    return copy(this.store.budgets);
   }
 
   async setBudget(categoryId: string, monthlyLimit: number | null, currency: Currency): Promise<void> {
@@ -520,7 +529,7 @@ export class DemoRepo implements Repo {
   }
 
   async listGoals(): Promise<Goal[]> {
-    return [...this.store.goals];
+    return copy(this.store.goals);
   }
 
   async createGoal(input: { name: string; accountId: string; targetAmount: number; targetDate: string | null }): Promise<Goal> {
@@ -554,7 +563,7 @@ export class DemoRepo implements Repo {
       showQuickAdd: null,
       showRateTicker: null,
     };
-    return { ...defaults, ...(this.store.settings as Partial<UserSettings>) };
+    return copy({ ...defaults, ...(this.store.settings as Partial<UserSettings>) });
   }
 
   async saveUserSettings(patch: Partial<UserSettings>): Promise<void> {
@@ -563,7 +572,7 @@ export class DemoRepo implements Repo {
   }
 
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
-    return [...this.store.snapshots];
+    return copy(this.store.snapshots);
   }
 
   async takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void> {
@@ -574,7 +583,7 @@ export class DemoRepo implements Repo {
   }
 
   async listPurchases(): Promise<Purchase[]> {
-    return [...this.store.purchases];
+    return copy(this.store.purchases);
   }
 
   private createPurchaseTransactions(purchase: Purchase, fxSnapshot: FxSnapshot | null): void {
@@ -639,7 +648,7 @@ export class DemoRepo implements Repo {
   }
 
   async listLoans(): Promise<Loan[]> {
-    return [...this.store.loans];
+    return copy(this.store.loans);
   }
 
   async createLoan(input: NewLoan): Promise<Loan> {
