@@ -485,15 +485,28 @@ function ExportsCard() {
   const [message, setMessage] = useState<string | null>(null);
   const stamp = new Date().toISOString().slice(0, 10);
 
-  async function exportJson() {
-    const backup = await repo.exportAll();
-    downloadFile(`renovator-backup-${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
+  // a backup that's missing rows is worse than none, so a failed read says so
+  // here instead of downloading what it got
+  async function exporting(run: () => Promise<void>) {
+    setMessage(null);
+    try {
+      await run();
+    } catch (err) {
+      setMessage(t("exports.exportFailed", { reason: err instanceof Error ? err.message : String(err) }));
+    }
   }
 
-  async function exportCsv(table: "transactions" | "accounts" | "purchases" | "victvsSessions") {
-    const backup = await repo.exportAll();
-    downloadFile(`renovator-${table}-${stamp}.csv`, toCsv(backup[table] as unknown as Record<string, unknown>[]), "text/csv");
-  }
+  const exportJson = () =>
+    exporting(async () => {
+      const backup = await repo.exportAll();
+      downloadFile(`renovator-backup-${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
+    });
+
+  const exportCsv = (table: "transactions" | "accounts" | "purchases" | "victvsSessions") =>
+    exporting(async () => {
+      const backup = await repo.exportAll();
+      downloadFile(`renovator-${table}-${stamp}.csv`, toCsv(backup[table] as unknown as Record<string, unknown>[]), "text/csv");
+    });
 
   async function restore(file: File) {
     setMessage(null);
@@ -550,8 +563,8 @@ function ExportsCard() {
               ⬆ {t("exports.restoreJson")}
             </Button>
           </div>
-          {message ? <p className="text-xs font-medium">{message}</p> : null}
         </div>
+        {message ? <p role="status" className="text-xs font-medium">{message}</p> : null}
       </div>
     </Card>
   );

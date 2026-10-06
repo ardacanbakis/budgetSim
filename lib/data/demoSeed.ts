@@ -50,6 +50,9 @@ export function buildDemoSeed(): DemoStore {
   const today = todayISO();
   const lastMonth = addMonthsClamped(today, -1);
   const nowIso = new Date().toISOString();
+  // the demo's templates have "always" existed, so auto-complete treats their
+  // dates as ones that arrived under them (see findAutoCompletable)
+  const since = (date: string) => new Date(`${date}T00:00:00`).toISOString();
   const snapshot = { usdPer: FALLBACK_USD_PER, at: nowIso };
 
   const base = { archived: false, paymentAccountId: null, paymentDay: null, createdAt: nowIso };
@@ -138,8 +141,8 @@ export function buildDemoSeed(): DemoStore {
   });
 
   const templates: RecurringTemplate[] = [
-    { id: uuid(), name: "VICTVS retainer", accountId: usdAcc.id, direction: "income", categoryId: cat("VICTVS"), amount: 900, frequency: "monthly", startDate: `${today.slice(0, 7)}-05`, endDate: null, autoComplete: false, loanId: null, createdAt: nowIso },
-    { id: uuid(), name: "Rent", accountId: tryAcc.id, direction: "expense", categoryId: cat("Rent & housing"), amount: 27500, frequency: "monthly", startDate: `${today.slice(0, 7)}-10`, endDate: null, autoComplete: true, loanId: null, createdAt: nowIso },
+    { id: uuid(), name: "VICTVS retainer", accountId: usdAcc.id, direction: "income", categoryId: cat("VICTVS"), amount: 900, frequency: "monthly", startDate: `${today.slice(0, 7)}-05`, endDate: null, autoComplete: false, loanId: null, createdAt: since(`${today.slice(0, 7)}-05`) },
+    { id: uuid(), name: "Rent", accountId: tryAcc.id, direction: "expense", categoryId: cat("Rent & housing"), amount: 27500, frequency: "monthly", startDate: `${today.slice(0, 7)}-10`, endDate: null, autoComplete: true, loanId: null, createdAt: since(`${today.slice(0, 7)}-10`) },
   ];
 
   // Tracked car loan: 800k TRY, 2.79%/mo, 36 months, started 3 months ago.
@@ -158,7 +161,7 @@ export function buildDemoSeed(): DemoStore {
     endDate: schedule.rows[schedule.rows.length - 1].date,
     autoComplete: false,
     loanId,
-    createdAt: nowIso,
+    createdAt: since(schedule.rows[0].date),
   };
   templates.push(loanTemplate);
   const loans: Loan[] = [

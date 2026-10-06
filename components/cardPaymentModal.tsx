@@ -139,7 +139,9 @@ export function CardPaymentModal({
         ) : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button type="submit" variant="primary" disabled={!from || !(toAmount > 0) || createTransfer.isPending}>
+          {/* the rates frozen onto the payment are still loading for a moment
+              after the page opens; until then a tap would do nothing at all */}
+          <Button type="submit" variant="primary" disabled={!from || !rates.data || !(toAmount > 0) || createTransfer.isPending}>
             {t("cards.recordPayment")}
           </Button>
         </div>

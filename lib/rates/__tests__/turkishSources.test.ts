@@ -97,7 +97,24 @@ describe("Truncgil", () => {
     expect(parseTruncgilFx(v3)!.tryPerEur).toBe(45.56);
   });
 
+  // what finance.truncgil.com/api/today.json, the default URL, serves as of
+  // October 2026: the v4 rows nested under "Rates", the date under "Meta_Data"
+  const wrapped = {
+    Meta_Data: { Minutes_Ago: -0.02, Current_Date: "2026-10-06 22:58:05", Update_Date: "2026-10-06 22:58:04" },
+    Rates: {
+      USD: { Buying: 49.1714, Type: "Currency", Selling: 49.1804, Change: 0.07 },
+      EUR: { Buying: 55.3986, Type: "Currency", Selling: 55.4198, Change: 0.41 },
+      GRA: { Selling: 6592.07, Type: "Gold", Name: "GRAMALTIN", Change: 0.77, Buying: 6591.18 },
+    },
+  };
+
+  it("reads gram gold and the lira from the rows nested under Rates", () => {
+    expect(parseTruncgilGold(wrapped)).toEqual({ tryPerGram: 6592.07, asOf: "2026-10-06 22:58:04" });
+    expect(parseTruncgilFx(wrapped)).toEqual({ tryPerUsd: 49.1804, tryPerEur: 55.4198, asOf: "2026-10-06 22:58:04" });
+  });
+
   it("gives back nothing rather than guessing at a shape it doesn't know", () => {
+    expect(parseTruncgilGold({ Rates: { error: "rate limited" } })).toBeNull();
     expect(parseTruncgilGold({ error: "rate limited" })).toBeNull();
     expect(parseTruncgilGold(null)).toBeNull();
     expect(parseTruncgilGold("<html>502</html>")).toBeNull();

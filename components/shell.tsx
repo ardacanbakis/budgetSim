@@ -16,7 +16,9 @@ import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
+import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
+import { isStaleTable } from "@/lib/rates/fallback";
 import { useI18n } from "@/lib/i18n";
 
 const SIDEBAR_KEY = "renovator-sidebar";
@@ -24,57 +26,72 @@ const SIDEBAR_KEY = "renovator-sidebar";
 export { NAV, orderedNav } from "@/components/shell.nav";
 
 /**
- * Runs once per session when data is ready: seed default categories,
- * materialize recurring templates 12 months out, auto-complete due items
- * with today's rates, and take the monthly net-worth snapshot if this
- * month doesn't have one yet. Works identically in demo and Supabase modes.
+ * Runs once per page load, in two steps:
+ *  1. As soon as the session is ready: seed the default categories and
+ *     materialize recurring templates 12 months out. Neither needs rates.
+ *  2. Once that's done and a live rate table is in: auto-complete due items
+ *     and take this month's net-worth snapshot if there isn't one. Both freeze
+ *     the rates they use into history, so a stale table (the static fallback,
+ *     or any currency the server had to fill from it) holds them back. They
+ *     run when fresh rates arrive: a refetch on focus, or every 15 minutes.
+ * Works identically in demo and Supabase modes.
  */
 function Bootstrapper() {
   const { session } = useApp();
   const rates = useRates();
   const queryClient = useQueryClient();
-  const ran = useRef(false);
+  const scheduling = useRef(false);
+  const [scheduled, setScheduled] = useState(false);
+  const settling = useRef(false);
+  const table = rates.data;
 
   useEffect(() => {
-    if (ran.current || session.status !== "ready" || !rates.data) return;
-    ran.current = true;
+    if (scheduling.current || session.status !== "ready") return;
+    scheduling.current = true;
     const repo = session.repo;
-    const table = rates.data;
-    const snapshot = snapshotFromTable(table);
     (async () => {
       try {
         await repo.seedDefaultCategories();
-        const created = await repo.materializeTemplates(12);
-        const completed = await repo.autoCompleteDue(snapshot);
-        if (created || completed) {
+        const created = await repo.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
+        if (created) {
           await queryClient.invalidateQueries({ queryKey: KEYS.transactions });
           await queryClient.invalidateQueries({ queryKey: KEYS.categories });
         }
-        // monthly net-worth snapshot (skipped while on fallback rates — a
-        // stale-rate snapshot would poison the history)
-        const isStale =
-          ("stale" in table && table.stale) || Object.values(table.sources).some((s) => s === "fallback");
-        if (!isStale) {
-          const today = todayISO();
-          const existing = await repo.listSnapshots();
-          if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
-            const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
-            const balances = computeBalances(accounts, transactions);
-            const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
-            await repo.takeSnapshot({
-              snapshotDate: today,
-              balances: Object.fromEntries(balances),
-              usdPer: table.usdPer,
-              totalUsd: total,
-            });
-            await queryClient.invalidateQueries({ queryKey: KEYS.snapshots });
-          }
+      } catch (err) {
+        console.warn("recurring sync failed", err);
+      }
+      // what's already on the ledger can still settle
+      setScheduled(true);
+    })();
+  }, [session, queryClient]);
+
+  useEffect(() => {
+    if (settling.current || !scheduled || session.status !== "ready" || !table || isStaleTable(table)) return;
+    settling.current = true;
+    const repo = session.repo;
+    (async () => {
+      try {
+        const completed = await repo.autoCompleteDue(snapshotFromTable(table));
+        if (completed) await queryClient.invalidateQueries({ queryKey: KEYS.transactions });
+        const today = todayISO();
+        const existing = await repo.listSnapshots();
+        if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
+          const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
+          const balances = computeBalances(accounts, transactions);
+          const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
+          await repo.takeSnapshot({
+            snapshotDate: today,
+            balances: Object.fromEntries(balances),
+            usdPer: table.usdPer,
+            totalUsd: total,
+          });
+          await queryClient.invalidateQueries({ queryKey: KEYS.snapshots });
         }
       } catch (err) {
-        console.warn("bootstrap failed", err);
+        console.warn("auto-complete failed", err);
       }
     })();
-  }, [session, rates.data, queryClient]);
+  }, [scheduled, session, table, queryClient]);
 
   return null;
 }
@@ -177,12 +194,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const showQuickAdd = settings.data?.showQuickAdd ?? true;
   // rate ticker is opt-in (null = hidden)
   const showRateTicker = settings.data?.showRateTicker ?? false;
-  // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
-  const ratesStale = Boolean(
-    rates.data &&
-      (("stale" in rates.data && rates.data.stale) ||
-        Object.values(rates.data.sources).some((s) => s === "fallback"))
-  );
+  const ratesStale = rates.data != null && isStaleTable(rates.data);
 
   return (
     <div className="min-h-screen">

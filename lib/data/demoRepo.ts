@@ -1,5 +1,11 @@
 import { FxSnapshot } from "@/lib/domain/fx";
-import { computeMissingOccurrences, findAutoCompletable } from "@/lib/domain/materialize";
+import {
+  computeMissingOccurrences,
+  findAutoCompletable,
+  MATERIALIZE_MONTHS_AHEAD,
+  planBackfill,
+  rowsReplacedByEdit,
+} from "@/lib/domain/materialize";
 import { sumAmounts } from "@/lib/domain/money";
 import {
   BackupFile,
@@ -12,6 +18,7 @@ import {
   NewTransfer,
   NewVictvsSession,
   Repo,
+  TemplateBackfill,
 } from "./repo";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -338,22 +345,62 @@ export class DemoRepo implements Repo {
     return copy(this.store.templates);
   }
 
-  async createTemplate(input: NewTemplate): Promise<RecurringTemplate> {
+  async createTemplate(input: NewTemplate, backfill?: TemplateBackfill): Promise<RecurringTemplate> {
+    const plan = backfill ? planBackfill(input, backfill.mode, todayISO()) : null;
     const template: RecurringTemplate = {
       id: uuid(),
       loanId: input.loanId ?? null,
       createdAt: new Date().toISOString(),
       ...input,
+      startDate: plan?.startDate ?? input.startDate,
     };
     this.store.templates.push(template);
+    for (const row of plan?.rows ?? []) {
+      const completed = row.status === "completed";
+      this.store.transactions.push({
+        ...this.occurrence(template, row.dueDate, template.createdAt),
+        status: row.status,
+        completedAt: completed ? template.createdAt : null,
+        fxSnapshot: completed ? backfill!.fxSnapshot : null,
+        legacy: row.legacy,
+      });
+    }
     this.save();
     return template;
   }
 
+  /** A template's planned row for one date, as materialization creates it. */
+  private occurrence(template: RecurringTemplate, dueDate: string, now: string): Transaction {
+    return {
+      id: uuid(),
+      accountId: template.accountId,
+      direction: template.direction,
+      categoryId: template.categoryId,
+      amount: template.amount,
+      status: "planned",
+      dueDate,
+      completedAt: null,
+      description: template.name,
+      fxSnapshot: null,
+      transferGroupId: null,
+      transferMarketRate: null,
+      recurringTemplateId: template.id,
+      loanId: template.loanId,
+      victvsPayoutId: null,
+      purchaseId: null,
+      legacy: false,
+      createdAt: now,
+    };
+  }
+
   async updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void> {
     const template = this.store.templates.find((t) => t.id === id);
-    if (template) Object.assign(template, patch);
+    if (!template) return;
+    Object.assign(template, patch);
+    const replaced = new Set(rowsReplacedByEdit(id, template.endDate, this.store.transactions).map((t) => t.id));
+    this.store.transactions = this.store.transactions.filter((t) => !replaced.has(t.id));
     this.save();
+    await this.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
   }
 
   async deleteTemplate(id: string, deletePlanned: boolean): Promise<void> {
@@ -369,28 +416,7 @@ export class DemoRepo implements Repo {
   async materializeTemplates(monthsAhead: number): Promise<number> {
     const missing = computeMissingOccurrences(this.store.templates, this.store.transactions, monthsAhead);
     const now = new Date().toISOString();
-    for (const { template, dueDate } of missing) {
-      this.store.transactions.push({
-        id: uuid(),
-        accountId: template.accountId,
-        direction: template.direction,
-        categoryId: template.categoryId,
-        amount: template.amount,
-        status: "planned",
-        dueDate,
-        completedAt: null,
-        description: template.name,
-        fxSnapshot: null,
-        transferGroupId: null,
-        transferMarketRate: null,
-        recurringTemplateId: template.id,
-        loanId: template.loanId,
-        victvsPayoutId: null,
-        purchaseId: null,
-        legacy: false,
-        createdAt: now,
-      });
-    }
+    for (const { template, dueDate } of missing) this.store.transactions.push(this.occurrence(template, dueDate, now));
     if (missing.length) this.save();
     return missing.length;
   }

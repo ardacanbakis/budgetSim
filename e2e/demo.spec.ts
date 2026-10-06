@@ -70,6 +70,10 @@ test("recurring: a template started in the past backfills its earlier items", as
   const past = new Date(now.getFullYear(), now.getMonth() - 4, 5);
   const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, "0")}-05`;
   await page.locator('input[type="date"]').first().fill(iso);
+  // a start in the past asks what to do with the dates already gone by;
+  // leaving them to confirm is the default
+  await expect(page.getByText(/\d+ past items since|\d+ geçmiş öğe/)).toBeVisible();
+  await expect(page.getByRole("radio", { name: /leave to confirm|onaya bırak/i })).toBeChecked();
   await page.getByRole("button", { name: /^save$|kaydet/i }).click();
   await page.waitForTimeout(700);
 
@@ -89,7 +93,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
     const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-05`;
   };
-  async function addTemplate(name: string, start: string, end: string, auto: boolean) {
+  async function addTemplate(name: string, start: string, end: string, auto: boolean, backfill?: RegExp) {
     await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
     await page.getByLabel(/^name$|^ad$/i).fill(name);
     await page.locator("form").getByRole("button", { name: /^income$|^gelir$/i }).click();
@@ -97,18 +101,19 @@ test("recurring: finished items are labelled, filterable, and the label colour i
     await page.getByLabel(/first date|ilk tarih/i).fill(start);
     await page.getByLabel(/end date|bitiş tarihi/i).fill(end);
     if (auto) await page.getByRole("checkbox").check();
+    if (backfill) await page.getByRole("radio", { name: backfill }).check();
     await page.getByRole("button", { name: /^save$|kaydet/i }).click();
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
 
-  // settled by auto-complete on the next app open → Completed
-  await addTemplate("Finished stipend", monthsAgo(4), monthsAgo(2), true);
+  // its dates are all past and already paid → recorded as history, Completed.
+  // Auto-complete alone no longer settles dates from before an item existed.
+  await addTemplate("Finished stipend", monthsAgo(4), monthsAgo(2), true, /already paid|zaten ödendi/i);
   // opened right after: the form must start blank, not inherit auto-complete
   await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: /^recurring$|düzenli işlemler/i })).toBeVisible();
-  // auto-complete runs in the app-open bootstrap, once rates have arrived
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
 
@@ -123,6 +128,46 @@ test("recurring: finished items are labelled, filterable, and the label colour i
   await page.keyboard.press("Escape");
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toHaveClass(/bg-yellow-100/);
   await page.screenshot({ path: "e2e/screenshots/recurring-completed.png" });
+});
+
+test("recurring: editing an item redoes its upcoming items, one a month", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/recurring");
+
+  // the demo's rent: due on the 10th, auto-completed, 12 months ahead
+  const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
+  await rentCard.getByRole("button", { name: /^edit$|^düzenle$/i }).click();
+  // the edit says up front how much it will redo, and doesn't ask about the
+  // past: that's already in the ledger
+  await expect(page.getByText(/This will update \d+ upcoming items|yaklaşan \d+ öğeyi günceller/)).toBeVisible();
+  await expect(page.getByRole("radio")).toHaveCount(0);
+
+  const month = (n: number) => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  // new amount, moved to the 20th, ending five months on
+  await page.getByLabel(/amount|tutar/i).first().fill("30000");
+  await page.getByLabel(/first date|ilk tarih/i).fill(`${month(0)}-20`);
+  await page.getByLabel(/end date|bitiş tarihi/i).fill(`${month(5)}-20`);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(rentCard.getByText(/30,000/)).toBeVisible();
+
+  const rows = await page.evaluate(() => {
+    const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5") ?? "{}");
+    const rent = store.templates.find((t: { name: string }) => t.name === "Rent");
+    return (store.transactions as { recurringTemplateId: string; dueDate: string; status: string; amount: number }[])
+      .filter((t) => t.recurringTemplateId === rent.id)
+      .map(({ dueDate, status, amount }) => ({ dueDate, status, amount }));
+  });
+  const months = rows.map((r) => r.dueDate.slice(0, 7));
+  // one a month: a rent already paid on the 10th isn't charged again on the 20th
+  expect(new Set(months).size).toBe(months.length);
+  expect(months.every((m) => m <= month(5))).toBe(true);
+  const planned = rows.filter((r) => r.status === "planned");
+  expect(planned.length).toBeGreaterThan(0);
+  expect(planned.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
 });
 
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {

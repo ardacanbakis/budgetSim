@@ -4,10 +4,18 @@ import { useMemo, useState } from "react";
 import { LabelColorSettings } from "@/components/labelColorPicker";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useTemplates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { NewTemplate } from "@/lib/data/repo";
 import { Frequency, RecurringTemplate, TxDirection } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
+import { snapshotFromTable } from "@/lib/domain/fx";
+import {
+  BackfillMode,
+  firstOccurrenceFrom,
+  MATERIALIZE_MONTHS_AHEAD,
+  pastOccurrences,
+  rowsReplacedByEdit,
+} from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
 import { TemplateProgress, TemplateStatus, templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
@@ -19,6 +27,8 @@ type StatusFilter = "all" | TemplateStatus;
 const STATUS_FILTERS: readonly StatusFilter[] = ["all", "active", "notStarted", "toConfirm", "completed"];
 type DirectionFilter = "all" | TxDirection;
 const DIRECTION_FILTERS: readonly DirectionFilter[] = ["all", "income", "expense"];
+
+const BACKFILL_MODES: readonly BackfillMode[] = ["paid", "confirm", "fromToday"];
 
 /** Under "All": what needs a tap first, finished items last. */
 const STATUS_RANK: Record<TemplateStatus, number> = { toConfirm: 0, active: 1, notStarted: 2, completed: 3 };
@@ -34,6 +44,7 @@ export default function RecurringPage() {
   const templates = useTemplates();
   const accounts = useAccounts();
   const transactions = useTransactions();
+  const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
   const [colorsOpen, setColorsOpen] = useState(false);
@@ -54,9 +65,10 @@ export default function RecurringPage() {
 
   const keys = [KEYS.templates, KEYS.transactions];
   const createTemplate = useAppMutation(
-    async (input: NewTemplate) => {
-      await repo.createTemplate(input);
-      await repo.materializeTemplates(12);
+    async (v: { input: NewTemplate; backfill: BackfillMode | null }) => {
+      const fxSnapshot = rates.data ? snapshotFromTable(rates.data) : null;
+      await repo.createTemplate(v.input, v.backfill ? { mode: v.backfill, fxSnapshot } : undefined);
+      await repo.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
     },
     keys
   );
@@ -180,9 +192,9 @@ export default function RecurringPage() {
           setModalOpen(false);
           setEditing(null);
         }}
-        onSave={async (input) => {
+        onSave={async (input, backfill) => {
           if (editing) await updateTemplate.mutateAsync({ id: editing.id, patch: input });
-          else await createTemplate.mutateAsync(input);
+          else await createTemplate.mutateAsync({ input, backfill });
           setModalOpen(false);
           setEditing(null);
         }}
@@ -298,12 +310,15 @@ function TemplateModal({
   open: boolean;
   initial: RecurringTemplate | null;
   onClose: () => void;
-  onSave: (input: NewTemplate) => Promise<void>;
+  /** backfill: what to do with the dates already passed; null when there are none to ask about */
+  onSave: (input: NewTemplate, backfill: BackfillMode | null) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
   const { t } = useI18n();
+  const formatDate = useFormatDate();
   const accounts = useAccounts();
   const categories = useCategories();
+  const transactions = useTransactions();
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
   const [direction, setDirection] = useState<TxDirection>("expense");
@@ -313,6 +328,7 @@ function TemplateModal({
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState("");
   const [autoComplete, setAutoComplete] = useState(false);
+  const [backfill, setBackfill] = useState<BackfillMode>("confirm");
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
 
@@ -331,11 +347,28 @@ function TemplateModal({
     setStartDate(initial?.startDate ?? todayISO());
     setEndDate(initial?.endDate ?? "");
     setAutoComplete(initial?.autoComplete ?? false);
+    setBackfill("confirm");
   }
 
   const active = (accounts.data ?? []).filter((a) => !a.archived);
   const effectiveAccount = accountId || active[0]?.id || "";
   const dirCategories = (categories.data ?? []).filter((c) => c.direction === direction);
+
+  // Only a new item asks about the dates its schedule has already passed: an
+  // existing one has its past in the ledger already.
+  const today = todayISO();
+  const spec = { frequency, startDate, endDate: endDate || null };
+  const past = !initial && startDate ? pastOccurrences(spec, today) : [];
+  const nextDate = past.length ? firstOccurrenceFrom(spec, today) : null;
+  // "start from today" means nothing once the schedule has ended
+  const modes = BACKFILL_MODES.filter((m) => m !== "fromToday" || nextDate != null);
+  const backfillMode = modes.includes(backfill) ? backfill : "confirm";
+  // an edit redoes what's scheduled from today on (see updateTemplate)
+  const replacing = initial ? rowsReplacedByEdit(initial.id, endDate || null, transactions.data ?? [], today).length : 0;
+  const pastLabel =
+    past.length === 1
+      ? t("recurring.pastItemsOne", { date: formatDate(past[0]) })
+      : t("recurring.pastItems", { count: past.length, date: formatDate(past[0]) });
 
   return (
     <Modal open={open} onClose={onClose} title={initial ? t("common.edit") : t("recurring.newTemplate")}>
@@ -356,7 +389,7 @@ function TemplateModal({
               startDate,
               endDate: endDate || null,
               autoComplete,
-            });
+            }, past.length ? backfillMode : null);
           } finally {
             setSaving(false);
           }
@@ -412,6 +445,28 @@ function TemplateModal({
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </Field>
         </div>
+        {past.length ? (
+          <div role="radiogroup" aria-label={pastLabel} className="space-y-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+            <p className="text-sm font-medium">{pastLabel}</p>
+            {modes.map((m) => (
+              <label key={m} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="backfill"
+                  checked={backfillMode === m}
+                  onChange={() => setBackfill(m)}
+                  className="mt-0.5 h-4 w-4 accent-teal-600"
+                />
+                <span>
+                  <span className="block text-sm">{t(`recurring.backfill_${m}`)}</span>
+                  <span className="block text-xs text-zinc-500">
+                    {t(`recurring.backfill_${m}Hint`, { date: nextDate ? formatDate(nextDate) : "" })}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        ) : null}
         <label className="flex items-start gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
           <input type="checkbox" checked={autoComplete} onChange={(e) => setAutoComplete(e.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-600" />
           <span>
@@ -419,6 +474,11 @@ function TemplateModal({
             <span className="block text-xs text-zinc-500">{t("recurring.autoCompleteHint")}</span>
           </span>
         </label>
+        {replacing ? (
+          <p className="text-xs text-zinc-500">
+            {replacing === 1 ? t("recurring.updatesUpcomingOne") : t("recurring.updatesUpcoming", { count: replacing })}
+          </p>
+        ) : null}
         <div className="flex justify-between gap-2 pt-1">
           {onDelete ? (
             <Button type="button" variant="danger" onClick={onDelete}>

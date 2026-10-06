@@ -110,30 +110,41 @@ function asOfOf(payload: Row, row: Row | null): string | null {
 }
 
 /**
- * Truncgil (finance.truncgil.com). Two shapes in the wild:
- *   v4  { "GRA": { "Type": "Gold", "Buying": 4123.45, "Selling": 4125 }, ... }
- *   v3  { "Gram Altın": { "Alış": "4.123,45", "Satış": "4.125,00" }, ... }
- * Both are accepted because which one a deployment gets depends on the URL it
- * was pointed at, and that is an environment variable.
+ * Truncgil (finance.truncgil.com). Three shapes in the wild:
+ *   v4       { "GRA": { "Type": "Gold", "Buying": 4123.45, "Selling": 4125 }, ... }
+ *   wrapped  { "Meta_Data": { "Update_Date": … }, "Rates": { "GRA": { … }, ... } }
+ *   v3       { "Gram Altın": { "Alış": "4.123,45", "Satış": "4.125,00" }, ... }
+ * All are accepted because which one a deployment gets depends on the URL it
+ * was pointed at, and that is an environment variable. The default URL moved
+ * to the wrapped shape while the parser only knew the flat ones, so gold
+ * quietly fell through to the next provider, or to the static fallback.
  */
-export function parseTruncgilGold(payload: unknown): GoldQuote | null {
+function truncgilRows(payload: unknown): { root: Row; rows: Row } | null {
   const root = asRow(payload);
   if (!root) return null;
+  return { root, rows: asRow(root["Rates"]) ?? root };
+}
+
+export function parseTruncgilGold(payload: unknown): GoldQuote | null {
+  const parsed = truncgilRows(payload);
+  if (!parsed) return null;
+  const { root, rows } = parsed;
   const row =
-    asRow(root["GRA"]) ??
-    asRow(root["gram-altin"]) ??
-    asRow(root["Gram Altın"]) ??
-    asRow(root["Gram Altin"]);
+    asRow(rows["GRA"]) ??
+    asRow(rows["gram-altin"]) ??
+    asRow(rows["Gram Altın"]) ??
+    asRow(rows["Gram Altin"]);
   const price = priceOf(row);
   if (!plausibleGram(price)) return null;
   return { tryPerGram: price, asOf: asOfOf(root, row) };
 }
 
 export function parseTruncgilFx(payload: unknown): FxQuote | null {
-  const root = asRow(payload);
-  if (!root) return null;
-  const usdRow = asRow(root["USD"]) ?? asRow(root["Amerikan Doları"]);
-  const eurRow = asRow(root["EUR"]) ?? asRow(root["Euro"]);
+  const parsed = truncgilRows(payload);
+  if (!parsed) return null;
+  const { root, rows } = parsed;
+  const usdRow = asRow(rows["USD"]) ?? asRow(rows["Amerikan Doları"]);
+  const eurRow = asRow(rows["EUR"]) ?? asRow(rows["Euro"]);
   const usd = priceOf(usdRow);
   if (!plausibleUsd(usd)) return null;
   const eur = priceOf(eurRow);

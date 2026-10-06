@@ -2,7 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RateTable } from "@/lib/domain/fx";
-import { FALLBACK_SOURCE, FALLBACK_USD_PER } from "@/lib/rates/fallback";
+import { isStaleTable } from "@/lib/rates/fallback";
+import { loadRateTable } from "@/lib/rates/loadRateTable";
 import { useApp, useRepo } from "./provider";
 
 export const KEYS = {
@@ -93,31 +94,31 @@ export function useSnapshots() {
   return useQuery({ queryKey: KEYS.snapshots, queryFn: () => repo.listSnapshots() });
 }
 
-/** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */
+/**
+ * Live rates from our server (single shared source). A failed refetch keeps
+ * the last good table; the static fallback, flagged stale, only stands in
+ * when none has arrived yet (see loadRateTable).
+ */
 export function useRates() {
   // The chosen providers are part of the identity of the answer: switching
   // gold from Truncgil to GenelPara has to refetch, not hand back the cached
   // numbers from the other one.
   const { ratePrefs } = useApp();
-  return useQuery<RateTable & { stale?: boolean }>({
+  const queryClient = useQueryClient();
+  return useQuery<RateTable>({
     queryKey: [...KEYS.rates, ratePrefs.gold, ratePrefs.fx],
-    queryFn: async () => {
-      try {
+    queryFn: ({ queryKey }) =>
+      loadRateTable(async () => {
         const params = new URLSearchParams({ gold: ratePrefs.gold, fx: ratePrefs.fx });
         const res = await fetch(`/api/rates?${params}`);
         if (!res.ok) throw new Error(`rates ${res.status}`);
         return (await res.json()) as RateTable;
-      } catch {
-        return {
-          usdPer: FALLBACK_USD_PER,
-          fetchedAt: new Date().toISOString(),
-          sources: { USD: FALLBACK_SOURCE },
-          stale: true,
-        };
-      }
-    },
-    staleTime: 5 * 60_000,
-    refetchInterval: 15 * 60_000,
+      }, queryClient.getQueryData<RateTable>(queryKey)),
+    // a stale table holds back auto-complete and the net-worth snapshot (see
+    // the Bootstrapper), so it's retried on the next focus and every minute
+    // rather than sitting there for the usual 5 to 15
+    staleTime: (query) => (query.state.data && isStaleTable(query.state.data) ? 0 : 5 * 60_000),
+    refetchInterval: (query) => (query.state.data && isStaleTable(query.state.data) ? 60_000 : 15 * 60_000),
   });
 }
 

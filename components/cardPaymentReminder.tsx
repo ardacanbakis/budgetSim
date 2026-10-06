@@ -165,7 +165,8 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
             <Button type="button" onClick={() => setPaying(null)}>
               {t("common.cancel")}
             </Button>
-            <Button type="submit" variant="primary" disabled={!from || createTransfer.isPending || Number(shownAmount) <= 0}>
+            {/* waits for the rates it freezes onto the payment, like the card page's form */}
+            <Button type="submit" variant="primary" disabled={!from || !rates.data || createTransfer.isPending || Number(shownAmount) <= 0}>
               {t("common.confirm")}
             </Button>
           </div>
