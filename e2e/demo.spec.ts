@@ -61,7 +61,8 @@ test("recurring: a template started in the past backfills its earlier items", as
   await page.goto("/recurring");
   await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Backfill Salary");
-  await page.getByRole("button", { name: /^income$|gelir/i }).click();
+  // scoped to the form: the page's own filter has an Income button too
+  await page.locator("form").getByRole("button", { name: /^income$|gelir/i }).click();
   await page.getByLabel(/amount|tutar/i).first().fill("2000");
 
   // start four months ago — the already-past months must materialize too
@@ -77,6 +78,51 @@ test("recurring: a template started in the past backfills its earlier items", as
   await page.goto("/transactions");
   await page.waitForTimeout(500);
   await expect(page.getByText(new RegExp(iso)).first()).toBeVisible();
+});
+
+test("recurring: finished items are labelled, filterable, and the label colour is adjustable", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/recurring");
+
+  const monthsAgo = (n: number) => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-05`;
+  };
+  async function addTemplate(name: string, start: string, end: string, auto: boolean) {
+    await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+    await page.getByLabel(/^name$|^ad$/i).fill(name);
+    await page.locator("form").getByRole("button", { name: /^income$|^gelir$/i }).click();
+    await page.getByLabel(/amount|tutar/i).first().fill("1679");
+    await page.getByLabel(/first date|ilk tarih/i).fill(start);
+    await page.getByLabel(/end date|bitiş tarihi/i).fill(end);
+    if (auto) await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+  }
+
+  // settled by auto-complete on the next app open → Completed
+  await addTemplate("Finished stipend", monthsAgo(4), monthsAgo(2), true);
+  // opened right after: the form must start blank, not inherit auto-complete
+  await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /^recurring$|düzenli işlemler/i })).toBeVisible();
+  // auto-complete runs in the app-open bootstrap, once rates have arrived
+  await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
+
+  // the Completed filter shows only the finished item
+  await page.getByRole("group", { name: /^status$|^durum$/i }).getByRole("button", { name: /completed|tamamlandı/i }).click();
+  await expect(page.getByText("Finished stipend", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unconfirmed stipend", { exact: true })).toHaveCount(0);
+
+  // recolour the Completed label to yellow from the inline picker
+  await page.getByRole("button", { name: /label colours|etiket renkleri/i }).click();
+  await page.getByRole("group", { name: /completed label colour|tamamlandı etiket rengi/i }).getByRole("button", { name: /yellow|sarı/i }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toHaveClass(/bg-yellow-100/);
+  await page.screenshot({ path: "e2e/screenshots/recurring-completed.png" });
 });
 
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
@@ -1143,6 +1189,8 @@ test("portfolio: columns, and hiding accounts sitting at zero", async ({ page })
   await page.goto("/accounts");
 
   const rows = page.locator("button").filter({ hasText: /₺|\$|€|₿|g$/ });
+  // count only once the list has rendered — counting straight after goto raced the first render
+  await expect(rows.first()).toBeVisible();
   const all = await rows.count();
   await page.getByText(/Hide( \d+)? empty/).click();
   await page.waitForTimeout(400);
@@ -1184,6 +1232,7 @@ test("cards: a card with nothing running can be retired and brought back", async
   await page.goto("/cards");
 
   // a card still carrying installments offers no way to retire it
+  await expect(page.getByRole("button", { name: /^Record payment$/ }).first()).toBeVisible();
   const cardCount = await page.getByRole("button", { name: /^Record payment$/ }).count();
   expect(cardCount).toBeGreaterThan(0);
 

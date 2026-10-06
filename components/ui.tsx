@@ -217,7 +217,7 @@ export function Badge({
   tone = "zinc",
 }: {
   children: ReactNode;
-  tone?: "zinc" | "green" | "amber" | "red" | "sky";
+  tone?: "zinc" | "green" | "amber" | "red" | "sky" | "teal" | "violet" | "yellow";
 }) {
   const tones = {
     zinc: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
@@ -225,6 +225,9 @@ export function Badge({
     amber: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
     red: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
     sky: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+    teal: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+    violet: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+    yellow: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
   } as const;
   return (
     <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tones[tone])}>
