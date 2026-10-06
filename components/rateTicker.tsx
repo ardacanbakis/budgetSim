@@ -1,6 +1,7 @@
 "use client";
 
 import { useRates } from "@/lib/data/queries";
+import { isStaleTable } from "@/lib/rates/fallback";
 import { buildTickerItems, formatTickerValue, TickerItem } from "@/lib/domain/ticker";
 import { useI18n } from "@/lib/i18n";
 
@@ -18,9 +19,7 @@ export function RateTicker() {
   const items = buildTickerItems(rates.data.usdPer, rates.data.prevUsdPer);
   if (items.length === 0) return null;
 
-  const stale =
-    ("stale" in rates.data && rates.data.stale) ||
-    Object.values(rates.data.sources).some((s) => s === "fallback");
+  const stale = isStaleTable(rates.data);
 
   return (
     <div

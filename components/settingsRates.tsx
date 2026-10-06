@@ -3,6 +3,7 @@
 import { Badge, Card, CardHeader, Field, Select } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { useRates } from "@/lib/data/queries";
+import { isStaleTable } from "@/lib/rates/fallback";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import {
   FX_SOURCES,
@@ -29,7 +30,7 @@ export function RateSourcesCard() {
 
   const table = rates.data;
   const diagnostics = table?.diagnostics ?? [];
-  const stale = Boolean(table && (("stale" in table && table.stale) || Object.values(table.sources).some((s) => s === "fallback")));
+  const stale = table != null && isStaleTable(table);
 
   const label = (id: string) => SOURCE_META[id]?.label ?? id;
 

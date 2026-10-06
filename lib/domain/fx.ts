@@ -23,6 +23,9 @@ export interface RateTable {
    * price stale" has no answer from the outside without this.
    */
   diagnostics?: RateDiagnostic[];
+  /** set by the client when /api/rates couldn't be reached and the static
+   * fallback stands in for the whole table (see lib/rates/fallback.ts) */
+  stale?: boolean;
 }
 
 export interface RateDiagnostic {

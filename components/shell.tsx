@@ -18,6 +18,7 @@ import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
+import { isStaleTable } from "@/lib/rates/fallback";
 import { useI18n } from "@/lib/i18n";
 
 const SIDEBAR_KEY = "renovator-sidebar";
@@ -53,9 +54,7 @@ function Bootstrapper() {
         }
         // monthly net-worth snapshot (skipped while on fallback rates — a
         // stale-rate snapshot would poison the history)
-        const isStale =
-          ("stale" in table && table.stale) || Object.values(table.sources).some((s) => s === "fallback");
-        if (!isStale) {
+        if (!isStaleTable(table)) {
           const today = todayISO();
           const existing = await repo.listSnapshots();
           if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
@@ -178,12 +177,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const showQuickAdd = settings.data?.showQuickAdd ?? true;
   // rate ticker is opt-in (null = hidden)
   const showRateTicker = settings.data?.showRateTicker ?? false;
-  // stale = the whole fetch fell back client-side, or any live source degraded to the static fallback
-  const ratesStale = Boolean(
-    rates.data &&
-      (("stale" in rates.data && rates.data.stale) ||
-        Object.values(rates.data.sources).some((s) => s === "fallback"))
-  );
+  const ratesStale = rates.data != null && isStaleTable(rates.data);
 
   return (
     <div className="min-h-screen">

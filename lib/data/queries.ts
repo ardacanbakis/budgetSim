@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RateTable } from "@/lib/domain/fx";
-import { FALLBACK_SOURCE, FALLBACK_USD_PER } from "@/lib/rates/fallback";
+import { fallbackTable } from "@/lib/rates/fallback";
 import { useApp, useRepo } from "./provider";
 
 export const KEYS = {
@@ -99,7 +99,7 @@ export function useRates() {
   // gold from Truncgil to GenelPara has to refetch, not hand back the cached
   // numbers from the other one.
   const { ratePrefs } = useApp();
-  return useQuery<RateTable & { stale?: boolean }>({
+  return useQuery<RateTable>({
     queryKey: [...KEYS.rates, ratePrefs.gold, ratePrefs.fx],
     queryFn: async () => {
       try {
@@ -108,12 +108,7 @@ export function useRates() {
         if (!res.ok) throw new Error(`rates ${res.status}`);
         return (await res.json()) as RateTable;
       } catch {
-        return {
-          usdPer: FALLBACK_USD_PER,
-          fetchedAt: new Date().toISOString(),
-          sources: { USD: FALLBACK_SOURCE },
-          stale: true,
-        };
+        return fallbackTable();
       }
     },
     staleTime: 5 * 60_000,
