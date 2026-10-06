@@ -570,15 +570,20 @@ export class SupabaseRepo implements Repo {
     const [templates, transactions] = await Promise.all([this.listTemplates(), this.listTransactions()]);
     const due = findAutoCompletable(templates, transactions);
     if (!due.length) return 0;
-    const { error } = await this.db
+    // only rows still planned: between reading the ledger and this update,
+    // another device may have completed one, and its completed_at and rates
+    // should stand rather than be overwritten with ours
+    const { data, error } = await this.db
       .from("transactions")
       .update({ status: "completed", completed_at: new Date().toISOString(), fx_snapshot: fxSnapshot })
       .in(
         "id",
         due.map((t) => t.id)
-      );
+      )
+      .eq("status", "planned")
+      .select("id");
     throwIf(error);
-    return due.length;
+    return data?.length ?? 0;
   }
 
   async listVictvsSessions(): Promise<VictvsSession[]> {
