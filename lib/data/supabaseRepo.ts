@@ -39,6 +39,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
+import { toDbError } from "./errors";
 import { selectAll } from "./paginate";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -165,8 +166,8 @@ const planFromRow = (r: Row): PlanRecord => ({
   updatedAt: r.updated_at,
 });
 
-function throwIf(error: { message: string } | null): void {
-  if (error) throw new Error(error.message);
+function throwIf(error: { message: string; code?: string; details?: string; hint?: string } | null): void {
+  if (error) throw toDbError(error);
 }
 
 /**

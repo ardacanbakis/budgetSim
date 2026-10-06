@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IncompleteReadError, PageFetcher, selectAll } from "../paginate";
+import { IncompleteReadError } from "../errors";
+import { PageFetcher, selectAll } from "../paginate";
 
 type Row = { id: string; n: number };
 
