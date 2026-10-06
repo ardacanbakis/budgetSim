@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RateTable } from "@/lib/domain/fx";
+import { isStaleTable } from "@/lib/rates/fallback";
 import { loadRateTable } from "@/lib/rates/loadRateTable";
 import { useApp, useRepo } from "./provider";
 
@@ -113,8 +114,11 @@ export function useRates() {
         if (!res.ok) throw new Error(`rates ${res.status}`);
         return (await res.json()) as RateTable;
       }, queryClient.getQueryData<RateTable>(queryKey)),
-    staleTime: 5 * 60_000,
-    refetchInterval: 15 * 60_000,
+    // a stale table holds back auto-complete and the net-worth snapshot (see
+    // the Bootstrapper), so it's retried on the next focus and every minute
+    // rather than sitting there for the usual 5 to 15
+    staleTime: (query) => (query.state.data && isStaleTable(query.state.data) ? 0 : 5 * 60_000),
+    refetchInterval: (query) => (query.state.data && isStaleTable(query.state.data) ? 60_000 : 15 * 60_000),
   });
 }
 
