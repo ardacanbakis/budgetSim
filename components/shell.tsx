@@ -16,6 +16,7 @@ import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
+import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
@@ -44,7 +45,7 @@ function Bootstrapper() {
     (async () => {
       try {
         await repo.seedDefaultCategories();
-        const created = await repo.materializeTemplates(12);
+        const created = await repo.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
         const completed = await repo.autoCompleteDue(snapshot);
         if (created || completed) {
           await queryClient.invalidateQueries({ queryKey: KEYS.transactions });

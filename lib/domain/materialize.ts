@@ -1,6 +1,9 @@
 import { Frequency, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { addDays, addMonthsClamped, localDateOf, occurrencesBetween, RecurrenceSpec, todayISO } from "./recurrence";
 
+/** How far ahead recurring items are created, on app open and after an edit. */
+export const MATERIALIZE_MONTHS_AHEAD = 12;
+
 export interface MissingOccurrence {
   template: RecurringTemplate;
   dueDate: string;
@@ -82,6 +85,28 @@ export function findAutoCompletable(
     const since = createdOn.get(t.recurringTemplateId);
     return since != null && t.dueDate >= since;
   });
+}
+
+/**
+ * The rows an edit to a template replaces: its planned items from today on,
+ * and any planned item after its end date, overdue ones included, so a
+ * shortened schedule leaves nothing behind to auto-complete. Completed items
+ * are history and stay as they were; items already due but not yet confirmed
+ * keep what they said when they fell due. SupabaseRepo states the same filter
+ * as a query.
+ */
+export function rowsReplacedByEdit(
+  templateId: string,
+  endDate: string | null,
+  transactions: Transaction[],
+  today: string = todayISO()
+): Transaction[] {
+  return transactions.filter(
+    (t) =>
+      t.recurringTemplateId === templateId &&
+      t.status === "planned" &&
+      (t.dueDate >= today || (endDate != null && t.dueDate > endDate))
+  );
 }
 
 /** What to do with the dates a new template's schedule has already passed. */

@@ -5,6 +5,7 @@ import {
   firstOccurrenceFrom,
   pastOccurrences,
   planBackfill,
+  rowsReplacedByEdit,
 } from "../materialize";
 import { RecurringTemplate, Transaction } from "@/lib/data/types";
 
@@ -152,6 +153,30 @@ describe("findAutoCompletable", () => {
     const late = template({ autoComplete: true, createdAt: "2026-07-10T09:00:00.000Z" });
     const rows = ["2026-03-05", "2026-06-05", "2026-07-05", "2026-07-10", "2026-08-05"].map((d) => tx(d));
     expect(findAutoCompletable([late], rows, "2026-08-05").map((t) => t.dueDate)).toEqual(["2026-07-10", "2026-08-05"]);
+  });
+});
+
+describe("rowsReplacedByEdit", () => {
+  const rows = [
+    tx("2026-08-05", { status: "completed" }),
+    tx("2026-09-05"), // overdue, waiting to be confirmed
+    tx("2026-10-05"), // due today
+    tx("2026-11-05"),
+    tx("2026-12-05", { status: "completed" }), // paid early
+    tx("2026-11-05", { id: "other", recurringTemplateId: "other" }),
+  ];
+  const ids = (picked: Transaction[]) => picked.map((t) => t.dueDate);
+
+  it("picks the planned items from today on", () => {
+    expect(ids(rowsReplacedByEdit("tpl1", null, rows, "2026-10-05"))).toEqual(["2026-10-05", "2026-11-05"]);
+  });
+
+  it("also picks overdue planned items past a shortened end", () => {
+    expect(ids(rowsReplacedByEdit("tpl1", "2026-08-31", rows, "2026-10-05"))).toEqual(["2026-09-05", "2026-10-05", "2026-11-05"]);
+  });
+
+  it("never picks completed items, whatever their date", () => {
+    expect(ids(rowsReplacedByEdit("tpl1", "2026-01-01", rows, "2026-10-05"))).not.toContain("2026-12-05");
   });
 });
 

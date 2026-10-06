@@ -147,3 +147,113 @@ describe("a template whose start date has passed", () => {
     expect(await rowsOf(repo, tpl.id)).toHaveLength(before);
   });
 });
+
+describe("editing a template", () => {
+  /** A monthly item entered on 1 Jul, of which Jul, Aug and Sep have been confirmed by 6 Oct. */
+  async function runningForAQuarter() {
+    const { repo, account } = await freshRepo();
+    setToday("2026-07-01");
+    const tpl = await repo.createTemplate({
+      name: "Rent",
+      accountId: account.id,
+      direction: "expense",
+      categoryId: null,
+      amount: 1000,
+      frequency: "monthly",
+      startDate: "2026-07-15",
+      endDate: "2027-06-15",
+      autoComplete: false,
+    });
+    await openApp(repo);
+    setToday("2026-10-06");
+    for (const row of await rowsOf(repo, tpl.id)) {
+      if (row.dueDate < "2026-10-01") await repo.completeTransaction(row.id, snapshot);
+    }
+    return { repo, account, tpl };
+  }
+
+  const byMonth = (rows: { dueDate: string }[]) => {
+    const counts = new Map<string, number>();
+    for (const r of rows) counts.set(r.dueDate.slice(0, 7), (counts.get(r.dueDate.slice(0, 7)) ?? 0) + 1);
+    return counts;
+  };
+
+  it("amount, start and end together: one row a month, the new amount from today on", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    await repo.updateTemplate(tpl.id, { amount: 1500, startDate: "2026-07-20", endDate: "2027-03-20" });
+    await openApp(repo);
+
+    const rows = await rowsOf(repo, tpl.id);
+    const months = byMonth(rows);
+    expect([...months.keys()]).toEqual([
+      "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02", "2027-03",
+    ]);
+    expect([...months.values()].every((n) => n === 1)).toBe(true);
+    // what was paid stays as it was paid
+    const paid = rows.filter((r) => r.status === "completed");
+    expect(paid.map((r) => [r.dueDate, r.amount])).toEqual([
+      ["2026-07-15", 1000],
+      ["2026-08-15", 1000],
+      ["2026-09-15", 1000],
+    ]);
+    // everything still to come follows the edit
+    const ahead = rows.filter((r) => r.dueDate >= "2026-10-06");
+    expect(ahead.map((r) => r.dueDate)).toEqual(["2026-10-20", "2026-11-20", "2026-12-20", "2027-01-20", "2027-02-20", "2027-03-20"]);
+    expect(ahead.every((r) => r.status === "planned" && r.amount === 1500)).toBe(true);
+  });
+
+  it("the amount alone reaches every upcoming item", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    await repo.updateTemplate(tpl.id, { amount: 1200 });
+
+    const ahead = (await rowsOf(repo, tpl.id)).filter((r) => r.status === "planned");
+    expect(ahead).toHaveLength(9);
+    expect(ahead.every((r) => r.amount === 1200 && r.dueDate.endsWith("-15"))).toBe(true);
+  });
+
+  it("the name, account and category reach upcoming items too", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    const other = await repo.createAccount({ name: "Wise USD", currency: "USD", kind: "fiat", openingBalance: 0 });
+    await repo.updateTemplate(tpl.id, { name: "Rent (new flat)", accountId: other.id, categoryId: "housing" });
+
+    const ahead = (await rowsOf(repo, tpl.id)).filter((r) => r.status === "planned");
+    expect(ahead.every((r) => r.description === "Rent (new flat)" && r.accountId === other.id && r.categoryId === "housing")).toBe(true);
+  });
+
+  it("a shortened end removes the planned items after it, overdue ones included", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    // September is left unconfirmed this time
+    const sep = (await rowsOf(repo, tpl.id)).find((r) => r.dueDate === "2026-09-15")!;
+    await repo.reopenTransaction(sep.id);
+
+    await repo.updateTemplate(tpl.id, { endDate: "2026-08-31" });
+    await openApp(repo);
+
+    const rows = await rowsOf(repo, tpl.id);
+    expect(rows.map((r) => [r.dueDate, r.status])).toEqual([
+      ["2026-07-15", "completed"],
+      ["2026-08-15", "completed"],
+    ]);
+  });
+
+  it("an item already due but not confirmed keeps its amount: only upcoming ones change", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    const sep = (await rowsOf(repo, tpl.id)).find((r) => r.dueDate === "2026-09-15")!;
+    await repo.reopenTransaction(sep.id);
+
+    await repo.updateTemplate(tpl.id, { amount: 1500 });
+    const rows = await rowsOf(repo, tpl.id);
+    expect(rows.find((r) => r.dueDate === "2026-09-15")).toMatchObject({ status: "planned", amount: 1000 });
+    expect(rows.find((r) => r.dueDate === "2026-10-15")).toMatchObject({ status: "planned", amount: 1500 });
+  });
+
+  it("a later end date extends the schedule without doubling anything", async () => {
+    const { repo, tpl } = await runningForAQuarter();
+    await repo.updateTemplate(tpl.id, { endDate: "2027-09-15" });
+    await openApp(repo);
+
+    const months = byMonth(await rowsOf(repo, tpl.id));
+    expect(months.size).toBe(15);
+    expect([...months.values()].every((n) => n === 1)).toBe(true);
+  });
+});

@@ -1,5 +1,11 @@
 import { FxSnapshot } from "@/lib/domain/fx";
-import { computeMissingOccurrences, findAutoCompletable, planBackfill } from "@/lib/domain/materialize";
+import {
+  computeMissingOccurrences,
+  findAutoCompletable,
+  MATERIALIZE_MONTHS_AHEAD,
+  planBackfill,
+  rowsReplacedByEdit,
+} from "@/lib/domain/materialize";
 import { sumAmounts } from "@/lib/domain/money";
 import {
   BackupFile,
@@ -389,8 +395,12 @@ export class DemoRepo implements Repo {
 
   async updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void> {
     const template = this.store.templates.find((t) => t.id === id);
-    if (template) Object.assign(template, patch);
+    if (!template) return;
+    Object.assign(template, patch);
+    const replaced = new Set(rowsReplacedByEdit(id, template.endDate, this.store.transactions).map((t) => t.id));
+    this.store.transactions = this.store.transactions.filter((t) => !replaced.has(t.id));
     this.save();
+    await this.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
   }
 
   async deleteTemplate(id: string, deletePlanned: boolean): Promise<void> {

@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FxSnapshot } from "@/lib/domain/fx";
 import { buildSchedule } from "@/lib/domain/loanSchedule";
-import { computeMissingOccurrences, findAutoCompletable, planBackfill } from "@/lib/domain/materialize";
+import {
+  computeMissingOccurrences,
+  findAutoCompletable,
+  MATERIALIZE_MONTHS_AHEAD,
+  planBackfill,
+} from "@/lib/domain/materialize";
 import {
   BackupFile,
   MarkPaidInput,
@@ -519,8 +524,19 @@ export class SupabaseRepo implements Repo {
     if (patch.startDate != null) row.start_date = patch.startDate;
     if (patch.endDate !== undefined) row.end_date = patch.endDate;
     if (patch.autoComplete != null) row.auto_complete = patch.autoComplete;
-    const { error } = await this.db.from("recurring_templates").update(row).eq("id", id);
+    const { data, error } = await this.db.from("recurring_templates").update(row).eq("id", id).select().single();
     throwIf(error);
+    const endDate = templateFromRow(data!).endDate;
+
+    // rowsReplacedByEdit as a query: planned rows from today on, and any
+    // after the end date
+    const today = todayISO();
+    const planned = this.db.from("transactions").delete().eq("recurring_template_id", id).eq("status", "planned");
+    const { error: deleteError } = await (endDate
+      ? planned.or(`due_date.gte.${today},due_date.gt.${endDate}`)
+      : planned.gte("due_date", today));
+    throwIf(deleteError);
+    await this.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
   }
 
   async deleteTemplate(id: string, deletePlanned: boolean): Promise<void> {

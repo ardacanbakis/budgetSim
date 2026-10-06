@@ -196,6 +196,11 @@ export interface Repo {
    * is settled here as chosen, and "fromToday" moves the start date.
    */
   createTemplate(input: NewTemplate, backfill?: TemplateBackfill): Promise<RecurringTemplate>;
+  /**
+   * Updates the template, then redoes what it has scheduled: the rows
+   * rowsReplacedByEdit picks are deleted and the schedule is materialized
+   * again, so upcoming items follow the edit and none are doubled.
+   */
   updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void>;
   deleteTemplate(id: string, deletePlanned: boolean): Promise<void>;
   /** create missing planned transactions for template occurrences in [template.startDate, today+monthsAhead] */
