@@ -244,6 +244,16 @@ test("errors: a failed recurring sync shows a banner, and retry catches up", asy
   expect(probeRows).toBeGreaterThan(0);
 });
 
+test("auth: leaving the demo goes back to sign-in, and stays there after a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.getByRole("button", { name: /exit demo|demodan çık/i }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(await page.evaluate(() => window.localStorage.getItem("renovator-mode"))).toBeNull();
+  await page.reload();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Currency, isCurrency } from "@/lib/domain/currencies";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase/client";
@@ -28,6 +28,7 @@ import {
   UiVersion,
   versionOf,
 } from "@/lib/ui/style";
+import { AuthIdentity, authChange } from "./authSession";
 import { DemoRepo } from "./demoRepo";
 import { Repo } from "./repo";
 import { SupabaseRepo } from "./supabaseRepo";
@@ -130,6 +131,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ratePrefs, setRatePrefsState] = useState<RatePrefs>(DEFAULT_RATE_PREFS);
   const [density, setDensityState] = useState<Density>(DEFAULT_DENSITY);
   const queryClient = useQueryClient();
+  // who the session belongs to, as last reported; undefined until the first answer
+  const signedIn = useRef<AuthIdentity | undefined>(undefined);
 
   useEffect(() => {
     // deferred: state is initialized from localStorage after hydration
@@ -158,28 +161,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       applyDensity(startingDensity);
     });
 
-    if (window.localStorage.getItem(MODE_KEY) === "demo") {
-      queueMicrotask(() => setSession({ status: "ready", repo: new DemoRepo(), email: null }));
-      return;
-    }
+    const inDemo = () => window.localStorage.getItem(MODE_KEY) === "demo";
+    if (inDemo()) queueMicrotask(() => setSession({ status: "ready", repo: new DemoRepo(), email: null }));
     if (!supabaseConfigured()) {
-      queueMicrotask(() => setSession({ status: "signedOut", supabaseAvailable: false }));
+      if (!inDemo()) queueMicrotask(() => setSession({ status: "signedOut", supabaseAvailable: false }));
       return;
     }
     const supabase = getSupabase();
     const apply = (userId: string | undefined, email: string | null) => {
-      if (userId) {
-        setSession({ status: "ready", repo: new SupabaseRepo(supabase, userId), email });
-      } else {
-        setSession({ status: "signedOut", supabaseAvailable: true });
+      // the demo owns the session until it's exited
+      if (inDemo()) return;
+      const next: AuthIdentity = { userId: userId ?? null, email };
+      const change = authChange(signedIn.current, next);
+      if (change === "none") return;
+      const first = signedIn.current === undefined;
+      signedIn.current = next;
+      if (change === "email") {
+        setSession((s) => (s.status === "ready" ? { ...s, email } : s));
+        return;
       }
+      // someone else's data, or nobody's: nothing loaded so far may stay
+      if (!first) queryClient.clear();
+      setSession(
+        next.userId
+          ? { status: "ready", repo: new SupabaseRepo(supabase, next.userId), email }
+          : { status: "signedOut", supabaseAvailable: true }
+      );
     };
-    supabase.auth.getSession().then(({ data }) => {
-      apply(data.session?.user?.id, data.session?.user?.email ?? null);
-    });
+    if (!inDemo()) {
+      supabase.auth.getSession().then(({ data }) => {
+        apply(data.session?.user?.id, data.session?.user?.email ?? null);
+      });
+    }
+    // Listened to in demo mode too: after "Exit demo" the login page waits for
+    // SIGNED_IN, and without a listener it never arrived until a reload.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       apply(s?.user?.id, s?.user?.email ?? null);
-      queryClient.clear();
     });
     return () => sub.subscription.unsubscribe();
   }, [queryClient]);
@@ -192,7 +209,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     window.localStorage.removeItem(MODE_KEY);
-    if (supabaseConfigured()) await getSupabase().auth.signOut();
+    // recorded first, so the SIGNED_OUT this causes is recognised as handled
+    signedIn.current = { userId: null, email: null };
+    // this device only: the default "global" scope signed every device out
+    if (supabaseConfigured()) await getSupabase().auth.signOut({ scope: "local" });
     queryClient.clear();
     setSession({ status: "signedOut", supabaseAvailable: supabaseConfigured() });
   }, [queryClient]);
