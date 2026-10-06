@@ -1,5 +1,5 @@
 import { RecurringTemplate, Transaction } from "@/lib/data/types";
-import { addMonthsClamped, occurrencesBetween, todayISO } from "./recurrence";
+import { addMonthsClamped, localDateOf, occurrencesBetween, todayISO } from "./recurrence";
 
 export interface MissingOccurrence {
   template: RecurringTemplate;
@@ -37,18 +37,24 @@ export function computeMissingOccurrences(
   return missing;
 }
 
-/** Planned transactions that are due and belong to an auto-complete template. */
+/**
+ * Planned items that are due and belong to an auto-complete template.
+ *
+ * Auto-complete settles dates as they arrive. Items dated before the template
+ * existed never arrived under it: they were backfilled for a schedule entered
+ * late, like a loan already a year in, and posting them all on the next app
+ * open would take a year of payments from the account at once. Those wait for
+ * a tap instead.
+ */
 export function findAutoCompletable(
   templates: RecurringTemplate[],
   transactions: Transaction[],
   today: string = todayISO()
 ): Transaction[] {
-  const autoIds = new Set(templates.filter((t) => t.autoComplete).map((t) => t.id));
-  return transactions.filter(
-    (t) =>
-      t.status === "planned" &&
-      t.recurringTemplateId != null &&
-      autoIds.has(t.recurringTemplateId) &&
-      t.dueDate <= today
-  );
+  const createdOn = new Map(templates.filter((t) => t.autoComplete).map((t) => [t.id, localDateOf(t.createdAt)] as const));
+  return transactions.filter((t) => {
+    if (t.status !== "planned" || t.recurringTemplateId == null || t.dueDate > today) return false;
+    const since = createdOn.get(t.recurringTemplateId);
+    return since != null && t.dueDate >= since;
+  });
 }

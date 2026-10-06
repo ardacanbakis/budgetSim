@@ -66,3 +66,10 @@ export function todayISO(): string {
   const now = new Date();
   return toISODate(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
+
+/** The local calendar day of a timestamp (a created_at), comparable with todayISO(). */
+export function localDateOf(timestamp: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(timestamp)) return timestamp;
+  const at = new Date(timestamp);
+  return toISODate(at.getFullYear(), at.getMonth() + 1, at.getDate());
+}
