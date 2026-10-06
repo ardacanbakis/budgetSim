@@ -33,6 +33,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
+import { selectAll } from "./paginate";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -175,10 +176,20 @@ export class SupabaseRepo implements Repo {
     private userId: string
   ) {}
 
+  /**
+   * Every row of `table` the signed-in user can see, however many: `order`
+   * sorts it, and id breaks ties so pages never overlap (see selectAll).
+   */
+  private all(table: string, order: (q: any) => any = (q) => q): Promise<Row[]> {
+    return selectAll<Row & { id: string }>(table, (from, to, withCount) =>
+      order(this.db.from(table).select("*", withCount ? { count: "exact" } : undefined))
+        .order("id")
+        .range(from, to)
+    );
+  }
+
   async listAccounts(): Promise<Account[]> {
-    const { data, error } = await this.db.from("accounts").select("*").order("created_at");
-    throwIf(error);
-    return (data ?? []).map(accountFromRow);
+    return (await this.all("accounts", (q) => q.order("created_at"))).map(accountFromRow);
   }
 
   async createAccount(input: NewAccount): Promise<Account> {
@@ -220,9 +231,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listCategories(): Promise<Category[]> {
-    const { data, error } = await this.db.from("categories").select("*").order("created_at");
-    throwIf(error);
-    return (data ?? []).map(categoryFromRow);
+    return (await this.all("categories", (q) => q.order("created_at"))).map(categoryFromRow);
   }
 
   async createCategory(input: { name: string; direction: TxDirection; color: string }): Promise<Category> {
@@ -246,12 +255,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listPlans(): Promise<PlanRecord[]> {
-    const { data, error } = await this.db
-      .from("plans")
-      .select("*")
-      .order("updated_at", { ascending: false });
-    throwIf(error);
-    return (data ?? []).map(planFromRow);
+    return (await this.all("plans", (q) => q.order("updated_at", { ascending: false }))).map(planFromRow);
   }
 
   async createPlan(name: string, body: unknown): Promise<PlanRecord> {
@@ -278,12 +282,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listSavingsPlans(): Promise<PlanRecord[]> {
-    const { data, error } = await this.db
-      .from("savings_plans")
-      .select("*")
-      .order("updated_at", { ascending: false });
-    throwIf(error);
-    return (data ?? []).map(planFromRow);
+    return (await this.all("savings_plans", (q) => q.order("updated_at", { ascending: false }))).map(planFromRow);
   }
 
   async createSavingsPlan(name: string, body: unknown): Promise<PlanRecord> {
@@ -310,13 +309,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listTransactions(): Promise<Transaction[]> {
-    const { data, error } = await this.db
-      .from("transactions")
-      .select("*")
-      .order("due_date", { ascending: false })
-      .limit(10000);
-    throwIf(error);
-    return (data ?? []).map(txFromRow);
+    return (await this.all("transactions", (q) => q.order("due_date", { ascending: false }))).map(txFromRow);
   }
 
   private txInsertRow(input: NewTransaction): Row {
@@ -447,9 +440,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listTemplates(): Promise<RecurringTemplate[]> {
-    const { data, error } = await this.db.from("recurring_templates").select("*").order("created_at");
-    throwIf(error);
-    return (data ?? []).map(templateFromRow);
+    return (await this.all("recurring_templates", (q) => q.order("created_at"))).map(templateFromRow);
   }
 
   private templateInsertRow(input: NewTemplate): Row {
@@ -547,21 +538,11 @@ export class SupabaseRepo implements Repo {
   }
 
   async listVictvsSessions(): Promise<VictvsSession[]> {
-    const { data, error } = await this.db
-      .from("victvs_sessions")
-      .select("*")
-      .order("date", { ascending: false });
-    throwIf(error);
-    return (data ?? []).map(sessionFromRow);
+    return (await this.all("victvs_sessions", (q) => q.order("date", { ascending: false }))).map(sessionFromRow);
   }
 
   async listVictvsPayouts(): Promise<VictvsPayout[]> {
-    const { data, error } = await this.db
-      .from("victvs_payouts")
-      .select("*")
-      .order("payment_date", { ascending: false });
-    throwIf(error);
-    return (data ?? []).map(payoutFromRow);
+    return (await this.all("victvs_payouts", (q) => q.order("payment_date", { ascending: false }))).map(payoutFromRow);
   }
 
   async createVictvsSessions(inputs: NewVictvsSession[]): Promise<number> {
@@ -673,9 +654,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listBudgets(): Promise<Budget[]> {
-    const { data, error } = await this.db.from("budgets").select("*");
-    throwIf(error);
-    return (data ?? []).map((r: Row) => ({
+    return (await this.all("budgets")).map((r: Row) => ({
       id: r.id,
       categoryId: r.category_id,
       monthlyLimit: Number(r.monthly_limit),
@@ -699,9 +678,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listGoals(): Promise<Goal[]> {
-    const { data, error } = await this.db.from("goals").select("*").order("created_at");
-    throwIf(error);
-    return (data ?? []).map((r: Row) => ({
+    return (await this.all("goals", (q) => q.order("created_at"))).map((r: Row) => ({
       id: r.id,
       name: r.name,
       accountId: r.account_id,
@@ -783,9 +760,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
-    const { data, error } = await this.db.from("net_worth_snapshots").select("*").order("snapshot_date");
-    throwIf(error);
-    return (data ?? []).map((r: Row) => ({
+    return (await this.all("net_worth_snapshots", (q) => q.order("snapshot_date"))).map((r: Row) => ({
       id: r.id,
       snapshotDate: r.snapshot_date,
       balances: r.balances,
@@ -809,9 +784,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listPurchases(): Promise<Purchase[]> {
-    const { data, error } = await this.db.from("purchases").select("*").order("purchase_date", { ascending: false });
-    throwIf(error);
-    return (data ?? []).map(purchaseFromRow);
+    return (await this.all("purchases", (q) => q.order("purchase_date", { ascending: false }))).map(purchaseFromRow);
   }
 
   private async insertPurchaseTransactions(purchase: Purchase, fxSnapshot: FxSnapshot | null): Promise<void> {
@@ -896,9 +869,7 @@ export class SupabaseRepo implements Repo {
   }
 
   async listLoans(): Promise<Loan[]> {
-    const { data, error } = await this.db.from("loans").select("*").order("created_at");
-    throwIf(error);
-    return (data ?? []).map(loanFromRow);
+    return (await this.all("loans", (q) => q.order("created_at"))).map(loanFromRow);
   }
 
   async createLoan(input: NewLoan): Promise<Loan> {
