@@ -9,7 +9,13 @@ import { NewTemplate } from "@/lib/data/repo";
 import { Frequency, RecurringTemplate, TxDirection } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
-import { BackfillMode, firstOccurrenceFrom, pastOccurrences } from "@/lib/domain/materialize";
+import {
+  BackfillMode,
+  firstOccurrenceFrom,
+  MATERIALIZE_MONTHS_AHEAD,
+  pastOccurrences,
+  rowsReplacedByEdit,
+} from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
 import { TemplateProgress, TemplateStatus, templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
@@ -62,7 +68,7 @@ export default function RecurringPage() {
     async (v: { input: NewTemplate; backfill: BackfillMode | null }) => {
       const fxSnapshot = rates.data ? snapshotFromTable(rates.data) : null;
       await repo.createTemplate(v.input, v.backfill ? { mode: v.backfill, fxSnapshot } : undefined);
-      await repo.materializeTemplates(12);
+      await repo.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
     },
     keys
   );
@@ -312,6 +318,7 @@ function TemplateModal({
   const formatDate = useFormatDate();
   const accounts = useAccounts();
   const categories = useCategories();
+  const transactions = useTransactions();
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
   const [direction, setDirection] = useState<TxDirection>("expense");
@@ -356,6 +363,8 @@ function TemplateModal({
   // "start from today" means nothing once the schedule has ended
   const modes = BACKFILL_MODES.filter((m) => m !== "fromToday" || nextDate != null);
   const backfillMode = modes.includes(backfill) ? backfill : "confirm";
+  // an edit redoes what's scheduled from today on (see updateTemplate)
+  const replacing = initial ? rowsReplacedByEdit(initial.id, endDate || null, transactions.data ?? [], today).length : 0;
   const pastLabel =
     past.length === 1
       ? t("recurring.pastItemsOne", { date: formatDate(past[0]) })
@@ -465,6 +474,11 @@ function TemplateModal({
             <span className="block text-xs text-zinc-500">{t("recurring.autoCompleteHint")}</span>
           </span>
         </label>
+        {replacing ? (
+          <p className="text-xs text-zinc-500">
+            {replacing === 1 ? t("recurring.updatesUpcomingOne") : t("recurring.updatesUpcoming", { count: replacing })}
+          </p>
+        ) : null}
         <div className="flex justify-between gap-2 pt-1">
           {onDelete ? (
             <Button type="button" variant="danger" onClick={onDelete}>

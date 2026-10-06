@@ -130,6 +130,46 @@ test("recurring: finished items are labelled, filterable, and the label colour i
   await page.screenshot({ path: "e2e/screenshots/recurring-completed.png" });
 });
 
+test("recurring: editing an item redoes its upcoming items, one a month", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/recurring");
+
+  // the demo's rent: due on the 10th, auto-completed, 12 months ahead
+  const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
+  await rentCard.getByRole("button", { name: /^edit$|^düzenle$/i }).click();
+  // the edit says up front how much it will redo, and doesn't ask about the
+  // past: that's already in the ledger
+  await expect(page.getByText(/This will update \d+ upcoming items|yaklaşan \d+ öğeyi günceller/)).toBeVisible();
+  await expect(page.getByRole("radio")).toHaveCount(0);
+
+  const month = (n: number) => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  // new amount, moved to the 20th, ending five months on
+  await page.getByLabel(/amount|tutar/i).first().fill("30000");
+  await page.getByLabel(/first date|ilk tarih/i).fill(`${month(0)}-20`);
+  await page.getByLabel(/end date|bitiş tarihi/i).fill(`${month(5)}-20`);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(rentCard.getByText(/30,000/)).toBeVisible();
+
+  const rows = await page.evaluate(() => {
+    const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5") ?? "{}");
+    const rent = store.templates.find((t: { name: string }) => t.name === "Rent");
+    return (store.transactions as { recurringTemplateId: string; dueDate: string; status: string; amount: number }[])
+      .filter((t) => t.recurringTemplateId === rent.id)
+      .map(({ dueDate, status, amount }) => ({ dueDate, status, amount }));
+  });
+  const months = rows.map((r) => r.dueDate.slice(0, 7));
+  // one a month: a rent already paid on the 10th isn't charged again on the 20th
+  expect(new Set(months).size).toBe(months.length);
+  expect(months.every((m) => m <= month(5))).toBe(true);
+  const planned = rows.filter((r) => r.status === "planned");
+  expect(planned.length).toBeGreaterThan(0);
+  expect(planned.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
