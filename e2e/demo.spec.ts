@@ -70,6 +70,10 @@ test("recurring: a template started in the past backfills its earlier items", as
   const past = new Date(now.getFullYear(), now.getMonth() - 4, 5);
   const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, "0")}-05`;
   await page.locator('input[type="date"]').first().fill(iso);
+  // a start in the past asks what to do with the dates already gone by;
+  // leaving them to confirm is the default
+  await expect(page.getByText(/\d+ past items since|\d+ geçmiş öğe/)).toBeVisible();
+  await expect(page.getByRole("radio", { name: /leave to confirm|onaya bırak/i })).toBeChecked();
   await page.getByRole("button", { name: /^save$|kaydet/i }).click();
   await page.waitForTimeout(700);
 
@@ -89,7 +93,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
     const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-05`;
   };
-  async function addTemplate(name: string, start: string, end: string, auto: boolean) {
+  async function addTemplate(name: string, start: string, end: string, auto: boolean, backfill?: RegExp) {
     await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
     await page.getByLabel(/^name$|^ad$/i).fill(name);
     await page.locator("form").getByRole("button", { name: /^income$|^gelir$/i }).click();
@@ -97,18 +101,19 @@ test("recurring: finished items are labelled, filterable, and the label colour i
     await page.getByLabel(/first date|ilk tarih/i).fill(start);
     await page.getByLabel(/end date|bitiş tarihi/i).fill(end);
     if (auto) await page.getByRole("checkbox").check();
+    if (backfill) await page.getByRole("radio", { name: backfill }).check();
     await page.getByRole("button", { name: /^save$|kaydet/i }).click();
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
 
-  // settled by auto-complete on the next app open → Completed
-  await addTemplate("Finished stipend", monthsAgo(4), monthsAgo(2), true);
+  // its dates are all past and already paid → recorded as history, Completed.
+  // Auto-complete alone no longer settles dates from before an item existed.
+  await addTemplate("Finished stipend", monthsAgo(4), monthsAgo(2), true, /already paid|zaten ödendi/i);
   // opened right after: the form must start blank, not inherit auto-complete
   await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: /^recurring$|düzenli işlemler/i })).toBeVisible();
-  // auto-complete runs in the app-open bootstrap, once rates have arrived
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
 
