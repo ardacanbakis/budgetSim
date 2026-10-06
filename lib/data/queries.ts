@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RateTable } from "@/lib/domain/fx";
-import { fallbackTable } from "@/lib/rates/fallback";
+import { loadRateTable } from "@/lib/rates/loadRateTable";
 import { useApp, useRepo } from "./provider";
 
 export const KEYS = {
@@ -93,24 +93,26 @@ export function useSnapshots() {
   return useQuery({ queryKey: KEYS.snapshots, queryFn: () => repo.listSnapshots() });
 }
 
-/** Live rates from our server (single shared source). Falls back to static rates, flagged stale. */
+/**
+ * Live rates from our server (single shared source). A failed refetch keeps
+ * the last good table; the static fallback, flagged stale, only stands in
+ * when none has arrived yet (see loadRateTable).
+ */
 export function useRates() {
   // The chosen providers are part of the identity of the answer: switching
   // gold from Truncgil to GenelPara has to refetch, not hand back the cached
   // numbers from the other one.
   const { ratePrefs } = useApp();
+  const queryClient = useQueryClient();
   return useQuery<RateTable>({
     queryKey: [...KEYS.rates, ratePrefs.gold, ratePrefs.fx],
-    queryFn: async () => {
-      try {
+    queryFn: ({ queryKey }) =>
+      loadRateTable(async () => {
         const params = new URLSearchParams({ gold: ratePrefs.gold, fx: ratePrefs.fx });
         const res = await fetch(`/api/rates?${params}`);
         if (!res.ok) throw new Error(`rates ${res.status}`);
         return (await res.json()) as RateTable;
-      } catch {
-        return fallbackTable();
-      }
-    },
+      }, queryClient.getQueryData<RateTable>(queryKey)),
     staleTime: 5 * 60_000,
     refetchInterval: 15 * 60_000,
   });
