@@ -1,5 +1,5 @@
-import { RecurringTemplate, Transaction } from "@/lib/data/types";
-import { addMonthsClamped, localDateOf, occurrencesBetween, todayISO } from "./recurrence";
+import { Frequency, RecurringTemplate, Transaction } from "@/lib/data/types";
+import { addDays, addMonthsClamped, localDateOf, occurrencesBetween, todayISO } from "./recurrence";
 
 export interface MissingOccurrence {
   template: RecurringTemplate;
@@ -7,15 +7,35 @@ export interface MissingOccurrence {
 }
 
 /**
- * Occurrences in [template.startDate, today + monthsAhead] that have no
- * transaction yet (neither planned nor already completed) for their
- * template+date. Occurrences from the template's start date up to the horizon
- * are all materialized — including ones already in the past — so a template
- * that began before today (e.g. a salary starting March 5 viewed in July)
- * still gets its earlier items instead of only future ones. Past items are
- * created as planned/overdue; auto-complete templates then settle them via
- * findAutoCompletable. Both repos run this same algorithm, so materialization
- * is identical in demo and Supabase modes.
+ * Whether two dates fall in the same slot of a schedule: the same calendar
+ * month for a monthly one, the same year for a yearly one, and within three
+ * days of each other for a weekly one (half the gap between two dates).
+ */
+function samePeriod(frequency: Frequency, a: string, b: string): boolean {
+  if (frequency === "monthly") return a.slice(0, 7) === b.slice(0, 7);
+  if (frequency === "yearly") return a.slice(0, 4) === b.slice(0, 4);
+  const [early, late] = a < b ? [a, b] : [b, a];
+  return addDays(early, 3) >= late;
+}
+
+/**
+ * Occurrences up to today + monthsAhead that still need a planned row.
+ *
+ * A template with no rows yet is filled from its start date, past dates
+ * included, so one that began before today (a salary from March 5 entered in
+ * July) gets its earlier items too. Past items arrive as planned; whether they
+ * then settle is up to findAutoCompletable.
+ *
+ * Once a template has rows, filling only moves forward from the latest one.
+ * The ledger is the record of what was decided: a deleted occurrence ("skip
+ * this month") stays deleted, a moved one doesn't come back on its old date,
+ * and an edit that changes the day or the frequency doesn't fill the past in
+ * again under the new schedule. A date in the same period as that latest row
+ * is skipped too, so moving rent from the 15th to the 20th after paying on the
+ * 15th doesn't charge it twice that month.
+ *
+ * Both repos run this same algorithm, so materialization is identical in demo
+ * and Supabase modes.
  */
 export function computeMissingOccurrences(
   templates: RecurringTemplate[],
@@ -24,14 +44,19 @@ export function computeMissingOccurrences(
   today: string = todayISO()
 ): MissingOccurrence[] {
   const horizon = addMonthsClamped(today, monthsAhead);
-  const existing = new Set<string>();
+  const latest = new Map<string, string>();
   for (const t of transactions) {
-    if (t.recurringTemplateId) existing.add(`${t.recurringTemplateId}|${t.dueDate}`);
+    if (!t.recurringTemplateId) continue;
+    const seen = latest.get(t.recurringTemplateId);
+    if (seen == null || t.dueDate > seen) latest.set(t.recurringTemplateId, t.dueDate);
   }
   const missing: MissingOccurrence[] = [];
   for (const template of templates) {
-    for (const dueDate of occurrencesBetween(template, template.startDate, horizon)) {
-      if (!existing.has(`${template.id}|${dueDate}`)) missing.push({ template, dueDate });
+    const last = latest.get(template.id);
+    const from = last ? addDays(last, 1) : template.startDate;
+    for (const dueDate of occurrencesBetween(template, from, horizon)) {
+      if (last && samePeriod(template.frequency, last, dueDate)) continue;
+      missing.push({ template, dueDate });
     }
   }
   return missing;

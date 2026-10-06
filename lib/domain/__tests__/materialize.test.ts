@@ -45,6 +45,8 @@ function tx(dueDate: string, overrides: Partial<Transaction> = {}): Transaction 
   };
 }
 
+const dates = (missing: { dueDate: string }[]) => missing.map((m) => m.dueDate);
+
 describe("computeMissingOccurrences", () => {
   it("backfills occurrences from the start date, not just from today", () => {
     // template runs Mar 5 → Dec 5; viewed on Jul 10 it must still produce the
@@ -74,6 +76,50 @@ describe("computeMissingOccurrences", () => {
     const missing = computeMissingOccurrences([template()], existing, 12, "2026-07-10");
     expect(missing.map((m) => m.dueDate)).not.toContain("2026-03-05");
     expect(missing[0].dueDate).toBe("2026-04-05");
+  });
+});
+
+describe("computeMissingOccurrences: filling forward", () => {
+  it("only fills after the template's latest row, so a deleted occurrence stays deleted", () => {
+    // May was deleted on purpose ("skip this month")
+    const rows = ["2026-03-05", "2026-04-05", "2026-06-05", "2026-07-05"].map((d) => tx(d));
+    const missing = computeMissingOccurrences([template()], rows, 12, "2026-07-10");
+    expect(dates(missing)).toEqual(["2026-08-05", "2026-09-05", "2026-10-05", "2026-11-05", "2026-12-05"]);
+  });
+
+  it("doesn't bring back an occurrence that was moved a few days", () => {
+    const rows = [tx("2026-03-05"), tx("2026-04-05"), tx("2026-05-08")];
+    const missing = computeMissingOccurrences([template()], rows, 12, "2026-04-20");
+    expect(dates(missing)).not.toContain("2026-05-05");
+    expect(dates(missing)[0]).toBe("2026-06-05");
+  });
+
+  it("doesn't add a second row in a month that already has one when the day changes", () => {
+    // paid on the 15th, then on the 18th the template moves to the 20th
+    const rows = [tx("2026-09-15", { status: "completed" }), tx("2026-10-15", { status: "completed" })];
+    const missing = computeMissingOccurrences([template({ startDate: "2026-09-20", endDate: null })], rows, 2, "2026-10-18");
+    expect(dates(missing)).toEqual(["2026-11-20"]);
+  });
+
+  it("treats a row within three days as the same week for a weekly template", () => {
+    // Monday until now, Thursdays from here on
+    const rows = [tx("2026-10-05")];
+    const weekly = template({ frequency: "weekly", startDate: "2026-10-01", endDate: "2026-10-31" });
+    const missing = computeMissingOccurrences([weekly], rows, 1, "2026-10-06");
+    expect(dates(missing)).toEqual(["2026-10-15", "2026-10-22", "2026-10-29"]);
+  });
+
+  it("treats the calendar year as the period for a yearly template", () => {
+    const rows = [tx("2026-03-01", { status: "completed" })];
+    const yearly = template({ frequency: "yearly", startDate: "2026-06-01", endDate: null });
+    const missing = computeMissingOccurrences([yearly], rows, 24, "2026-04-01");
+    expect(dates(missing)).toEqual(["2027-06-01"]);
+  });
+
+  it("ignores other templates' rows", () => {
+    const rows = [tx("2026-06-05", { recurringTemplateId: "other" })];
+    const missing = computeMissingOccurrences([template({ endDate: "2026-07-05" })], rows, 12, "2026-07-10");
+    expect(dates(missing)).toEqual(["2026-03-05", "2026-04-05", "2026-05-05", "2026-06-05", "2026-07-05"]);
   });
 });
 
