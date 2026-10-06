@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeMissingOccurrences, findAutoCompletable } from "../materialize";
+import {
+  computeMissingOccurrences,
+  findAutoCompletable,
+  firstOccurrenceFrom,
+  pastOccurrences,
+  planBackfill,
+} from "../materialize";
 import { RecurringTemplate, Transaction } from "@/lib/data/types";
 
 function template(overrides: Partial<RecurringTemplate> = {}): RecurringTemplate {
@@ -146,5 +152,54 @@ describe("findAutoCompletable", () => {
     const late = template({ autoComplete: true, createdAt: "2026-07-10T09:00:00.000Z" });
     const rows = ["2026-03-05", "2026-06-05", "2026-07-05", "2026-07-10", "2026-08-05"].map((d) => tx(d));
     expect(findAutoCompletable([late], rows, "2026-08-05").map((t) => t.dueDate)).toEqual(["2026-07-10", "2026-08-05"]);
+  });
+});
+
+describe("backfill", () => {
+  const spec = { frequency: "monthly" as const, startDate: "2026-03-05", endDate: "2026-12-05" };
+
+  it("counts the occurrences before today, not today's", () => {
+    expect(pastOccurrences(spec, "2026-07-05")).toEqual(["2026-03-05", "2026-04-05", "2026-05-05", "2026-06-05"]);
+    expect(pastOccurrences({ ...spec, startDate: "2026-07-05" }, "2026-07-05")).toEqual([]);
+    expect(pastOccurrences({ ...spec, startDate: "2026-09-05" }, "2026-07-05")).toEqual([]);
+  });
+
+  it("finds the first date on or after today, or none once the schedule has ended", () => {
+    expect(firstOccurrenceFrom(spec, "2026-07-05")).toBe("2026-07-05");
+    expect(firstOccurrenceFrom(spec, "2026-07-06")).toBe("2026-08-05");
+    expect(firstOccurrenceFrom(spec, "2026-12-06")).toBeNull();
+    expect(firstOccurrenceFrom({ ...spec, frequency: "yearly", endDate: null }, "2026-03-06")).toBe("2027-03-05");
+  });
+
+  it("already paid: every past date becomes completed history that leaves balances alone", () => {
+    const plan = planBackfill(spec, "paid", "2026-05-20");
+    expect(plan.startDate).toBe("2026-03-05");
+    expect(plan.rows).toEqual([
+      { dueDate: "2026-03-05", status: "completed", legacy: true },
+      { dueDate: "2026-04-05", status: "completed", legacy: true },
+      { dueDate: "2026-05-05", status: "completed", legacy: true },
+    ]);
+  });
+
+  it("leave to confirm: every past date waits as a planned item", () => {
+    const plan = planBackfill(spec, "confirm", "2026-05-20");
+    expect(plan.startDate).toBe("2026-03-05");
+    expect(plan.rows.map((r) => [r.dueDate, r.status, r.legacy])).toEqual([
+      ["2026-03-05", "planned", false],
+      ["2026-04-05", "planned", false],
+      ["2026-05-05", "planned", false],
+    ]);
+  });
+
+  it("start from today: no past rows, and the schedule starts at its next date", () => {
+    expect(planBackfill(spec, "fromToday", "2026-05-20")).toEqual({ startDate: "2026-06-05", rows: [] });
+    // a date that falls today is kept
+    expect(planBackfill(spec, "fromToday", "2026-06-05").startDate).toBe("2026-06-05");
+  });
+
+  it("changes nothing for a schedule that starts today or later", () => {
+    for (const mode of ["paid", "confirm", "fromToday"] as const) {
+      expect(planBackfill({ ...spec, startDate: "2026-09-05" }, mode, "2026-05-20")).toEqual({ startDate: "2026-09-05", rows: [] });
+    }
   });
 });

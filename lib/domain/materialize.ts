@@ -1,5 +1,5 @@
 import { Frequency, RecurringTemplate, Transaction } from "@/lib/data/types";
-import { addDays, addMonthsClamped, localDateOf, occurrencesBetween, todayISO } from "./recurrence";
+import { addDays, addMonthsClamped, localDateOf, occurrencesBetween, RecurrenceSpec, todayISO } from "./recurrence";
 
 export interface MissingOccurrence {
   template: RecurringTemplate;
@@ -82,4 +82,65 @@ export function findAutoCompletable(
     const since = createdOn.get(t.recurringTemplateId);
     return since != null && t.dueDate >= since;
   });
+}
+
+/** What to do with the dates a new template's schedule has already passed. */
+export type BackfillMode =
+  /** they happened and the balances already show it: record them as history */
+  | "paid"
+  /** create them as planned items that wait for a tap */
+  | "confirm"
+  /** leave them out: the schedule starts at its next date */
+  | "fromToday";
+
+export interface BackfillRow {
+  dueDate: string;
+  status: "planned" | "completed";
+  /** true = history that never moves balances (see 0007_legacy.sql) */
+  legacy: boolean;
+}
+
+export interface BackfillPlan {
+  /** the start date to save; only "fromToday" moves it */
+  startDate: string;
+  /** rows to create now, all dated before today */
+  rows: BackfillRow[];
+}
+
+/** A schedule's dates before today: what a template entered late would backfill. */
+export function pastOccurrences(spec: RecurrenceSpec, today: string): string[] {
+  if (spec.startDate >= today) return [];
+  return occurrencesBetween(spec, spec.startDate, addDays(today, -1));
+}
+
+/** A schedule's first date on or after today, or null once it has ended. */
+export function firstOccurrenceFrom(spec: RecurrenceSpec, today: string): string | null {
+  // 13 months reaches the next date of a yearly schedule wherever today falls
+  return occurrencesBetween(spec, today, addMonthsClamped(today, 13))[0] ?? null;
+}
+
+/**
+ * The rows and start date a new template is saved with.
+ *
+ * "fromToday" moves the start date to the next scheduled date, because that
+ * is what keeps the past out: materialization fills a template without rows
+ * from its start date. Monthly and yearly schedules repeat on the start date's
+ * day, so when the next date is a clamped one (Feb 28 for a schedule on the
+ * 31st) the day moves with it. Better a few days early than a missing month.
+ * With no date ahead the schedule has ended and the start stays put; the form
+ * doesn't offer the choice then.
+ */
+export function planBackfill(spec: RecurrenceSpec, mode: BackfillMode, today: string): BackfillPlan {
+  if (mode === "fromToday") {
+    return { startDate: firstOccurrenceFrom(spec, today) ?? spec.startDate, rows: [] };
+  }
+  const paid = mode === "paid";
+  return {
+    startDate: spec.startDate,
+    rows: pastOccurrences(spec, today).map((dueDate) => ({
+      dueDate,
+      status: paid ? ("completed" as const) : ("planned" as const),
+      legacy: paid,
+    })),
+  };
 }

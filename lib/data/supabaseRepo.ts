@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FxSnapshot } from "@/lib/domain/fx";
 import { buildSchedule } from "@/lib/domain/loanSchedule";
-import { computeMissingOccurrences, findAutoCompletable } from "@/lib/domain/materialize";
+import { computeMissingOccurrences, findAutoCompletable, planBackfill } from "@/lib/domain/materialize";
 import {
   BackupFile,
   MarkPaidInput,
@@ -13,6 +13,7 @@ import {
   NewTransfer,
   NewVictvsSession,
   Repo,
+  TemplateBackfill,
 } from "./repo";
 import {
   Account,
@@ -459,14 +460,52 @@ export class SupabaseRepo implements Repo {
     };
   }
 
-  async createTemplate(input: NewTemplate): Promise<RecurringTemplate> {
+  async createTemplate(input: NewTemplate, backfill?: TemplateBackfill): Promise<RecurringTemplate> {
+    const plan = backfill ? planBackfill(input, backfill.mode, todayISO()) : null;
     const { data, error } = await this.db
       .from("recurring_templates")
-      .insert(this.templateInsertRow(input))
+      .insert(this.templateInsertRow({ ...input, startDate: plan?.startDate ?? input.startDate }))
       .select()
       .single();
     throwIf(error);
-    return templateFromRow(data!);
+    const template = templateFromRow(data!);
+    if (plan?.rows.length) {
+      const now = new Date().toISOString();
+      const rows = plan.rows.map((row) => {
+        const completed = row.status === "completed";
+        return {
+          ...this.occurrenceInsertRow(template, row.dueDate),
+          status: row.status,
+          completed_at: completed ? now : null,
+          fx_snapshot: completed ? backfill!.fxSnapshot : null,
+          legacy: row.legacy,
+        };
+      });
+      // an upsert, not an insert: another tab opening the app in between may
+      // already have materialized some of these dates as planned rows, and
+      // the choice made here should win over them
+      const { error: rowsError } = await this.db
+        .from("transactions")
+        .upsert(rows, { onConflict: "user_id,recurring_template_id,due_date" });
+      throwIf(rowsError);
+    }
+    return template;
+  }
+
+  /** A template's planned row for one date, as materialization creates it. */
+  private occurrenceInsertRow(template: RecurringTemplate, dueDate: string): Row {
+    return {
+      user_id: this.userId,
+      account_id: template.accountId,
+      direction: template.direction,
+      category_id: template.categoryId,
+      amount: template.amount,
+      status: "planned",
+      due_date: dueDate,
+      description: template.name,
+      recurring_template_id: template.id,
+      loan_id: template.loanId,
+    };
   }
 
   async updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void> {
@@ -501,18 +540,7 @@ export class SupabaseRepo implements Repo {
     const [templates, transactions] = await Promise.all([this.listTemplates(), this.listTransactions()]);
     const missing = computeMissingOccurrences(templates, transactions, monthsAhead);
     if (!missing.length) return 0;
-    const rows = missing.map(({ template, dueDate }) => ({
-      user_id: this.userId,
-      account_id: template.accountId,
-      direction: template.direction,
-      category_id: template.categoryId,
-      amount: template.amount,
-      status: "planned",
-      due_date: dueDate,
-      description: template.name,
-      recurring_template_id: template.id,
-      loan_id: template.loanId,
-    }));
+    const rows = missing.map(({ template, dueDate }) => this.occurrenceInsertRow(template, dueDate));
     // ignoreDuplicates + the template_due unique index make concurrent runs
     // (second tab, double bootstrap) race-safe: the loser inserts nothing
     const { error } = await this.db

@@ -1,5 +1,6 @@
 import { Currency } from "@/lib/domain/currencies";
 import { FxSnapshot } from "@/lib/domain/fx";
+import { BackfillMode } from "@/lib/domain/materialize";
 import {
   Account,
   AccountKind,
@@ -82,6 +83,13 @@ export interface NewTemplate {
   endDate: string | null;
   autoComplete: boolean;
   loanId?: string | null;
+}
+
+/** How a new template treats the dates its schedule has already passed (see planBackfill). */
+export interface TemplateBackfill {
+  mode: BackfillMode;
+  /** rates frozen onto the rows "paid" records as completed */
+  fxSnapshot: FxSnapshot | null;
 }
 
 export interface NewVictvsSession {
@@ -182,7 +190,12 @@ export interface Repo {
   createTransfer(input: NewTransfer): Promise<void>;
 
   listTemplates(): Promise<RecurringTemplate[]>;
-  createTemplate(input: NewTemplate): Promise<RecurringTemplate>;
+  /**
+   * Without `backfill` the past is left to materializeTemplates, which creates
+   * it as planned items (how a loan's own template starts). With it, the past
+   * is settled here as chosen, and "fromToday" moves the start date.
+   */
+  createTemplate(input: NewTemplate, backfill?: TemplateBackfill): Promise<RecurringTemplate>;
   updateTemplate(id: string, patch: Partial<NewTemplate>): Promise<void>;
   deleteTemplate(id: string, deletePlanned: boolean): Promise<void>;
   /** create missing planned transactions for template occurrences in [template.startDate, today+monthsAhead] */
