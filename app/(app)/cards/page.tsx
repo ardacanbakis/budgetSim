@@ -257,7 +257,13 @@ export default function PurchasesPage() {
                     {card.name}
                   </td>
                   <td className="px-3 py-1.5 text-right tnum" data-label={t("purchases.postedDebt")}>
-                    {formatAmount(debt, card.currency, locale)}
+                    {debt >= 0 ? (
+                      formatAmount(debt, card.currency, locale)
+                    ) : (
+                      <span className="text-emerald-600" title={t("cards.inCreditHint")}>
+                        {t("cards.inCredit", { amount: formatAmount(-debt, card.currency, locale) })}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-1.5 text-right tnum text-zinc-500" data-label={t("cards.colScheduled")}>
                     {formatAmount(standing?.scheduled ?? 0, card.currency, locale)}
@@ -323,9 +329,16 @@ export default function PurchasesPage() {
               title={
                 <span className="flex flex-wrap items-center gap-2">
                   {card.name}
-                  <Badge tone="red">
-                    {t("purchases.postedDebt")}: {formatAmount(-debt, card.currency, locale)}
-                  </Badge>
+                  {/* more paid in than the app has seen spent: say so, rather than a negative debt */}
+                  {debt > 0 ? (
+                    <span title={t("cards.inCreditHint")}>
+                      <Badge tone="green">{t("cards.inCredit", { amount: formatAmount(debt, card.currency, locale) })}</Badge>
+                    </span>
+                  ) : (
+                    <Badge tone="red">
+                      {t("purchases.postedDebt")}: {formatAmount(-debt, card.currency, locale)}
+                    </Badge>
+                  )}
                   {upcoming > 0 ? (
                     <Badge tone="amber">
                       {t("purchases.upcomingInstallments")}: {formatAmount(upcoming, card.currency, locale)}

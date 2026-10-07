@@ -446,7 +446,8 @@ export function AccountModal({
     setInitialized(targetKey);
     setName(initial?.name ?? "");
     setCurrency(initial?.currency ?? "TRY");
-    setOpening(String(initial?.openingBalance ?? 0));
+    // a card's opening balance is shown as the debt it stands for: what you owed
+    setOpening(String(initial?.kind === "credit_card" ? -initial.openingBalance || 0 : (initial?.openingBalance ?? 0)));
     setIsCard(initial?.kind === "credit_card");
     setPaymentAccountId(initial?.paymentAccountId ?? "");
     setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
@@ -469,11 +470,13 @@ export function AccountModal({
           try {
             const card = fiat && isCard;
             const day = Number(paymentDay);
+            const entered = Number(opening) || 0;
             await onSave({
               name,
               currency,
               kind: card ? "credit_card" : CURRENCY_META[currency].kind,
-              openingBalance: Number(opening) || 0,
+              // card debt is a negative balance; the field asks for it as owed
+              openingBalance: card ? -entered || 0 : entered,
               paymentAccountId: card ? paymentAccountId || null : null,
               paymentDay: card && day >= 1 && day <= 31 ? day : null,
               creditLimit: card && Number(creditLimit) > 0 ? Number(creditLimit) : null,
@@ -542,7 +545,10 @@ export function AccountModal({
             </Field>
           </div>
         ) : null}
-        <Field label={fiat && isCard ? `${t("accounts.openingBalance")} (0 = ${t("common.none")})` : t("accounts.openingBalance")}>
+        <Field
+          label={fiat && isCard ? t("accounts.cardStartingDebt") : t("accounts.openingBalance")}
+          hint={fiat && isCard ? t("accounts.cardStartingDebtHint") : undefined}
+        >
           <Input
             type="number"
             step="any"

@@ -254,6 +254,32 @@ test("auth: leaving the demo goes back to sign-in, and stays there after a reloa
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("cards: the starting debt is entered as owed, and a card in credit says so", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
+  await page.getByLabel(/^name$|^ad$/i).fill("CC Test");
+  await page.getByRole("button", { name: /^💳 (credit card|kredi kartı)$/i }).click();
+  await page.getByLabel(/debt when you started tracking|takibe başladığındaki borç/i).fill("8974.79");
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+
+  await page.goto("/cards");
+  // the card's name and its badges share one heading
+  const card = page.getByRole("heading", { name: /^CC Test/ });
+  await expect(card).toContainText(/Posted debt: ₺8,974\.79|İşlenen borç/);
+
+  // more paid in than the app has seen spent: shown as credit, not a negative debt
+  await page.evaluate(() => {
+    const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5")!);
+    store.accounts.find((a: { name: string }) => a.name === "CC Test").openingBalance = 5785.91;
+    window.localStorage.setItem("renovator-demo-v5", JSON.stringify(store));
+  });
+  await page.reload();
+  await expect(card).toContainText(/In credit: ₺5,785\.91|Kart alacakta/);
+  await expect(card).not.toContainText("-5,785");
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
