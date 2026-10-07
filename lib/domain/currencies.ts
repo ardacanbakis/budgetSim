@@ -27,10 +27,13 @@ export function isCurrency(value: string): value is Currency {
 /** Format an amount in its own currency, e.g. "₺1.234,56", "$1,234.56", "0.05000000 ₿", "20.00 g" */
 export function formatAmount(amount: number, currency: Currency, locale: string = "en"): string {
   const meta = CURRENCY_META[currency];
+  // Intl prints -0, and anything that rounds to it, as "-0.00": a card with no
+  // debt showed "Posted debt: ₺-0.00"
+  const shown = Math.abs(amount) < 0.5 / 10 ** meta.decimals ? 0 : amount;
   const formatted = new Intl.NumberFormat(locale === "tr" ? "tr-TR" : "en-US", {
     minimumFractionDigits: Math.min(meta.decimals, 2),
     maximumFractionDigits: meta.decimals,
-  }).format(amount);
+  }).format(shown);
   if (currency === "BTC") return `${formatted} ${meta.symbol}`;
   if (currency === "XAU_G") return `${formatted} g`;
   return `${meta.symbol}${formatted}`;
