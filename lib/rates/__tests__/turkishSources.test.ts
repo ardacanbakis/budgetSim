@@ -5,6 +5,7 @@ import {
   parseGenelParaGold,
   parseTruncgilFx,
   parseTruncgilGold,
+  parseTruncgilGoldPrices,
   parseTurkishNumber,
   plausibleGram,
 } from "../turkishSources";
@@ -75,20 +76,20 @@ describe("Truncgil", () => {
   };
 
   it("reads gram gold from the v4 shape", () => {
-    expect(parseTruncgilGold(v4)).toEqual({ tryPerGram: 4125.6, asOf: "2026-09-13 16:45:02" });
+    expect(parseTruncgilGold(v4)).toEqual({ tryPerGram: 4118.2, asOf: "2026-09-13 16:45:02" });
   });
 
   it("reads gram gold from the older Turkish-keyed shape", () => {
-    expect(parseTruncgilGold(v3)).toEqual({ tryPerGram: 4125.6, asOf: "13.09.2026 16:45:02" });
+    expect(parseTruncgilGold(v3)).toEqual({ tryPerGram: 4118.2, asOf: "13.09.2026 16:45:02" });
   });
 
-  it("prefers the selling price, which is what you'd actually pay", () => {
-    expect(parseTruncgilGold(v4)!.tryPerGram).toBe(4125.6);
-    expect(parseTruncgilGold(v4)!.tryPerGram).not.toBe(4118.2);
+  it("values gold at the buying price, what a dealer pays you for it", () => {
+    expect(parseTruncgilGold(v4)!.tryPerGram).toBe(4118.2);
+    expect(parseTruncgilGold(v4)!.tryPerGram).not.toBe(4125.6);
   });
 
-  it("falls back to buying when only that is quoted", () => {
-    expect(parseTruncgilGold({ GRA: { Buying: 4118.2 } })!.tryPerGram).toBe(4118.2);
+  it("falls back to selling when only that is quoted", () => {
+    expect(parseTruncgilGold({ GRA: { Selling: 4125.6 } })!.tryPerGram).toBe(4125.6);
   });
 
   it("reads the lira from both shapes", () => {
@@ -109,8 +110,33 @@ describe("Truncgil", () => {
   };
 
   it("reads gram gold and the lira from the rows nested under Rates", () => {
-    expect(parseTruncgilGold(wrapped)).toEqual({ tryPerGram: 6592.07, asOf: "2026-10-06 22:58:04" });
+    expect(parseTruncgilGold(wrapped)).toEqual({ tryPerGram: 6591.18, asOf: "2026-10-06 22:58:04" });
     expect(parseTruncgilFx(wrapped)).toEqual({ tryPerUsd: 49.1804, tryPerEur: 55.4198, asOf: "2026-10-06 22:58:04" });
+  });
+
+  it("reads every gold type's buying price, coins by the piece and ayar gold by the gram", () => {
+    const feed = {
+      Meta_Data: { Update_Date: "2026-10-06 22:58:04" },
+      Rates: {
+        GRA: { Buying: 6477.8, Selling: 6478.78 },
+        HAS: { Buying: 6445.41, Selling: 6446.39 },
+        YIA: { Buying: 5932.52, Selling: 5942.75, Name: "22AYARBILEZIK" },
+        CEYREKALTIN: { Buying: 10407.93, Selling: 10653.94 },
+        TAMALTIN: { Buying: 41631.71, Selling: 42485.44 },
+        BESLIALTIN: { Buying: 210760.54, Selling: 215033.68 },
+        ONS: { Buying: 0, Selling: 0 },
+      },
+    };
+    expect(parseTruncgilGoldPrices(feed)).toEqual({
+      gram: 6477.8,
+      has: 6445.41,
+      ayar22: 5932.52,
+      ceyrek: 10407.93,
+      tam: 41631.71,
+      besli: 210760.54,
+    });
+    expect(parseTruncgilGoldPrices({ Rates: { CEYREKALTIN: { Buying: 0 } } })).toEqual({});
+    expect(parseTruncgilGoldPrices(null)).toEqual({});
   });
 
   it("gives back nothing rather than guessing at a shape it doesn't know", () => {
@@ -132,8 +158,8 @@ describe("GenelPara", () => {
     EUR: { alis: "45.4000", satis: "45.5600", degisim: "-0.04" },
   };
 
-  it("reads gram gold from the GA row", () => {
-    expect(parseGenelParaGold(gold)).toEqual({ tryPerGram: 4125.6, asOf: "13.09.2026 16:45" });
+  it("reads gram gold from the GA row, at the buying price", () => {
+    expect(parseGenelParaGold(gold)).toEqual({ tryPerGram: 4118.2, asOf: "13.09.2026 16:45" });
   });
 
   it("reads the lira and the euro", () => {
@@ -164,8 +190,8 @@ describe("CollectAPI", () => {
     ],
   };
 
-  it("picks the gram row out of the list", () => {
-    expect(parseCollectApiGold(payload)).toEqual({ tryPerGram: 4125.6, asOf: null });
+  it("picks the gram row out of the list, at the buying price", () => {
+    expect(parseCollectApiGold(payload)).toEqual({ tryPerGram: 4118.2, asOf: null });
   });
 
   it("matches the Turkish name case-insensitively", () => {

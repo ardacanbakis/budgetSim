@@ -13,6 +13,8 @@
  * fetching is kept somewhere else.
  */
 
+import { GOLD_META, GOLD_TYPES, GoldPrices } from "@/lib/domain/gold";
+
 export interface GoldQuote {
   /** price of one gram of gold, in TRY */
   tryPerGram: number;
@@ -62,6 +64,8 @@ export function parseTurkishNumber(value: unknown): number | null {
 
 /** A gram price this far outside the plausible band is a parse error, not a rally. */
 const MIN_GRAM_TRY = 100;
+/** a beşli is five tam: generous headroom over that */
+const MAX_COIN_TRY = 100_000_000;
 const MAX_GRAM_TRY = 1_000_000;
 
 export function plausibleGram(n: number | null): n is number {
@@ -96,6 +100,15 @@ const BUY_KEYS = ["Buying", "alis", "Alış", "Alis", "buying", "buy"];
 
 function priceOf(row: Row | null): number | null {
   return pickNumber(row, SELL_KEYS) ?? pickNumber(row, BUY_KEYS);
+}
+
+/**
+ * Gold is valued at the buying price (alış): what a dealer pays you for it
+ * today, which is what the gold you hold is actually worth. Selling stands in
+ * when that's all there is.
+ */
+function bidOf(row: Row | null): number | null {
+  return pickNumber(row, BUY_KEYS) ?? pickNumber(row, SELL_KEYS);
 }
 
 function asOfOf(payload: Row, row: Row | null): string | null {
@@ -134,7 +147,7 @@ export function parseTruncgilGold(payload: unknown): GoldQuote | null {
     asRow(rows["gram-altin"]) ??
     asRow(rows["Gram Altın"]) ??
     asRow(rows["Gram Altin"]);
-  const price = priceOf(row);
+  const price = bidOf(row);
   if (!plausibleGram(price)) return null;
   return { tryPerGram: price, asOf: asOfOf(root, row) };
 }
@@ -163,7 +176,7 @@ export function parseGenelParaGold(payload: unknown): GoldQuote | null {
   const root = asRow(payload);
   if (!root) return null;
   const row = asRow(root["GA"]) ?? asRow(root["gram"]) ?? asRow(root["gramaltin"]);
-  const price = priceOf(row);
+  const price = bidOf(row);
   if (!plausibleGram(price)) return null;
   return { tryPerGram: price, asOf: asOfOf(root, row) };
 }
@@ -185,7 +198,23 @@ export function parseCollectApiGold(payload: unknown): GoldQuote | null {
   const gram = list
     .map(asRow)
     .find((r) => typeof r?.["name"] === "string" && (r["name"] as string).toLocaleLowerCase("tr").includes("gram altın"));
-  const price = priceOf(gram ?? null);
+  const price = bidOf(gram ?? null);
   if (!plausibleGram(price)) return null;
   return { tryPerGram: price, asOf: null };
+}
+
+/**
+ * Every gold type Truncgil quotes, at the buying price: gram, has and ayar
+ * gold per gram, coins per piece (see lib/domain/gold.ts). Types it doesn't
+ * quote, or quotes as zero, are left out.
+ */
+export function parseTruncgilGoldPrices(payload: unknown): GoldPrices {
+  const parsed = truncgilRows(payload);
+  const prices: GoldPrices = {};
+  if (!parsed) return prices;
+  for (const type of GOLD_TYPES) {
+    const price = bidOf(asRow(parsed.rows[GOLD_META[type].truncgil]));
+    if (price != null && price >= MIN_GRAM_TRY && price <= MAX_COIN_TRY) prices[type] = price;
+  }
+  return prices;
 }

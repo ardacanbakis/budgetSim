@@ -26,6 +26,9 @@ export interface RateTable {
   /** set by the client when /api/rates couldn't be reached and the static
    * fallback stands in for the whole table (see lib/rates/fallback.ts) */
   stale?: boolean;
+  /** every gold type's buying price in TRY per unit, for gold held as coins
+   * or bilezik (see lib/domain/gold.ts); absent when it couldn't be fetched */
+  goldTry?: import("./gold").GoldPrices;
 }
 
 export interface RateDiagnostic {
