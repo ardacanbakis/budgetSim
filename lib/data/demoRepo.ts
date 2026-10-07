@@ -252,24 +252,32 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
-  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
+  /** the row, and the other leg of its transfer if it's one: the two move together */
+  private withLegs(id: string): Transaction[] {
     const tx = this.store.transactions.find((t) => t.id === id);
-    if (!tx) return;
-    tx.status = "completed";
-    tx.completedAt = new Date().toISOString();
-    tx.fxSnapshot = fxSnapshot;
-    if (amount != null) tx.amount = amount;
-    if (legacy != null) tx.legacy = legacy;
+    if (!tx) return [];
+    return tx.transferGroupId ? this.store.transactions.filter((t) => t.transferGroupId === tx.transferGroupId) : [tx];
+  }
+
+  async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
+    const now = new Date().toISOString();
+    for (const tx of this.withLegs(id)) {
+      tx.status = "completed";
+      tx.completedAt = now;
+      tx.fxSnapshot = fxSnapshot;
+      if (amount != null && tx.id === id) tx.amount = amount;
+      if (legacy != null) tx.legacy = legacy;
+    }
     this.save();
   }
 
   async reopenTransaction(id: string): Promise<void> {
-    const tx = this.store.transactions.find((t) => t.id === id);
-    if (!tx) return;
-    tx.status = "planned";
-    tx.completedAt = null;
-    tx.fxSnapshot = null;
-    tx.legacy = false;
+    for (const tx of this.withLegs(id)) {
+      tx.status = "planned";
+      tx.completedAt = null;
+      tx.fxSnapshot = null;
+      tx.legacy = false;
+    }
     this.save();
   }
 

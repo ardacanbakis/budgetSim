@@ -178,9 +178,13 @@ export interface Repo {
     id: string,
     patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>
   ): Promise<void>;
-  /** planned → completed, capturing the FX snapshot and optional final amount; legacy = don't touch balances */
+  /**
+   * planned → completed, capturing the FX snapshot and optional final amount;
+   * legacy = don't touch balances. Both legs of a transfer complete together;
+   * the amount applies to the leg given.
+   */
   completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void>;
-  /** completed → planned (undo) */
+  /** completed → planned (undo), both legs of a transfer together */
   reopenTransaction(id: string): Promise<void>;
   /** flip the legacy flag on any transaction (instantly in/excludes it from balances) */
   setTransactionLegacy(id: string, legacy: boolean): Promise<void>;

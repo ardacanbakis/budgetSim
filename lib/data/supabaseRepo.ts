@@ -368,24 +368,36 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  /**
+   * Updates a row, and the other leg of its transfer if it's one. Completing a
+   * scheduled transfer from the ledger used to settle only the leg you tapped,
+   * so the money left one account and never arrived in the other.
+   */
+  private async updateWithLegs(id: string, row: Row): Promise<void> {
+    const { data, error: readError } = await this.db.from("transactions").select("transfer_group_id").eq("id", id).single();
+    throwIf(readError);
+    const update = this.db.from("transactions").update(row);
+    const { error } = await (data?.transfer_group_id ? update.eq("transfer_group_id", data.transfer_group_id) : update.eq("id", id));
+    throwIf(error);
+  }
+
   async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
     const row: Row = {
       status: "completed",
       completed_at: new Date().toISOString(),
       fx_snapshot: fxSnapshot,
     };
-    if (amount != null) row.amount = amount;
     if (legacy != null) row.legacy = legacy;
-    const { error } = await this.db.from("transactions").update(row).eq("id", id);
-    throwIf(error);
+    // a changed amount belongs to the leg it was changed on
+    if (amount != null) {
+      const { error } = await this.db.from("transactions").update({ amount }).eq("id", id);
+      throwIf(error);
+    }
+    await this.updateWithLegs(id, row);
   }
 
   async reopenTransaction(id: string): Promise<void> {
-    const { error } = await this.db
-      .from("transactions")
-      .update({ status: "planned", completed_at: null, fx_snapshot: null, legacy: false })
-      .eq("id", id);
-    throwIf(error);
+    await this.updateWithLegs(id, { status: "planned", completed_at: null, fx_snapshot: null, legacy: false });
   }
 
   async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
