@@ -14,7 +14,7 @@ import { TransferModal } from "@/components/transferModal";
 import { describeError, ErrorDescription } from "@/lib/data/errors";
 import { useApp } from "@/lib/data/provider";
 import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
-import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
+import { netWorthNow } from "@/lib/domain/cards";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
@@ -90,8 +90,7 @@ function Bootstrapper() {
         const existing = await repo.listSnapshots();
         if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
           const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
-          const balances = computeBalances(accounts, transactions);
-          const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
+          const { total, balances } = netWorthNow({ accounts, transactions, usdPer: table.usdPer, display: "USD", today });
           await repo.takeSnapshot({
             snapshotDate: today,
             balances: Object.fromEntries(balances),

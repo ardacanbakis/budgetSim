@@ -29,7 +29,15 @@ export function computeBalances(
   return result;
 }
 
-/** Net worth in the display currency. Accounts whose rate is unavailable are skipped and reported. */
+/**
+ * Net worth in the display currency. Accounts whose rate is unavailable are
+ * skipped and reported.
+ *
+ * Credit cards are left out: their ledger balance mixes charges with the
+ * payments that cover them, so it says nothing reliable on its own. What a
+ * card is owed is worked out from the ledger instead (lib/domain/cards.ts),
+ * and the screens that show net worth "now" take it off separately.
+ */
 export function computeNetWorth(
   accounts: Account[],
   balances: Map<string, number>,
@@ -39,7 +47,7 @@ export function computeNetWorth(
   let total = 0;
   const skipped: string[] = [];
   for (const a of accounts) {
-    if (a.archived) continue;
+    if (a.archived || a.kind === "credit_card") continue;
     const balance = balances.get(a.id) ?? 0;
     const converted = convert(balance, a.currency, display, usdPer);
     if (converted == null) {

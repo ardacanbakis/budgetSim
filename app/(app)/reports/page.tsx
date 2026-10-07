@@ -25,7 +25,8 @@ import {
   useSnapshots,
   useTransactions,
 } from "@/lib/data/queries";
-import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
+import { computeBalances } from "@/lib/domain/balances";
+import { buildCardBook, isIncome, isSpending, netWorthNow } from "@/lib/domain/cards";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeFxInsights } from "@/lib/domain/fxInsights";
@@ -33,6 +34,9 @@ import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, useColumns } from "@/components/columns";
+
+/** a key for card payments in the category trends: they have no category of their own */
+const CARD_PAYMENTS = "__card_payments__";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -85,8 +89,13 @@ export default function ReportsPage() {
 
   const takeSnapshot = useAppMutation(async () => {
     if (!accounts.data || !transactions.data || !rates.data) return;
-    const balances = computeBalances(accounts.data, transactions.data);
-    const { total } = computeNetWorth(accounts.data, balances, rates.data.usdPer, "USD");
+    const { total, balances } = netWorthNow({
+      accounts: accounts.data,
+      transactions: transactions.data,
+      usdPer: rates.data.usdPer,
+      display: "USD",
+      today: todayISO(),
+    });
     await repo.takeSnapshot({
       snapshotDate: todayISO(),
       balances: Object.fromEntries(balances),
@@ -105,6 +114,10 @@ export default function ReportsPage() {
   const currencyOf = new Map(accounts.data.map((a) => [a.id, a.currency] as const));
   const categoryById = new Map(categories.data.map((c) => [c.id, c]));
   const hasLegacy = transactions.data.some((tx) => tx.legacy);
+  // a card counts when it's paid: the payment is the spending, the charges it covers aren't (lib/domain/cards.ts)
+  const book = buildCardBook(accounts.data, transactions.data);
+  const categoryName = (id: string) =>
+    id === CARD_PAYMENTS ? t("tx.cardPayment") : (categoryById.get(id)?.name ?? "—");
 
   // ---- net-worth history (snapshots are stored in USD; shown in display currency at current rates)
   const historyData = (snapshots.data ?? []).map((s) => ({
@@ -117,7 +130,8 @@ export default function ReportsPage() {
   const allocation = CURRENCIES.map((currency) => {
     let sum = 0;
     for (const a of accounts.data!) {
-      if (a.archived || a.currency !== currency) continue;
+      // a card holds nothing; what it's owed isn't an allocation
+      if (a.archived || a.kind === "credit_card" || a.currency !== currency) continue;
       const converted = convert(balances.get(a.id) ?? 0, a.currency, displayCurrency, usdPer);
       if (converted != null && converted > 0) sum += converted;
     }
@@ -137,7 +151,9 @@ export default function ReportsPage() {
   let yearExpense = 0;
 
   for (const tx of transactions.data) {
-    if (tx.status !== "completed" || tx.transferGroupId) continue;
+    if (tx.status !== "completed") continue;
+    const income = isIncome(tx, book);
+    if (!income && !isSpending(tx, book)) continue;
     // Legacy rows are history you imported, and they carry the date you
     // imported them rather than when the money moved — a year of back-dated
     // VICTVS payouts all land in one month and swamp the real figures. Off by
@@ -150,18 +166,20 @@ export default function ReportsPage() {
     const converted = convert(tx.amount, currency, displayCurrency, tx.fxSnapshot?.usdPer ?? usdPer);
     if (converted == null) continue;
     if (idx != null) {
-      if (tx.direction === "income") totals[idx].income += converted;
+      if (income) totals[idx].income += converted;
       else {
         totals[idx].expense += converted;
-        if (tx.categoryId) {
-          const series = byCategory.get(tx.categoryId) ?? new Array(12).fill(0);
+        // card payments have no category of their own, but they're a big part of spending
+        const key = tx.categoryId ?? (book.roleOf(tx) === "payment" ? CARD_PAYMENTS : null);
+        if (key) {
+          const series = byCategory.get(key) ?? new Array(12).fill(0);
           series[idx] += converted;
-          byCategory.set(tx.categoryId, series);
+          byCategory.set(key, series);
         }
       }
     }
     if (tx.dueDate.slice(0, 4) === thisYear) {
-      if (tx.direction === "income") {
+      if (income) {
         yearIncome += converted;
         incomeByCategory.set(tx.categoryId, (incomeByCategory.get(tx.categoryId) ?? 0) + converted);
       } else yearExpense += converted;
@@ -367,7 +385,7 @@ export default function ReportsPage() {
                     key={c.id}
                     type="monotone"
                     dataKey={c.id}
-                    name={categoryById.get(c.id)?.name ?? "—"}
+                    name={categoryName(c.id)}
                     stroke={TREND_SLOTS[i]}
                     strokeWidth={2}
                     dot={false}

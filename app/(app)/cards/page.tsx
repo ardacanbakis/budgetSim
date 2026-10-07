@@ -14,18 +14,18 @@ import {
 } from "@/lib/data/queries";
 import { NewPurchase } from "@/lib/data/repo";
 import { Account, Purchase } from "@/lib/data/types";
-import { computeBalances } from "@/lib/domain/balances";
+import { buildCardBook, cardSchedule, chargeAmount } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
-import { sumAmounts } from "@/lib/domain/money";
 import {
   buildInstallmentPlan,
+  cardStandings,
   defaultFirstDue,
   lastDueDate,
   purchaseProgress,
 } from "@/lib/domain/purchases";
 import { averageMonthlySpend } from "@/lib/domain/stats";
-import { cardStandings, findDueCardPayments } from "@/lib/domain/purchases";
+import { CARDS_TAB_KEY, useLocalChoice } from "@/lib/prefs";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { AccountModal } from "@/app/(app)/accounts/page";
 import { ViewSwitcher } from "@/components/viewSwitcher";
@@ -36,6 +36,7 @@ import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
+const TABS = ["cards", "purchases"] as const;
 
 export default function PurchasesPage() {
   const { t, locale } = useI18n();
@@ -53,6 +54,7 @@ export default function PurchasesPage() {
   const [editingCard, setEditingCard] = useState<Account | null>(null);
   const { columns, setColumns } = useColumns("renovator-cols-purchases");
   const view = useSurfaceView("cards");
+  const tab = useLocalChoice<(typeof TABS)[number]>(CARDS_TAB_KEY, TABS, "cards");
 
   const updateAccount = useAppMutation(
     (v: { id: string; patch: Parameters<typeof repo.updateAccount>[1] }) => repo.updateAccount(v.id, v.patch),
@@ -72,8 +74,9 @@ export default function PurchasesPage() {
     PURCHASE_KEYS
   );
 
-  const balances = useMemo(
-    () => (accounts.data && transactions.data ? computeBalances(accounts.data, transactions.data) : new Map<string, number>()),
+  // what each card is owed and which payment covers what (lib/domain/cards.ts)
+  const book = useMemo(
+    () => buildCardBook(accounts.data ?? [], transactions.data ?? []),
     [accounts.data, transactions.data]
   );
 
@@ -95,47 +98,13 @@ export default function PurchasesPage() {
   const accountList = accounts.data ?? [];
   const cards = accountList.filter((a) => a.kind === "credit_card" && !a.archived);
   const retired = (accounts.data ?? []).filter((a) => a.kind === "credit_card" && a.archived);
-  const standings = new Map(
-    cardStandings(accountList, balances, transactions.data ?? [], todayISO()).map((s) => [s.account.id, s])
-  );
-
-  // what each card still owes, month by month, and what you've already paid it
-  const schedule = (() => {
-    const byCard = new Map<string, { month: string; total: number }[]>();
-    for (const card of cards) {
-      const months = new Map<string, number>();
-      for (const tx of transactions.data ?? []) {
-        if (tx.accountId !== card.id || tx.status !== "planned" || tx.direction !== "expense") continue;
-        const key = tx.dueDate.slice(0, 7);
-        months.set(key, (months.get(key) ?? 0) + tx.amount);
-      }
-      if (months.size > 0) {
-        byCard.set(
-          card.id,
-          [...months.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([month, total]) => ({ month, total }))
-        );
-      }
-    }
-    return byCard;
-  })();
-
-  const payments = (() => {
-    const byCard = new Map<string, typeof list>();
-    const list = (transactions.data ?? []).filter(
-      (tx) => tx.direction === "income" && tx.transferGroupId != null && tx.status === "completed"
-    );
-    for (const card of cards) {
-      const mine = list
-        .filter((tx) => tx.accountId === card.id)
-        .sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1))
-        .slice(0, 6);
-      if (mine.length > 0) byCard.set(card.id, mine);
-    }
-    return byCard;
-  })();
-
-  const duePayments = findDueCardPayments(accountList, balances, transactions.data ?? [], todayISO());
-  const dueFor = (id: string) => duePayments.find((d) => d.account.id === id);
+  const today = todayISO();
+  const thisMonth = today.slice(0, 7);
+  const standings = new Map(cardStandings(accountList, book, today).map((s) => [s.account.id, s]));
+  // the latest payments first, made or still to make
+  const recentPayments = (cardId: string) => [...book.payments(cardId)].reverse().slice(0, 6);
+  // what a payment recorded now would cover: charges from before this month no payment covers yet
+  const coversFor = (cardId: string) => book.uncovered(cardId).filter((c) => c.dueDate.slice(0, 7) < thisMonth);
   const monthLabel = (month: string) =>
     new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", {
       month: "short",
@@ -152,7 +121,7 @@ export default function PurchasesPage() {
 
   function renderPurchase(purchase: Purchase, account: Account | undefined) {
     const currency = account?.currency ?? "TRY";
-    const progress = purchaseProgress(purchase, transactions.data ?? [], currency);
+    const progress = purchaseProgress(purchase, book, transactions.data ?? [], currency);
     const isInstallment = purchase.installmentCount > 1;
     const pct = isInstallment && purchase.reflected ? Math.round((progress.paidCount / progress.totalCount) * 100) : 0;
     return (
@@ -238,8 +207,7 @@ export default function PurchasesPage() {
           <thead>
             <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
               <th className="px-3 py-2 font-medium">{t("cards.title")}</th>
-              <th className="px-3 py-2 text-right font-medium">{t("purchases.postedDebt")}</th>
-              <th className="px-3 py-2 text-right font-medium">{t("cards.colScheduled")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colOwed")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("cards.colLimitLeft")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("cards.colDueIn")}</th>
               <th className="px-3 py-2" />
@@ -248,7 +216,7 @@ export default function PurchasesPage() {
           <tbody>
             {cards.map((card) => {
               const standing = standings.get(card.id);
-              const debt = -(balances.get(card.id) ?? 0);
+              const owed = standing?.owed ?? 0;
               const available = standing?.available ?? null;
               const days = standing?.daysToDue ?? null;
               return (
@@ -256,17 +224,8 @@ export default function PurchasesPage() {
                   <td className="px-3 py-1.5 font-medium" data-label={t("cards.title")}>
                     {card.name}
                   </td>
-                  <td className="px-3 py-1.5 text-right tnum" data-label={t("purchases.postedDebt")}>
-                    {debt >= 0 ? (
-                      formatAmount(debt, card.currency, locale)
-                    ) : (
-                      <span className="text-emerald-600" title={t("cards.inCreditHint")}>
-                        {t("cards.inCredit", { amount: formatAmount(-debt, card.currency, locale) })}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tnum text-zinc-500" data-label={t("cards.colScheduled")}>
-                    {formatAmount(standing?.scheduled ?? 0, card.currency, locale)}
+                  <td className={`px-3 py-1.5 text-right tnum ${owed > 0.005 ? "text-red-600" : ""}`} data-label={t("cards.colOwed")}>
+                    {formatAmount(owed, card.currency, locale)}
                   </td>
                   <td
                     className={`px-3 py-1.5 text-right tnum ${available != null && available < 0 ? "text-red-600" : ""}`}
@@ -310,18 +269,59 @@ export default function PurchasesPage() {
 
       {(purchases.data ?? []).length === 0 && cards.length === 0 ? <EmptyState>{t("purchases.empty")}</EmptyState> : null}
 
-      {view.shape === "table" ? cardsTable : null}
+      <div role="tablist" aria-label={t("cards.title")} className="flex gap-1 border-b border-[var(--edge)]">
+        {TABS.map((id) => (
+          <button
+            key={id}
+            role="tab"
+            type="button"
+            aria-selected={tab.value === id}
+            onClick={() => tab.setValue(id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              tab.value === id
+                ? "border-teal-600 text-teal-700 dark:text-teal-300"
+                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            }`}
+          >
+            {id === "cards" ? t("cards.tabCards") : t("cards.tabPurchases")}
+          </button>
+        ))}
+      </div>
 
-      <div className={view.shape === "table" ? "hidden" : view.shape === "grid" ? columnClass(view.columns) : columnClass(columns)}>
+      {/* big purchases: each installment is paid with that month's card payment, nothing to tick */}
+      {tab.value === "purchases" ? (
+        <div className="space-y-4">
+          <p className="text-xs text-zinc-500">{t("cards.bigPurchasesHint")}</p>
+          {(purchases.data ?? []).length === 0 ? <EmptyState>{t("purchases.empty")}</EmptyState> : null}
+          {cards
+            .filter((card) => (byAccount.get(card.id) ?? []).length > 0)
+            .map((card) => (
+              <Card key={card.id}>
+                <CardHeader title={card.name} />
+                <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
+                  {(byAccount.get(card.id) ?? []).map((p) => renderPurchase(p, card))}
+                </div>
+              </Card>
+            ))}
+        </div>
+      ) : null}
+
+      {tab.value === "cards" && view.shape === "table" ? cardsTable : null}
+
+      <div
+        className={
+          tab.value !== "cards" || view.shape === "table"
+            ? "hidden"
+            : view.shape === "grid"
+              ? columnClass(view.columns)
+              : columnClass(columns)
+        }
+      >
       {cards.map((card) => {
-        const cardPurchases = byAccount.get(card.id) ?? [];
-        const debt = balances.get(card.id) ?? 0;
-        const upcoming = sumAmounts(
-          card.currency,
-          (transactions.data ?? [])
-            .filter((tx) => tx.accountId === card.id && tx.status === "planned" && tx.direction === "expense")
-            .map((tx) => tx.amount)
-        );
+        const owed = standings.get(card.id)?.owed ?? 0;
+        const schedule = cardSchedule(book, card.id, thisMonth);
+        const payments = recentPayments(card.id);
+        const bigPurchases = byAccount.get(card.id)?.length ?? 0;
         const avg = stats?.byAccount.get(card.id);
         return (
           <Card key={card.id}>
@@ -329,21 +329,12 @@ export default function PurchasesPage() {
               title={
                 <span className="flex flex-wrap items-center gap-2">
                   {card.name}
-                  {/* more paid in than the app has seen spent: say so, rather than a negative debt */}
-                  {debt > 0 ? (
-                    <span title={t("cards.inCreditHint")}>
-                      <Badge tone="green">{t("cards.inCredit", { amount: formatAmount(debt, card.currency, locale) })}</Badge>
-                    </span>
-                  ) : (
-                    <Badge tone="red">
-                      {t("purchases.postedDebt")}: {formatAmount(-debt, card.currency, locale)}
+                  {/* payments recorded but not made, plus charges no payment covers yet */}
+                  <span title={t("cards.owedHint")}>
+                    <Badge tone={owed > 0.005 ? "red" : "green"}>
+                      {owed > 0.005 ? t("cards.owed", { amount: formatAmount(owed, card.currency, locale) }) : t("cards.nothingOwed")}
                     </Badge>
-                  )}
-                  {upcoming > 0 ? (
-                    <Badge tone="amber">
-                      {t("purchases.upcomingInstallments")}: {formatAmount(upcoming, card.currency, locale)}
-                    </Badge>
-                  ) : null}
+                  </span>
                   {avg ? (
                     <Badge tone="zinc">
                       {t("purchases.avgMonthlySpend")}: {formatAmount(avg, displayCurrency, locale)}
@@ -388,13 +379,13 @@ export default function PurchasesPage() {
             />
 
             {/* what this card is going to cost you, month by month */}
-            {schedule.get(card.id)?.length ? (
+            {schedule.length ? (
               <div className="border-b border-[var(--edge-soft)] px-4 py-2">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
                   {t("cards.upcomingByMonth")}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                  {schedule.get(card.id)!.map(({ month, total }) => (
+                  {schedule.map(({ month, total }) => (
                     <span key={month} className="text-xs tabular-nums text-zinc-500">
                       {monthLabel(month)}{" "}
                       <span className="font-medium text-zinc-700 dark:text-zinc-300">
@@ -406,39 +397,40 @@ export default function PurchasesPage() {
               </div>
             ) : null}
 
-            {/* and what you've actually paid it */}
-            {payments.get(card.id)?.length ? (
+            {/* and what you've paid it, or are about to: each payment is the spending */}
+            {payments.length ? (
               <div className="border-b border-[var(--edge-soft)] px-4 py-2">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
                   {t("cards.paymentsMade")}
                 </p>
                 <ul className="mt-1 space-y-0.5">
-                  {payments.get(card.id)!.map((p) => (
-                    <li key={p.id} className="flex items-center gap-2 text-xs">
-                      <span className="text-zinc-500">{fmtDate(p.dueDate)}</span>
-                      <span className="min-w-0 flex-1 truncate text-zinc-400">{p.description}</span>
-                      <span className="tabular-nums text-emerald-600">
-                        {formatAmount(p.amount, card.currency, locale)}
-                      </span>
+                  {payments.map((p) => (
+                    <li key={p.groupId} className="flex items-center gap-2 text-xs">
+                      <span className="text-zinc-500">{fmtDate(p.date)}</span>
+                      <span className="min-w-0 flex-1 truncate text-zinc-400">{p.paying.description}</span>
+                      {p.made ? null : <Badge tone="amber">{t("tx.planned")}</Badge>}
+                      <span className="tabular-nums text-red-600">−{formatAmount(p.amount, card.currency, locale)}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             ) : null}
 
-            <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
-              {cardPurchases.length === 0 ? (
-                <p className="text-sm text-zinc-400">{t("purchases.empty")}</p>
-              ) : (
-                cardPurchases.map((p) => renderPurchase(p, card))
-              )}
-            </div>
+            {bigPurchases ? (
+              <button
+                type="button"
+                onClick={() => tab.setValue("purchases")}
+                className="w-full px-4 py-2 text-left text-xs text-teal-600 hover:underline dark:text-teal-400"
+              >
+                {bigPurchases === 1 ? t("cards.seeBigPurchasesOne") : t("cards.seeBigPurchases", { count: bigPurchases })} →
+              </button>
+            ) : null}
           </Card>
         );
       })}
       </div>
 
-      {nonCardPurchases.length > 0 ? (
+      {tab.value === "purchases" && nonCardPurchases.length > 0 ? (
         <Card>
           <CardHeader title={t("purchases.otherAccounts")} />
           <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
@@ -491,8 +483,8 @@ export default function PurchasesPage() {
 
       <CardPaymentModal
         card={paying}
-        suggested={paying ? (dueFor(paying.id)?.suggestedAmount ?? Math.max(0, -(balances.get(paying.id) ?? 0))) : 0}
-        installmentsDue={paying ? (dueFor(paying.id)?.installmentsDue ?? []) : []}
+        suggested={paying ? Math.max(0, coversFor(paying.id).reduce((sum, c) => sum + chargeAmount(c), 0)) : 0}
+        covers={paying ? coversFor(paying.id) : []}
         onClose={() => setPaying(null)}
       />
     </div>

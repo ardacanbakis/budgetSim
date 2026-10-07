@@ -283,36 +283,41 @@ describe("when a month counts as short", () => {
 
 describe("credit card bills", () => {
   const bank = account("bank", "TRY", 200_000); // $5,000
-  const card: Account = { ...account("card", "TRY", 0), kind: "credit_card" };
+  const card: Account = { ...account("card", "TRY", 0), kind: "credit_card", paymentAccountId: "bank" };
   // ₺40k a month charged to the card, nothing else happening
   const spend = [{ ...rent("card", 40_000), id: "card-spend" }];
 
-  it("settles the card from your accounts, so the cash really goes", () => {
+  it("pays what's charged to a card the month after, out of the account that pays it", () => {
     const r = run([bank, card], spend, 3, { order: ["bank"] });
-    expect(r.months[0].draws[0].accountId).toBe("bank");
-    // ₺40k off the bank, and the card back to zero
-    expect(r.months[0].sourceBalances.bank).toBeCloseTo(160_000, 6);
-    expect(r.months[2].sourceBalances.bank).toBeCloseTo(80_000, 6);
+    // January's charges are on February's statement
+    expect(r.months.map((m) => Math.round(m.expense))).toEqual([0, 1000, 1000]);
+    expect(r.months[2].sourceBalances.bank).toBeCloseTo(120_000, 6);
   });
 
-  it("lets the balance ride when you say so", () => {
-    const r = run([bank, card], spend, 3, { order: ["bank"], payCards: false });
-    expect(r.months[0].draws).toEqual([]);
-    expect(r.months[2].sourceBalances.bank).toBeCloseTo(200_000, 6);
-  });
-
-  it("either way the debt counts against what you're worth", () => {
-    const paid = run([bank, card], spend, 3, { order: ["bank"] });
-    const carried = run([bank, card], spend, 3, { order: ["bank"], payCards: false });
-    expect(paid.months[2].endNetWorth).toBeCloseTo(carried.months[2].endNetWorth, 6);
-    expect(paid.months[2].endNetWorth).toBeCloseTo(5000 - 3000, 6);
+  it("takes it off what you're worth when it's paid", () => {
+    const r = run([bank, card], spend, 3, { order: ["bank"] });
+    expect(r.startNetWorth).toBeCloseTo(5000, 6);
+    expect(r.months[2].endNetWorth).toBeCloseTo(5000 - 2000, 6);
   });
 
   it("sells an asset when the card bill outruns the bank", () => {
     const small = account("bank", "TRY", 40_000); // one month's worth
     const gold = account("gold", "XAU_G", 50);
     const r = run([small, gold, card], spend, 3, { order: ["bank", "gold"] });
-    expect(r.months[1].draws.map((d) => d.accountId)).toEqual(["gold"]);
-    expect(r.months[1].uncovered).toBe(0);
+    expect(r.months[2].draws.map((d) => d.accountId)).toEqual(["gold"]);
+    expect(r.months[2].uncovered).toBe(0);
+  });
+
+  it("a recorded payment is the outflow, and the charges it covers aren't counted again", () => {
+    const base = { dueDate: "", completedAt: null, fxSnapshot: null, transferMarketRate: null, loanId: null, victvsPayoutId: null, purchaseId: null, legacy: false, createdAt: "2025-01-01T00:00:00Z", categoryId: null, recurringTemplateId: null, transferGroupId: null, description: "" };
+    const transactions: Transaction[] = [
+      // January's charge, already on the ledger
+      { ...base, id: "jan", accountId: "card", direction: "expense", amount: 40_000, status: "planned", dueDate: "2026-01-05", recurringTemplateId: "card-spend" },
+      // February's statement, recorded: it covers January
+      { ...base, id: "pay-out", accountId: "bank", direction: "expense", amount: 40_000, status: "planned", dueDate: "2026-02-10", transferGroupId: "pay" },
+      { ...base, id: "pay-in", accountId: "card", direction: "income", amount: 40_000, status: "planned", dueDate: "2026-02-10", transferGroupId: "pay" },
+    ];
+    const r = projectCashflow({ accounts: [bank, card], transactions, templates: spend, usdPer: RATES, display: "USD", fromDate: FROM, months: 3, funding: { order: ["bank"] } });
+    expect(r.months.map((m) => Math.round(m.expense))).toEqual([0, 1000, 1000]);
   });
 });

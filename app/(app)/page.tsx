@@ -174,9 +174,9 @@ export default function DashboardPage() {
           {t("dashboard.netWorth")} ({displayCurrency})
         </div>
         <div className="mt-1 text-3xl font-bold">{formatAmount(derived.netWorth.total, displayCurrency, locale)}</div>
-        {derived.liability > 0 ? (
+        {derived.cardsOwed > 0 ? (
           <div className="mt-1 text-xs text-zinc-400">
-            −{formatAmount(derived.liability, displayCurrency, locale)} {t("purchases.inclInstallments")}
+            −{formatAmount(derived.cardsOwed, displayCurrency, locale)} {t("purchases.inclInstallments")}
           </div>
         ) : null}
         {derived.netWorth.skippedAccountIds.length > 0 ? (
@@ -203,14 +203,9 @@ export default function DashboardPage() {
         <div className="text-xs text-zinc-500">
           {t("purchases.ccDebtTile")} ({displayCurrency})
         </div>
-        <div className={`mt-1 text-3xl font-bold ${derived.ccPostedDebt > 0 ? "text-red-600" : ""}`}>
-          {formatAmount(derived.ccPostedDebt, displayCurrency, locale)}
+        <div className={`mt-1 text-3xl font-bold ${derived.cardsOwed > 0 ? "text-red-600" : ""}`}>
+          {formatAmount(derived.cardsOwed, displayCurrency, locale)}
         </div>
-        {derived.liability > 0 ? (
-          <div className="mt-1 text-xs text-zinc-400">
-            +{formatAmount(derived.liability, displayCurrency, locale)} {t("purchases.upcomingInstallments").toLowerCase()}
-          </div>
-        ) : null}
         <Link href="/cards" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
           {t("dashboard.seeAll")} →
         </Link>

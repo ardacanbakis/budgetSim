@@ -1,6 +1,6 @@
 import { Account, Purchase, Transaction } from "@/lib/data/types";
+import { CardBook, chargeAmount } from "./cards";
 import { Currency } from "./currencies";
-import { convert, UsdPerMap } from "./fx";
 import { fromMinor, toMinor } from "./money";
 import { addMonthsClamped } from "./recurrence";
 
@@ -94,13 +94,19 @@ export interface PurchaseProgress {
   totalCount: number;
 }
 
-/** Progress from the purchase's linked transactions (reflected purchases only have them). */
-export function purchaseProgress(purchase: Purchase, transactions: Transaction[], currency: Currency): PurchaseProgress {
+/**
+ * Progress from the purchase's linked transactions (reflected purchases only
+ * have them). On a card, an installment is paid once the card payment that
+ * covers it has been made (see lib/domain/cards.ts), so nothing is ticked by
+ * hand; elsewhere it's paid when it's completed.
+ */
+export function purchaseProgress(purchase: Purchase, book: CardBook, transactions: Transaction[], currency: Currency): PurchaseProgress {
   const linked = transactions.filter((t) => t.purchaseId === purchase.id);
   let paidMinor = 0;
   let paidCount = 0;
   for (const t of linked) {
-    if (t.status === "completed") {
+    const paid = book.isCard(t.accountId) ? book.isPaid(t) : t.status === "completed";
+    if (paid) {
       paidCount += 1;
       paidMinor += toMinor(t.amount, currency);
     }
@@ -114,102 +120,45 @@ export function purchaseProgress(purchase: Purchase, transactions: Transaction[]
   };
 }
 
-/**
- * "Counts as debt now": every remaining (planned) installment of a reflected
- * purchase, converted to the display currency. Subtracted from the current
- * net-worth stat only — the projector already spreads these month by month,
- * so applying it there too would double-count.
- */
-export function computePurchaseLiability(
-  transactions: Transaction[],
-  accounts: Account[],
-  usdPer: UsdPerMap,
-  display: Currency
-): number {
-  const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
-  let total = 0;
-  for (const t of transactions) {
-    if (t.purchaseId == null || t.status !== "planned" || t.direction !== "expense") continue;
-    const currency = currencyOf.get(t.accountId);
-    if (!currency) continue;
-    const converted = convert(t.amount, currency, display, usdPer);
-    if (converted != null) total += converted;
-  }
-  return total;
-}
-
 export interface DueCardPayment {
   account: Account;
-  /** what the statement likely totals: posted debt + installments due by month end */
+  /** what's been charged to the card and not yet covered by a payment, from before this month */
   suggestedAmount: number;
-  postedDebt: number;
-  /** planned purchase installments on the card due this month (or overdue) —
-   * recording the payment marks these completed so the statement stays in sync */
-  installmentsDue: Transaction[];
+  /** those charges: the payment you record will cover them */
+  covers: Transaction[];
 }
 
 /**
- * Cards that look unpaid this month: posted debt from an earlier statement
- * (balance < 0 with an older completed expense) OR purchase installments due
- * this month, and no incoming transfer leg this calendar month.
+ * Cards with charges from earlier months that no payment covers yet, and no
+ * payment recorded this month. Recording one covers them.
  */
-export function findDueCardPayments(
-  accounts: Account[],
-  balances: Map<string, number>,
-  transactions: Transaction[],
-  today: string
-): DueCardPayment[] {
+export function findDueCardPayments(accounts: Account[], book: CardBook, today: string): DueCardPayment[] {
   const month = today.slice(0, 7);
   const result: DueCardPayment[] = [];
   for (const account of accounts) {
     if (account.kind !== "credit_card" || account.archived) continue;
-    const txs = transactions.filter((t) => t.accountId === account.id);
-    const completed = txs.filter((t) => t.status === "completed");
-    // a payment you've already scheduled counts — no need to be nagged twice
-    const paidThisMonth = txs.some(
-      (t) => t.direction === "income" && t.transferGroupId != null && t.dueDate.slice(0, 7) === month
-    );
-    if (paidThisMonth) continue;
-
-    const balance = balances.get(account.id) ?? 0;
-    const postedDebt = balance < 0 ? -balance : 0;
-    const hasOlderExpense = completed.some((t) => t.direction === "expense" && t.dueDate.slice(0, 7) < month);
-    const installmentsDue = txs
-      .filter(
-        (t) =>
-          t.status === "planned" &&
-          t.direction === "expense" &&
-          t.purchaseId != null &&
-          t.dueDate.slice(0, 7) <= month
-      )
-      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-    const installmentsTotal = installmentsDue.reduce((s, t) => s + t.amount, 0);
-
-    if (!(postedDebt > 0 && hasOlderExpense) && installmentsDue.length === 0) continue;
-    result.push({
-      account,
-      suggestedAmount: postedDebt + installmentsTotal,
-      postedDebt,
-      installmentsDue,
-    });
+    if (book.payments(account.id).some((p) => p.date.slice(0, 7) === month)) continue;
+    const covers = book.uncovered(account.id).filter((c) => c.dueDate.slice(0, 7) < month);
+    if (covers.length === 0) continue;
+    const suggestedAmount = covers.reduce((sum, c) => sum + chargeAmount(c), 0);
+    if (suggestedAmount <= 0.005) continue;
+    result.push({ account, suggestedAmount, covers });
   }
   return result;
 }
 
-/** How a card is doing against its limit, once everything still owed is counted. */
+/** How a card is doing against its limit. */
 export interface CardStanding {
   account: Account;
-  /** already posted and owed today, positive number */
-  postedDebt: number;
-  /** installments still to fall due on this card */
-  scheduled: number;
-  /** payments you've scheduled but not yet made */
-  scheduledPayments: number;
-  /** limit − (posted + scheduled − scheduled payments); null when no limit set */
+  /** what the card is owed today, positive (see CardBook.owed) */
+  owed: number;
+  /** limit − owed; null when no limit is set */
   available: number | null;
   /** days until the statement is due; null when no payment day is set */
   daysToDue: number | null;
-  /** true when nothing is owed and nothing is scheduled */
+  /** a payment for this month is recorded, made or not */
+  paidThisMonth: boolean;
+  /** nothing owed and nothing coming */
   idle: boolean;
 }
 
@@ -226,47 +175,35 @@ export function daysUntilPaymentDay(day: number, today: string): number {
 }
 
 /**
- * What each card owes, what's still coming, and how much of its limit that
- * leaves. Scheduled payments count against the debt because the money is
- * already earmarked, even though it hasn't moved yet.
+ * What each card owes and how much of its limit that leaves. A payment you've
+ * recorded but not made is owed (it's this month's statement), and so is
+ * every installment still to come, the way Turkish banks hold a taksit
+ * against the limit. Making the payment frees the limit again.
  */
-export function cardStandings(
-  accounts: Account[],
-  balances: Map<string, number>,
-  transactions: Transaction[],
-  today: string
-): CardStanding[] {
+export function cardStandings(accounts: Account[], book: CardBook, today: string): CardStanding[] {
+  const month = today.slice(0, 7);
   return accounts
     .filter((a) => a.kind === "credit_card" && !a.archived)
     .map((account) => {
-      const txs = transactions.filter((t) => t.accountId === account.id);
-      const balance = balances.get(account.id) ?? 0;
-      const postedDebt = balance < 0 ? -balance : 0;
-      const scheduled = txs
-        .filter((t) => t.status === "planned" && t.direction === "expense")
-        .reduce((s, t) => s + t.amount, 0);
-      const scheduledPayments = txs
-        .filter((t) => t.status === "planned" && t.direction === "income" && t.transferGroupId != null)
-        .reduce((s, t) => s + t.amount, 0);
-      const owed = postedDebt + scheduled - scheduledPayments;
+      const owed = book.owed(account.id, today);
+      const upcoming = book.uncovered(account.id).length > 0 || book.payments(account.id).some((p) => !p.made);
       return {
         account,
-        postedDebt,
-        scheduled,
-        scheduledPayments,
+        owed,
         available: account.creditLimit != null ? account.creditLimit - owed : null,
         daysToDue: account.paymentDay != null ? daysUntilPaymentDay(account.paymentDay, today) : null,
-        idle: postedDebt <= 0.005 && scheduled <= 0.005,
+        paidThisMonth: book.payments(account.id).some((p) => p.date.slice(0, 7) === month),
+        idle: owed <= 0.005 && !upcoming,
       };
     });
 }
 
 /**
- * Cards whose statement is due today or within `within` days and that still
- * have something to pay. Drives the nudge in the header.
+ * Cards whose statement is due today or within `within` days and that have no
+ * payment recorded for this month yet. Drives the nudge in the header.
  */
 export function cardsDueSoon(standings: CardStanding[], within = 5): CardStanding[] {
   return standings
-    .filter((s) => s.daysToDue != null && s.daysToDue <= within && s.postedDebt > 0.005)
+    .filter((s) => s.daysToDue != null && s.daysToDue <= within && !s.paidThisMonth)
     .sort((a, b) => (a.daysToDue ?? 0) - (b.daysToDue ?? 0));
 }

@@ -15,10 +15,11 @@ import { useI18n } from "@/lib/i18n";
 const dismissKey = (cardId: string) => `cc-pay-dismissed-${cardId}-${todayISO().slice(0, 7)}`;
 
 /**
- * "Did you pay the card bill?" — shown when a card has posted debt from a
- * previous month and no payment recorded this month. Confirm records a
- * transfer from the card's default payment account (editable); "Not now"
- * snoozes for the rest of the month on this device.
+ * "Did you pay the card bill?" — shown when a card has charges from an
+ * earlier month that no payment covers yet, and no payment recorded this
+ * month. Confirm records a payment from the card's default payment account
+ * (editable), which covers those charges once it's made; "Not now" snoozes
+ * for the rest of the month on this device.
  */
 export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayment[] }) {
   const { t, locale } = useI18n();
@@ -34,11 +35,6 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
     KEYS.transactions,
     KEYS.accounts,
   ]);
-  const completeInstallments = useAppMutation(
-    (v: { ids: string[]; snapshot: ReturnType<typeof snapshotFromTable> }) =>
-      Promise.all(v.ids.map((id) => repo.completeTransaction(id, v.snapshot))).then(() => undefined),
-    [KEYS.transactions, KEYS.accounts, KEYS.purchases]
-  );
 
   const visible = duePayments.filter(
     (d) => typeof window === "undefined" || !window.localStorage.getItem(dismissKey(d.account.id))
@@ -101,7 +97,6 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
                     convert(toAmount, payment.account.currency, from.currency, rates.data.usdPer) ?? toAmount,
                     from.currency
                   );
-            const snapshot = snapshotFromTable(rates.data);
             await createTransfer.mutateAsync({
               fromAccountId: from.id,
               toAccountId: payment.account.id,
@@ -110,13 +105,8 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
               date: todayISO(),
               description: `${payment.account.name} statement`,
               marketRate: null,
-              fxSnapshot: snapshot,
+              fxSnapshot: snapshotFromTable(rates.data),
             });
-            // the statement covered this month's installments — post them so
-            // the card balance nets out against the payment just recorded
-            if (payment.installmentsDue.length > 0) {
-              await completeInstallments.mutateAsync({ ids: payment.installmentsDue.map((t) => t.id), snapshot });
-            }
             setPaying(null);
             setAmount("");
           }}
@@ -141,13 +131,9 @@ export function CardPaymentReminder({ duePayments }: { duePayments: DueCardPayme
               onChange={(e) => setAmount(e.target.value)}
             />
           </Field>
-          {payment.installmentsDue.length > 0 ? (
+          {payment.covers.length > 0 ? (
             <div className="rounded-lg bg-[var(--edge-soft)] p-3 text-xs text-zinc-500">
-              <div className="flex justify-between">
-                <span>{t("purchases.postedDebt")}</span>
-                <span className="tabular-nums">{formatAmount(payment.postedDebt, payment.account.currency, locale)}</span>
-              </div>
-              {payment.installmentsDue.map((tx) => (
+              {payment.covers.map((tx) => (
                 <div key={tx.id} className="flex justify-between">
                   <span className="truncate">+ {tx.description}</span>
                   <span className="tabular-nums">{formatAmount(tx.amount, payment.account.currency, locale)}</span>

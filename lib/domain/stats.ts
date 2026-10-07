@@ -1,4 +1,5 @@
 import { Account, Category, Transaction } from "@/lib/data/types";
+import { buildCardBook, isSpending } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { addMonthsClamped } from "./recurrence";
@@ -46,12 +47,11 @@ export function averageMonthlySpend(params: {
   const byAccount = new Map<string, number>();
   let total = 0;
 
+  const book = buildCardBook(accounts, transactions);
   for (const t of transactions) {
     // legacy rows are imported history, often stamped with the import date —
     // counting them would inflate "what I spend now"
-    if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null || t.legacy) {
-      continue;
-    }
+    if (t.status !== "completed" || t.legacy || !isSpending(t, book)) continue;
     const month = t.dueDate.slice(0, 7);
     if (month < firstMonth || month > currentMonth) continue;
     const currency = currencyOf.get(t.accountId);
@@ -61,7 +61,9 @@ export function averageMonthlySpend(params: {
     if (converted == null) continue;
     total += converted;
     byCategory.set(t.categoryId, (byCategory.get(t.categoryId) ?? 0) + converted);
-    byAccount.set(t.accountId, (byAccount.get(t.accountId) ?? 0) + converted);
+    // a card payment is that card's spending, not the bank's it came from
+    const spentOn = book.paymentOf(t)?.cardId ?? t.accountId;
+    byAccount.set(spentOn, (byAccount.get(spentOn) ?? 0) + converted);
   }
 
   const categoryAverages: CategoryAverage[] = [...byCategory.entries()]

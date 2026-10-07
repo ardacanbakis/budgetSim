@@ -446,8 +446,7 @@ export function AccountModal({
     setInitialized(targetKey);
     setName(initial?.name ?? "");
     setCurrency(initial?.currency ?? "TRY");
-    // a card's opening balance is shown as the debt it stands for: what you owed
-    setOpening(String(initial?.kind === "credit_card" ? -initial.openingBalance || 0 : (initial?.openingBalance ?? 0)));
+    setOpening(String(initial?.openingBalance ?? 0));
     setIsCard(initial?.kind === "credit_card");
     setPaymentAccountId(initial?.paymentAccountId ?? "");
     setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
@@ -470,13 +469,13 @@ export function AccountModal({
           try {
             const card = fiat && isCard;
             const day = Number(paymentDay);
-            const entered = Number(opening) || 0;
             await onSave({
               name,
               currency,
               kind: card ? "credit_card" : CURRENCY_META[currency].kind,
-              // card debt is a negative balance; the field asks for it as owed
-              openingBalance: card ? -entered || 0 : entered,
+              // a card's ledger balance isn't used (lib/domain/cards.ts): what it's
+              // owed comes from the payments you record and the charges on it
+              openingBalance: card ? (initial?.openingBalance ?? 0) : Number(opening) || 0,
               paymentAccountId: card ? paymentAccountId || null : null,
               paymentDay: card && day >= 1 && day <= 31 ? day : null,
               creditLimit: card && Number(creditLimit) > 0 ? Number(creditLimit) : null,
@@ -545,18 +544,17 @@ export function AccountModal({
             </Field>
           </div>
         ) : null}
-        <Field
-          label={fiat && isCard ? t("accounts.cardStartingDebt") : t("accounts.openingBalance")}
-          hint={fiat && isCard ? t("accounts.cardStartingDebtHint") : undefined}
-        >
-          <Input
-            type="number"
-            step="any"
-            inputMode="decimal"
-            value={opening}
-            onChange={(e) => setOpening(e.target.value)}
-          />
-        </Field>
+        {fiat && isCard ? null : (
+          <Field label={t("accounts.openingBalance")}>
+            <Input
+              type="number"
+              step="any"
+              inputMode="decimal"
+              value={opening}
+              onChange={(e) => setOpening(e.target.value)}
+            />
+          </Field>
+        )}
         <div className="flex justify-between gap-2 pt-1">
           {onDelete ? (
             <Button type="button" variant="danger" onClick={onDelete}>

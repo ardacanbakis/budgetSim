@@ -1,4 +1,5 @@
 import { Account, Budget, Goal, Transaction } from "@/lib/data/types";
+import { buildCardBook, chargeAmount } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 
@@ -24,9 +25,12 @@ export function budgetStatuses(params: {
 }): BudgetStatus[] {
   const { budgets, transactions, accounts, usdPer, month } = params;
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
+  const book = buildCardBook(accounts, transactions);
   const spentByCategory = new Map<string, number>();
   for (const t of transactions) {
     if (t.status !== "completed" || t.direction !== "expense" || t.transferGroupId != null || t.legacy) continue;
+    // a charge on a card is spent when the card is paid, and that payment has no category
+    if (book.roleOf(t) === "charge") continue;
     if (t.categoryId == null || t.dueDate.slice(0, 7) !== month) continue;
     const currency = currencyOf.get(t.accountId);
     if (!currency) continue;
@@ -71,9 +75,12 @@ export function budgetWarningFor(params: {
 }
 
 /**
- * Discretionary money this month: liquid fiat balances (cards excluded)
- * + planned income still due this month − planned expenses still due this
- * month (installments included, transfers excluded), in the display currency.
+ * Discretionary money this month, in the display currency: liquid fiat
+ * balances (cards excluded) + planned income still due this month − what has
+ * still to go out this month. That's planned expenses and card payments still
+ * due, plus charges on a card that no payment covers yet and that fall due
+ * this month or earlier (see lib/domain/cards.ts). Other transfers move money
+ * between your own accounts and are left out.
  */
 export function safeToSpend(params: {
   accounts: Account[];
@@ -94,17 +101,26 @@ export function safeToSpend(params: {
     if (converted != null) liquid += converted;
   }
 
+  const book = buildCardBook(accounts, transactions);
+  const inDisplay = (amount: number, accountId: string) => {
+    const currency = currencyOf.get(accountId);
+    return currency ? (convert(amount, currency, display, usdPer) ?? 0) : 0;
+  };
+
   let plannedIncome = 0;
   let plannedExpense = 0;
   for (const t of transactions) {
-    if (t.status !== "planned" || t.transferGroupId != null) continue;
+    const role = book.roleOf(t);
+    if (role === "charge") {
+      if (!book.isPaid(t) && book.coverOf(t) == null && book.paidInMonth(t) <= month) {
+        plannedExpense += inDisplay(chargeAmount(t), t.accountId);
+      }
+      continue;
+    }
+    if (t.status !== "planned" || (role !== "regular" && role !== "payment")) continue;
     if (t.dueDate < today || t.dueDate.slice(0, 7) !== month) continue;
-    const currency = currencyOf.get(t.accountId);
-    if (!currency) continue;
-    const converted = convert(t.amount, currency, display, usdPer);
-    if (converted == null) continue;
-    if (t.direction === "income") plannedIncome += converted;
-    else plannedExpense += converted;
+    if (t.direction === "income") plannedIncome += inDisplay(t.amount, t.accountId);
+    else plannedExpense += inDisplay(t.amount, t.accountId);
   }
 
   return { total: liquid + plannedIncome - plannedExpense, liquid, plannedIncome, plannedExpense };

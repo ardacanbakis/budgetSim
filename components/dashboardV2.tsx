@@ -81,9 +81,9 @@ export function DashboardV2() {
             <Figure size="xl" tone={positive ? undefined : "neg"}>
               {money(d.netWorth.total)}
             </Figure>
-            {d.liability > 0 ? (
+            {d.cardsOwed > 0 ? (
               <span className="text-xs text-zinc-500">
-                −{money(d.liability)} {t("purchases.inclInstallments")}
+                −{money(d.cardsOwed)} {t("purchases.inclInstallments")}
               </span>
             ) : null}
           </div>
@@ -98,8 +98,8 @@ export function DashboardV2() {
           <HeroStat
             href="/cards"
             label={t("purchases.ccDebtTile")}
-            value={money(d.ccPostedDebt)}
-            tone={d.ccPostedDebt > 0 ? "neg" : undefined}
+            value={money(d.cardsOwed)}
+            tone={d.cardsOwed > 0 ? "neg" : undefined}
           />
           <HeroStat
             href="/victvs"
@@ -139,16 +139,21 @@ export function DashboardV2() {
                 />
               ))
             )}
-            {cards.map((a) => (
-              <LedgerRow
-                key={a.id}
-                name={a.name}
-                meta={t("nav.cards")}
-                raw={formatAmount(d.balances.get(a.id) ?? 0, a.currency, locale)}
-                converted={a.currency === displayCurrency ? null : money(inDisplay(a.id) ?? 0)}
-                tone={(d.balances.get(a.id) ?? 0) < 0 ? "neg" : undefined}
-              />
-            ))}
+            {/* a card shows what it's owed, not its ledger balance (lib/domain/cards.ts) */}
+            {cards.map((a) => {
+              const owed = d.book.owed(a.id, d.today);
+              const owedInDisplay = rates.data ? convert(-owed, a.currency, displayCurrency, rates.data.usdPer) : null;
+              return (
+                <LedgerRow
+                  key={a.id}
+                  name={a.name}
+                  meta={t("nav.cards")}
+                  raw={formatAmount(-owed, a.currency, locale)}
+                  converted={a.currency === displayCurrency ? null : money(owedInDisplay ?? 0)}
+                  tone={owed > 0.005 ? "neg" : undefined}
+                />
+              );
+            })}
           </div>
         </Card>
 
