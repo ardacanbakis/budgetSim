@@ -7,6 +7,7 @@ import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
 import { GoldLensCard } from "@/components/goldLens";
+import { HoldingsSummary } from "@/components/goldHoldings";
 import { Badge, Card, CardHeader, EmptyState, Figure, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { formatAmount } from "@/lib/domain/currencies";
@@ -129,15 +130,20 @@ export function DashboardV2() {
                 <EmptyState>{t("accounts.empty")}</EmptyState>
               </div>
             ) : (
-              byValue(assets).map((a) => (
-                <LedgerRow
-                  key={a.id}
-                  name={a.name}
-                  meta={a.currency === "XAU_G" ? "GOLD g" : a.currency}
-                  raw={formatAmount(d.balances.get(a.id) ?? 0, a.currency, locale)}
-                  converted={a.currency === displayCurrency ? null : money(inDisplay(a.id) ?? 0)}
-                />
-              ))
+              byValue(assets).map((a) => {
+                // a gold account holding a mix reads in lira, with what it holds as its label
+                const mixed = a.kind === "gold" && (a.holdings?.length ?? 0) > 0;
+                const inTry = mixed && rates.data ? convert(d.balances.get(a.id) ?? 0, a.currency, "TRY", rates.data.usdPer) : null;
+                return (
+                  <LedgerRow
+                    key={a.id}
+                    name={a.name}
+                    meta={mixed ? <HoldingsSummary holdings={a.holdings!} /> : a.currency === "XAU_G" ? "GOLD g" : a.currency}
+                    raw={inTry != null ? formatAmount(inTry, "TRY", locale) : formatAmount(d.balances.get(a.id) ?? 0, a.currency, locale)}
+                    converted={(inTry != null ? "TRY" : a.currency) === displayCurrency ? null : money(inDisplay(a.id) ?? 0)}
+                  />
+                );
+              })
             )}
             {/* a card shows what it's owed, not its ledger balance (lib/domain/cards.ts) */}
             {cards.map((a) => {
@@ -266,7 +272,7 @@ function LedgerRow({
   tone,
 }: {
   name: string;
-  meta: string;
+  meta: React.ReactNode;
   raw: string;
   converted: string | null;
   tone?: "pos" | "neg";
@@ -275,7 +281,7 @@ function LedgerRow({
     <div className="flex items-center justify-between gap-3 px-[var(--ui-card-pad-x)] py-[var(--ui-row-py)]">
       <div className="min-w-0">
         <div className="truncate text-sm">{name}</div>
-        <div className="text-xs text-zinc-500">{meta}</div>
+        <div className="truncate text-xs text-zinc-500">{meta}</div>
       </div>
       <div className="shrink-0 text-right">
         <Figure size="sm" tone={tone} className="block">

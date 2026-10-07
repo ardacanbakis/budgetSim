@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
+import { GoldType, goldRatiosOf, readHoldings } from "@/lib/domain/gold";
+import { HoldingsEditor, HoldingsList, HoldingsSummary } from "@/components/goldHoldings";
 import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { useFormatDate } from "@/lib/useFormatDate";
@@ -52,8 +54,11 @@ export default function PortfolioPage() {
   const deleteAccount = useAppMutation((id: string) => repo.deleteAccount(id), [KEYS.accounts, KEYS.transactions]);
 
   const balances = useMemo(
-    () => (accounts.data && transactions.data ? computeBalances(accounts.data, transactions.data) : new Map<string, number>()),
-    [accounts.data, transactions.data]
+    () =>
+      accounts.data && transactions.data
+        ? computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data))
+        : new Map<string, number>(),
+    [accounts.data, transactions.data, rates.data]
   );
 
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
@@ -70,8 +75,23 @@ export default function PortfolioPage() {
   const selected = (accounts.data ?? []).find((a) => a.id === selectedId) ?? null;
   const categoryById = new Map((categories.data ?? []).map((c) => [c.id, c]));
 
+  // A gold account holding a mix reads best in lira, with what it holds
+  // underneath: its gram-equivalent is a means of adding coins up, not a
+  // number anyone thinks in.
+  const mixed = (a: Account) => a.kind === "gold" && (a.holdings?.length ?? 0) > 0;
+  const figure = (a: Account, balance: number): { amount: number; currency: Currency } => {
+    if (mixed(a) && rates.data) {
+      const inTry = convert(balance, a.currency, "TRY", rates.data.usdPer);
+      if (inTry != null) return { amount: inTry, currency: "TRY" };
+    }
+    return { amount: balance, currency: a.currency };
+  };
+  const unitLabel = (a: Account) =>
+    mixed(a) ? <HoldingsSummary holdings={a.holdings!} /> : a.currency === "XAU_G" ? "GOLD g" : a.currency;
+
   function itemRow(account: Account) {
     const balance = balances.get(account.id) ?? 0;
+    const shown = figure(account, balance);
     const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
     const isCard = account.kind === "credit_card";
     const active = selectedId === account.id;
@@ -87,14 +107,14 @@ export default function PortfolioPage() {
           <span className="text-base">{isCard ? "💳" : account.kind === "crypto" ? "₿" : account.kind === "gold" ? "🪙" : "🏦"}</span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium">{account.name}</span>
-            <span className="block text-[11px] text-zinc-400">{account.currency === "XAU_G" ? "GOLD g" : account.currency}</span>
+            <span className="block truncate text-[11px] text-zinc-400">{unitLabel(account)}</span>
           </span>
         </span>
         <span className="text-right">
           <span className={`block text-sm font-semibold tabular-nums ${isCard && balance < 0 ? "text-red-600" : ""}`}>
-            {formatAmount(balance, account.currency, locale)}
+            {formatAmount(shown.amount, shown.currency, locale)}
           </span>
-          {account.currency !== displayCurrency && converted != null ? (
+          {shown.currency !== displayCurrency && converted != null ? (
             <span className="block text-[11px] tabular-nums text-zinc-400">≈ {formatAmount(converted, displayCurrency, locale)}</span>
           ) : null}
         </span>
@@ -105,6 +125,7 @@ export default function PortfolioPage() {
   /** A holding as a card — roomier, and the shape that survives a phone best. */
   function itemCard(account: Account) {
     const balance = balances.get(account.id) ?? 0;
+    const shown = figure(account, balance);
     const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
     const isCard = account.kind === "credit_card";
     const active = selectedId === account.id;
@@ -122,10 +143,11 @@ export default function PortfolioPage() {
           <span className="text-base">{isCard ? "💳" : account.kind === "crypto" ? "₿" : account.kind === "gold" ? "🪙" : "🏦"}</span>
           <span className="min-w-0 truncate text-sm font-medium">{account.name}</span>
         </span>
+        {mixed(account) ? <span className="truncate text-[11px] text-zinc-400">{unitLabel(account)}</span> : null}
         <span className={`tnum text-lg font-semibold ${isCard && balance < 0 ? "text-red-600" : ""}`}>
-          {formatAmount(balance, account.currency, locale)}
+          {formatAmount(shown.amount, shown.currency, locale)}
         </span>
-        {account.currency !== displayCurrency && converted != null ? (
+        {shown.currency !== displayCurrency && converted != null ? (
           <span className="tnum text-[11px] text-zinc-400">≈ {formatAmount(converted, displayCurrency, locale)}</span>
         ) : null}
       </button>
@@ -135,6 +157,7 @@ export default function PortfolioPage() {
   /** A holding as a table row, for when you're comparing figures not browsing. */
   function itemTableRow(account: Account) {
     const balance = balances.get(account.id) ?? 0;
+    const shown = figure(account, balance);
     const converted = rates.data ? convert(balance, account.currency, displayCurrency, rates.data.usdPer) : null;
     const isCard = account.kind === "credit_card";
     return (
@@ -149,13 +172,13 @@ export default function PortfolioPage() {
           {account.name}
         </td>
         <td className="px-3 py-1.5 text-xs text-zinc-500" data-label={t("common.currency")}>
-          {account.currency === "XAU_G" ? "GOLD g" : account.currency}
+          {unitLabel(account)}
         </td>
         <td
           className={`px-3 py-1.5 text-right text-sm font-semibold tnum ${isCard && balance < 0 ? "text-red-600" : ""}`}
           data-label={t("common.balance")}
         >
-          {formatAmount(balance, account.currency, locale)}
+          {formatAmount(shown.amount, shown.currency, locale)}
         </td>
         <td className="px-3 py-1.5 text-right text-xs tnum text-zinc-400" data-label={displayCurrency}>
           {converted != null ? formatAmount(converted, displayCurrency, locale) : "—"}
@@ -314,9 +337,12 @@ export default function PortfolioPage() {
                     {selected.archived ? <Badge tone="red">{t("accounts.archived")}</Badge> : null}
                   </div>
                   <div className={`mt-1 text-3xl font-bold tabular-nums ${selected.kind === "credit_card" && (balances.get(selected.id) ?? 0) < 0 ? "text-red-600" : ""}`}>
-                    {formatAmount(balances.get(selected.id) ?? 0, selected.currency, locale)}
+                    {(() => {
+                      const shown = figure(selected, balances.get(selected.id) ?? 0);
+                      return formatAmount(shown.amount, shown.currency, locale);
+                    })()}
                   </div>
-                  {rates.data && selected.currency !== displayCurrency ? (
+                  {rates.data && figure(selected, 0).currency !== displayCurrency ? (
                     <div className="text-sm text-zinc-400 tabular-nums">
                       ≈ {(() => {
                         const converted = convert(balances.get(selected.id) ?? 0, selected.currency, displayCurrency, rates.data.usdPer);
@@ -342,6 +368,13 @@ export default function PortfolioPage() {
                   </Button>
                 </div>
               </div>
+
+              {mixed(selected) ? (
+                <div className="border-b border-[var(--edge-soft)]">
+                  <p className="px-4 pt-3 text-[10px] font-medium uppercase tracking-wide text-zinc-400">{t("gold.holdings")}</p>
+                  <HoldingsList holdings={selected.holdings!} prices={rates.data?.goldTry} />
+                </div>
+              ) : null}
 
               <div className="flex items-center justify-between px-4 pt-3">
                 <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{t("portfolio.history")}</h3>
@@ -427,6 +460,7 @@ export function AccountModal({
 }) {
   const { t } = useI18n();
   const accounts = useAccounts();
+  const rates = useRates();
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState<Currency>("TRY");
   const [opening, setOpening] = useState("0");
@@ -434,6 +468,7 @@ export function AccountModal({
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [paymentDay, setPaymentDay] = useState("");
   const [creditLimit, setCreditLimit] = useState("");
+  const [holdings, setHoldings] = useState<{ type: GoldType; qty: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
 
@@ -451,9 +486,17 @@ export function AccountModal({
     setPaymentAccountId(initial?.paymentAccountId ?? "");
     setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
     setCreditLimit(initial?.creditLimit != null ? String(initial.creditLimit) : "");
+    // a gold account's grams so far become a gram-gold holding, so the list
+    // says everything it holds
+    const held = initial?.holdings ?? [];
+    const opening = initial?.currency === "XAU_G" ? initial.openingBalance : 0;
+    setHoldings(
+      [...(opening > 0 ? [{ type: "gram" as GoldType, qty: opening }] : []), ...held].map((h) => ({ type: h.type, qty: String(h.qty) }))
+    );
   }
 
   const fiat = CURRENCY_META[currency].kind === "fiat";
+  const gold = currency === "XAU_G";
   const paymentCandidates = (accounts.data ?? []).filter(
     (a) => !a.archived && a.kind === "fiat" && a.id !== initial?.id
   );
@@ -474,8 +517,10 @@ export function AccountModal({
               currency,
               kind: card ? "credit_card" : CURRENCY_META[currency].kind,
               // a card's ledger balance isn't used (lib/domain/cards.ts): what it's
-              // owed comes from the payments you record and the charges on it
-              openingBalance: card ? (initial?.openingBalance ?? 0) : Number(opening) || 0,
+              // owed comes from the payments you record and the charges on it.
+              // A gold account's grams live in its holdings.
+              openingBalance: card ? (initial?.openingBalance ?? 0) : gold ? 0 : Number(opening) || 0,
+              ...(gold ? { holdings: readHoldings(holdings.map((h) => ({ type: h.type, qty: Number(h.qty) }))) } : {}),
               paymentAccountId: card ? paymentAccountId || null : null,
               paymentDay: card && day >= 1 && day <= 31 ? day : null,
               creditLimit: card && Number(creditLimit) > 0 ? Number(creditLimit) : null,
@@ -544,7 +589,12 @@ export function AccountModal({
             </Field>
           </div>
         ) : null}
-        {fiat && isCard ? null : (
+        {gold ? (
+          // a list of controls, so a Fieldset: a Field's <label> would rename its first button
+          <Fieldset label={t("gold.holdings")} hint={t("gold.holdingsHint")}>
+            <HoldingsEditor value={holdings} onChange={setHoldings} prices={rates.data?.goldTry} />
+          </Fieldset>
+        ) : fiat && isCard ? null : (
           <Field label={t("accounts.openingBalance")}>
             <Input
               type="number"

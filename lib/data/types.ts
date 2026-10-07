@@ -1,5 +1,6 @@
 import { Currency, CurrencyKind } from "@/lib/domain/currencies";
 import { FxSnapshot } from "@/lib/domain/fx";
+import { GoldHolding } from "@/lib/domain/gold";
 
 export type TxDirection = "income" | "expense";
 export type TxStatus = "planned" | "completed";
@@ -22,6 +23,11 @@ export interface Account {
   paymentDay: number | null;
   /** credit cards: the agreed limit, in the account's currency. Null = unset. */
   creditLimit?: number | null;
+  /**
+   * gold accounts: a mix of coins and gram gold (2 tam, 50 g has, ...), on top
+   * of whatever the ledger holds in grams. See lib/domain/gold.ts.
+   */
+  holdings?: GoldHolding[] | null;
   createdAt: string;
 }
 

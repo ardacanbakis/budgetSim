@@ -90,7 +90,7 @@ function Bootstrapper() {
         const existing = await repo.listSnapshots();
         if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
           const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
-          const { total, balances } = netWorthNow({ accounts, transactions, usdPer: table.usdPer, display: "USD", today });
+          const { total, balances } = netWorthNow({ accounts, transactions, usdPer: table.usdPer, goldTry: table.goldTry, display: "USD", today });
           await repo.takeSnapshot({
             snapshotDate: today,
             balances: Object.fromEntries(balances),

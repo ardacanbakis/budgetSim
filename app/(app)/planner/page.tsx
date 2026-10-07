@@ -42,6 +42,7 @@ import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { buildPlanExport } from "@/lib/domain/planExport";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
@@ -184,6 +185,7 @@ export default function PlannerPage() {
     transactions: transactions.data,
     templates: templates.data,
     usdPer: rates.data.usdPer,
+    goldRatios: goldRatiosOf(rates.data),
     display: displayCurrency,
     fromDate: todayISO(),
     months,
@@ -208,6 +210,7 @@ export default function PlannerPage() {
     transactions: transactions.data,
     templates: templates.data,
     usdPer: rates.data.usdPer,
+    goldRatios: goldRatiosOf(rates.data),
     display: displayCurrency,
     fromDate: todayISO(),
     months,
@@ -233,6 +236,7 @@ export default function PlannerPage() {
         transactions: transactions.data,
         templates: templates.data,
         usdPer: rates.data.usdPer,
+        goldRatios: goldRatiosOf(rates.data),
         display: displayCurrency,
         fromDate: todayISO(),
         months,
@@ -286,7 +290,7 @@ export default function PlannerPage() {
   ];
   const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
   // what each account holds today, so the card can show start → sold → left
-  const startBalances = computeBalances(accounts.data, transactions.data);
+  const startBalances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
 
   // what-if items read best in the order they'll happen; grouping by
   // direction is a switch because sometimes you want all the outgoings together

@@ -314,6 +314,37 @@ test("settings: a page can be hidden from the sidebar, but Settings can't", asyn
   await expect(page).toHaveURL(/\/victvs$/);
 });
 
+test("gold: one account holds a mix of coins and gram gold, valued in lira", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
+  const modal = page.locator(".fixed.inset-0").last();
+  await modal.getByLabel(/^name$|^ad$/i).fill("Altın kasası");
+  // the label reads "Currency" plus whatever is selected
+  await modal.getByLabel(/^(currency|para birimi)/i).selectOption("XAU_G");
+
+  const add = async (type: string, qty: string) => {
+    await modal.getByRole("button", { name: /\+ (add gold|altın ekle)/i }).click();
+    await modal.getByLabel(/gold type|altın türü/i).last().selectOption(type);
+    await modal.getByLabel(/quantity|miktar/i).last().fill(qty);
+  };
+  await add("tam", "2");
+  await add("ceyrek", "5");
+  await add("has", "50");
+  await expect(modal.getByText(/^(Worth|Değeri) ₺/)).toBeVisible();
+  await modal.getByRole("button", { name: /^save$|kaydet/i }).click();
+
+  // the row says what's held and what it's worth, in lira
+  const row = page.getByRole("button", { name: /Altın kasası/ }).first();
+  await expect(row).toContainText(/2 (Tam|Tam altın) · 5 (Çeyrek|Çeyrek altın) · \+1/);
+  await expect(row).toContainText("₺");
+  await row.click();
+  // and the detail lists each holding with its price
+  await expect(page.getByText(/50 g (Has gold|Has altın)/)).toBeVisible();
+  await expect(page.getByText(/each|tanesi/i).first()).toBeVisible();
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

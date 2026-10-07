@@ -30,6 +30,8 @@ export interface NewAccount {
   paymentAccountId?: string | null;
   paymentDay?: number | null;
   creditLimit?: number | null;
+  /** gold accounts: what's held (see lib/domain/gold.ts) */
+  holdings?: import("@/lib/domain/gold").GoldHolding[] | null;
 }
 
 export interface NewPurchase {

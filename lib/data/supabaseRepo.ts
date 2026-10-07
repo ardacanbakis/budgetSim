@@ -39,6 +39,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
+import { readHoldings } from "@/lib/domain/gold";
 import { toDbError } from "./errors";
 import { selectAll } from "./paginate";
 
@@ -55,6 +56,7 @@ const accountFromRow = (r: Row): Account => ({
   paymentAccountId: r.payment_account_id ?? null,
   paymentDay: r.payment_day ?? null,
   creditLimit: r.credit_limit == null ? null : Number(r.credit_limit),
+  holdings: readHoldings(r.holdings),
   createdAt: r.created_at,
 });
 
@@ -211,6 +213,9 @@ export class SupabaseRepo implements Repo {
         payment_account_id: input.paymentAccountId ?? null,
         payment_day: input.paymentDay ?? null,
         credit_limit: input.creditLimit ?? null,
+        // only sent when there is something to hold, so a database without
+        // migration 0015 can still create every other kind of account
+        ...(input.holdings?.length ? { holdings: input.holdings } : {}),
       })
       .select()
       .single();
@@ -228,6 +233,7 @@ export class SupabaseRepo implements Repo {
     if (patch.paymentAccountId !== undefined) row.payment_account_id = patch.paymentAccountId;
     if (patch.paymentDay !== undefined) row.payment_day = patch.paymentDay;
     if (patch.creditLimit !== undefined) row.credit_limit = patch.creditLimit;
+    if (patch.holdings !== undefined) row.holdings = patch.holdings?.length ? patch.holdings : null;
     const { error } = await this.db.from("accounts").update(row).eq("id", id);
     throwIf(error);
   }
@@ -1090,6 +1096,7 @@ export class SupabaseRepo implements Repo {
       backup.accounts.map((a) => ({
         id: a.id, user_id: u, name: a.name, currency: a.currency, kind: a.kind,
         opening_balance: a.openingBalance, archived: a.archived, created_at: a.createdAt,
+        ...(a.holdings?.length ? { holdings: a.holdings } : {}),
       }))
     );
     for (const a of backup.accounts) {

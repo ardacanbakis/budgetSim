@@ -3,6 +3,7 @@ import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { buildCardBook } from "./cards";
+import { GoldRatios } from "./gold";
 import { addMonthsClamped, occurrencesBetween } from "./recurrence";
 
 /** One named contribution to a month, in the display currency at that month's rates. */
@@ -102,6 +103,8 @@ export function projectCashflow(params: {
   transactions: Transaction[];
   templates: RecurringTemplate[];
   usdPer: UsdPerMap;
+  /** what gold held as coins or bilezik is worth in grams (lib/domain/gold.ts) */
+  goldRatios?: GoldRatios;
   display: Currency;
   fromDate: string; // yyyy-mm-dd
   months: number;
@@ -132,6 +135,7 @@ export function projectCashflow(params: {
     transactions,
     templates,
     usdPer,
+    goldRatios,
     display,
     fromDate,
     months,
@@ -145,7 +149,7 @@ export function projectCashflow(params: {
   const horizonEnd = addMonthsClamped(fromDate, months);
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
 
-  const balances = computeBalances(accounts, transactions);
+  const balances = computeBalances(accounts, transactions, goldRatios);
   const { total: startNetWorth, skippedAccountIds } = computeNetWorth(
     accounts,
     balances,

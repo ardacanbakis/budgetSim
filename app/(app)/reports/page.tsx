@@ -26,6 +26,7 @@ import {
   useTransactions,
 } from "@/lib/data/queries";
 import { computeBalances } from "@/lib/domain/balances";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { buildCardBook, isIncome, isSpending, netWorthNow } from "@/lib/domain/cards";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
@@ -93,6 +94,7 @@ export default function ReportsPage() {
       accounts: accounts.data,
       transactions: transactions.data,
       usdPer: rates.data.usdPer,
+      goldTry: rates.data.goldTry,
       display: "USD",
       today: todayISO(),
     });
@@ -126,7 +128,7 @@ export default function ReportsPage() {
   }));
 
   // ---- allocation by currency (current balances)
-  const balances = computeBalances(accounts.data, transactions.data);
+  const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
   const allocation = CURRENCIES.map((currency) => {
     let sum = 0;
     for (const a of accounts.data!) {

@@ -9,6 +9,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
 import { findDueCardPayments } from "@/lib/domain/purchases";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 
 export interface DashboardData {
@@ -50,7 +51,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
 
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
-  const balances = computeBalances(accounts.data, transactions.data);
+  const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
   const book = buildCardBook(accounts.data, transactions.data);
   const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
   // what the cards are owed counts as debt now (current stat only — the

@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { Button, Card, CardHeader, Field, Input, Modal, Select } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useGoals, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useGoals, useRates, useTransactions } from "@/lib/data/queries";
 import { Goal } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { goalProgress } from "@/lib/domain/budgets";
 import { formatAmount } from "@/lib/domain/currencies";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -18,14 +19,18 @@ export function GoalsCard({ className }: { className?: string }) {
   const goals = useGoals();
   const accounts = useAccounts();
   const transactions = useTransactions();
+  const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
 
   const deleteGoal = useAppMutation((id: string) => repo.deleteGoal(id), [KEYS.goals]);
 
   const balances = useMemo(
-    () => (accounts.data && transactions.data ? computeBalances(accounts.data, transactions.data) : new Map<string, number>()),
-    [accounts.data, transactions.data]
+    () =>
+      accounts.data && transactions.data
+        ? computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data))
+        : new Map<string, number>(),
+    [accounts.data, transactions.data, rates.data]
   );
   const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
   const today = todayISO();

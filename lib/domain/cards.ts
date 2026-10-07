@@ -2,6 +2,7 @@ import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "./balances";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
+import { GoldPrices, goldRatiosOf } from "./gold";
 
 /**
  * Credit cards as they're used here: what you spend on a card counts when you
@@ -202,9 +203,11 @@ export function netWorthNow(params: {
   usdPer: UsdPerMap;
   display: Currency;
   today: string;
+  /** every gold type's price, for gold held as coins or bilezik */
+  goldTry?: GoldPrices;
 }): { total: number; owed: number; skippedAccountIds: string[]; balances: Map<string, number> } {
-  const { accounts, transactions, usdPer, display, today } = params;
-  const balances = computeBalances(accounts, transactions);
+  const { accounts, transactions, usdPer, display, today, goldTry } = params;
+  const balances = computeBalances(accounts, transactions, goldRatiosOf({ usdPer, goldTry }));
   const held = computeNetWorth(accounts, balances, usdPer, display);
   const owed = totalOwed(buildCardBook(accounts, transactions), accounts, today, usdPer, display);
   return { total: held.total - owed, owed, skippedAccountIds: held.skippedAccountIds, balances };

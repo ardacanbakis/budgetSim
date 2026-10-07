@@ -2,20 +2,30 @@ import { Account, Transaction } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { fromMinor, toMinor } from "./money";
 import { convert, UsdPerMap } from "./fx";
+import { GoldRatios, holdingsInGrams } from "./gold";
 
 /**
  * Balances are always derived from completed transactions — never stored —
  * so every device computes the same number from the same server data.
+ *
+ * A gold account's holdings (coins, has, bilezik) add what they're worth in
+ * grams of gram gold, at `goldRatios` (from today's prices; the stand-in
+ * ratios when none are given). See lib/domain/gold.ts.
  */
 export function computeBalances(
   accounts: Account[],
-  transactions: Transaction[]
+  transactions: Transaction[],
+  goldRatios?: GoldRatios
 ): Map<string, number> {
   const minor = new Map<string, number>();
   const currencyOf = new Map<string, Currency>();
+  // kept apart from the ledger's minor units: rounded to 0.01 g, a mix of
+  // coins would drift by a few lira from the sum of its holdings
+  const held = new Map<string, number>();
   for (const a of accounts) {
     minor.set(a.id, toMinor(a.openingBalance, a.currency));
     currencyOf.set(a.id, a.currency);
+    if (a.holdings?.length) held.set(a.id, holdingsInGrams(a.holdings, goldRatios));
   }
   for (const t of transactions) {
     if (t.status !== "completed" || t.legacy) continue;
@@ -25,7 +35,7 @@ export function computeBalances(
     minor.set(t.accountId, (minor.get(t.accountId) ?? 0) + sign * toMinor(t.amount, cur));
   }
   const result = new Map<string, number>();
-  for (const [id, m] of minor) result.set(id, fromMinor(m, currencyOf.get(id)!));
+  for (const [id, m] of minor) result.set(id, fromMinor(m, currencyOf.get(id)!) + (held.get(id) ?? 0));
   return result;
 }
 
