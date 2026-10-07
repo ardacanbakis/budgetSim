@@ -12,6 +12,9 @@
 
 /* Structural surfaces — themed via .dark and data-theme (Slate/Ocean/Forest/Mocha) */
 :root {
+  /* native controls (date pickers, selects, scrollbars) follow the theme;
+     without it a date field's calendar icon is drawn black on a dark field */
+  color-scheme: light;
   --page: #fafafa;
   --surface: #ffffff;
   --field: #ffffff;
@@ -19,6 +22,7 @@
   --edge-soft: #f4f4f5;
 }
 .dark {
+  color-scheme: dark;
   --page: #09090b;
   --surface: #18181b;
   --field: #09090b;
