@@ -280,6 +280,24 @@ test("cards: the starting debt is entered as owed, and a card in credit says so"
   await expect(card).not.toContainText("-5,785");
 });
 
+test("settings: a page can be hidden from the sidebar, but Settings can't", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  const sidebar = page.locator("aside nav");
+  await expect(sidebar).toContainText("VICTVS");
+
+  await page.getByRole("checkbox", { name: /show victvs in the sidebar|victvs menüde görünsün/i }).uncheck();
+  await expect(sidebar).not.toContainText("VICTVS");
+  await expect(page.getByRole("checkbox", { name: /show settings in the sidebar|ayarlar menüde görünsün/i })).toBeDisabled();
+
+  // it sticks, and the page itself is still there
+  await page.reload();
+  await expect(page.locator("aside nav")).not.toContainText("VICTVS");
+  await page.goto("/victvs");
+  await expect(page).toHaveURL(/\/victvs$/);
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

@@ -18,19 +18,52 @@ export const NAV = [
 
 export type NavItem = (typeof NAV)[number];
 
-/** Apply the user's saved sidebar order; unknown ids dropped, missing appended. */
-export function orderedNav(navOrder: string[] | null | undefined): NavItem[] {
-  if (!navOrder?.length) return [...NAV];
+/** Settings can't be hidden: it's where you'd go to bring the rest back. */
+const ALWAYS_SHOWN = "/settings";
+const HIDDEN = "!";
+
+export interface NavEntry {
+  item: NavItem;
+  hidden: boolean;
+}
+
+/**
+ * The saved sidebar: its order and which pages are hidden, as one list of
+ * hrefs with hidden ones marked by a leading "!" (["/", "!/victvs", ...]).
+ * The nav_order column already held the order, so hiding needed no
+ * migration. A version from before hiding reads "!/victvs" as unknown and
+ * shows that page at the end. Unknown hrefs are dropped; pages missing from
+ * the list (added since it was saved) are appended, shown.
+ */
+export function navEntries(navOrder: string[] | null | undefined): NavEntry[] {
   const byHref = new Map<string, NavItem>(NAV.map((item) => [item.href, item]));
-  const result: NavItem[] = [];
-  for (const href of navOrder) {
+  const result: NavEntry[] = [];
+  for (const saved of navOrder ?? []) {
+    const marked = saved.startsWith(HIDDEN);
+    const href = marked ? saved.slice(HIDDEN.length) : saved;
     const item = byHref.get(href);
-    if (item) {
-      result.push(item);
-      byHref.delete(href);
-    }
+    if (!item) continue;
+    byHref.delete(href);
+    result.push({ item, hidden: marked && href !== ALWAYS_SHOWN });
   }
-  return [...result, ...byHref.values()];
+  for (const item of byHref.values()) result.push({ item, hidden: false });
+  return result;
+}
+
+export function encodeNav(entries: NavEntry[]): string[] {
+  return entries.map((e) => (e.hidden ? HIDDEN : "") + e.item.href);
+}
+
+/** Every page in the user's order, hidden ones included. */
+export function orderedNav(navOrder: string[] | null | undefined): NavItem[] {
+  return navEntries(navOrder).map((e) => e.item);
+}
+
+/** What the sidebar and phone bar show. Hidden pages stay reachable from the quick jump (⌘K). */
+export function visibleNav(navOrder: string[] | null | undefined): NavItem[] {
+  return navEntries(navOrder)
+    .filter((e) => !e.hidden)
+    .map((e) => e.item);
 }
 
 /** The nav entry whose page you're on — used for the header title in v2. */

@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RateTicker } from "@/components/rateTicker";
 import { CardDueBanner } from "@/components/cardDueBanner";
 import { CommandPalette } from "@/components/commandPalette";
-import { navTitleKey, orderedNav as orderNav } from "@/components/shell.nav";
+import { navTitleKey, visibleNav } from "@/components/shell.nav";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -160,7 +160,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rates = useRates();
   const settings = useUserSettings();
-  const nav = orderNav(settings.data?.navOrder);
+  const nav = visibleNav(settings.data?.navOrder);
   // phone bar: the first four, plus More — except that the page you're on is
   // always one of the four, so you can see where you are without opening it
   const primaryNav = nav.slice(0, 4);

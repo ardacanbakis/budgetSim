@@ -7,8 +7,9 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Se
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
-import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
-import { NAV, orderedNav } from "@/components/shell";
+import { DEFAULT_VICTVS_AMOUNTS, TxDirection, UserSettings, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
+import { NAV } from "@/components/shell";
+import { encodeNav, NavEntry, navEntries } from "@/components/shell.nav";
 import { LegacyImportModal } from "@/components/legacyImportModal";
 import { COLLAPSE_HISTORY_KEY, SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
@@ -678,6 +679,7 @@ function VictvsSettingsCard() {
 function SidebarOrderCard() {
   const { t } = useI18n();
   const repo = useRepo();
+  const queryClient = useQueryClient();
   const settings = useUserSettings();
 
   const save = useAppMutation(
@@ -685,15 +687,30 @@ function SidebarOrderCard() {
     [KEYS.userSettings]
   );
 
-  const nav = orderedNav(settings.data?.navOrder);
+  // A change shows at once, here and in the sidebar, rather than after the
+  // save and refetch; a failed save puts back what the server has.
+  const [draft, setDraft] = useState<string[] | null>(null);
+  const entries = navEntries(draft ?? settings.data?.navOrder);
+  const saveEntries = (next: NavEntry[]) => {
+    const navOrder = encodeNav(next);
+    setDraft(navOrder);
+    queryClient.setQueryData<UserSettings>(KEYS.userSettings, (current) => (current ? { ...current, navOrder } : current));
+    save.mutate(navOrder, {
+      onError: () => queryClient.invalidateQueries({ queryKey: KEYS.userSettings }),
+      onSettled: () => setDraft(null),
+    });
+  };
 
   const move = (index: number, delta: -1 | 1) => {
     const target = index + delta;
-    if (target < 0 || target >= nav.length) return;
-    const next = nav.map((item) => item.href);
+    if (target < 0 || target >= entries.length) return;
+    const next = [...entries];
     [next[index], next[target]] = [next[target], next[index]];
-    save.mutate(next);
+    saveEntries(next);
   };
+
+  const toggle = (index: number) =>
+    saveEntries(entries.map((e, i) => (i === index ? { ...e, hidden: !e.hidden } : e)));
 
   return (
     <Card>
@@ -707,11 +724,21 @@ function SidebarOrderCard() {
           ) : undefined
         }
       />
+      <p className="px-4 pt-2 text-xs text-zinc-500">{t("settings.sidebarHint")}</p>
       <ul className="divide-y divide-[var(--edge-soft)]">
-        {nav.map((item, index) => (
+        {entries.map(({ item, hidden }, index) => (
           <li key={item.href} className="flex items-center gap-3 px-4 py-2">
-            <span className="w-4 text-center text-zinc-400">{item.icon}</span>
-            <span className="flex-1 text-sm">{t(item.key)}</span>
+            <input
+              type="checkbox"
+              checked={!hidden}
+              disabled={item.href === "/settings"}
+              onChange={() => toggle(index)}
+              aria-label={t("settings.sidebarShow", { page: t(item.key) })}
+              title={item.href === "/settings" ? t("settings.sidebarSettingsStays") : undefined}
+              className="h-4 w-4 accent-teal-600 disabled:opacity-40"
+            />
+            <span className={`w-4 text-center text-zinc-400 ${hidden ? "opacity-40" : ""}`}>{item.icon}</span>
+            <span className={`flex-1 text-sm ${hidden ? "text-zinc-400 line-through" : ""}`}>{t(item.key)}</span>
             <button
               onClick={() => move(index, -1)}
               disabled={index === 0}
@@ -722,7 +749,7 @@ function SidebarOrderCard() {
             </button>
             <button
               onClick={() => move(index, 1)}
-              disabled={index === nav.length - 1}
+              disabled={index === entries.length - 1}
               className="px-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
               aria-label={t("layout.moveDown")}
             >
