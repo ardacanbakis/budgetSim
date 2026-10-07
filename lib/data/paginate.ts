@@ -5,24 +5,18 @@
  * history — and with it every balance, card debt and backup built on it.
  */
 
+import { IncompleteReadError, toDbError } from "./errors";
+
 export const PAGE_SIZE = 1000;
 
 export interface PageResult<T> {
   data: T[] | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string; details?: string; hint?: string } | null;
   count?: number | null;
 }
 
 /** One page: rows [from, to] inclusive; `withCount` asks for the exact total too. */
 export type PageFetcher<T> = (from: number, to: number, withCount: boolean) => PromiseLike<PageResult<T>>;
-
-/** The read ended with fewer rows than the table said it had. */
-export class IncompleteReadError extends Error {
-  constructor(table: string, got: number, total: number) {
-    super(`${table}: read ${got} of ${total} rows. The data changed or the server cut the read short; try again.`);
-    this.name = "IncompleteReadError";
-  }
-}
 
 /**
  * Every row a query matches. The first request also asks for the exact count,
@@ -46,7 +40,7 @@ export async function selectAll<T extends { id: string }>(
   let offset = 0;
   for (;;) {
     const { data, error, count } = await fetchPage(offset, offset + pageSize - 1, total == null);
-    if (error) throw new Error(error.message);
+    if (error) throw toDbError(error);
     if (total == null) total = count ?? null;
     const page = data ?? [];
     if (!page.length) break;

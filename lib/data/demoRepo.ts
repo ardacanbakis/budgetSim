@@ -85,8 +85,15 @@ export class DemoRepo implements Repo {
   }
 
   private save(): void {
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return;
+    try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
+    } catch (err) {
+      // What didn't persist didn't happen: go back to what's stored, the way
+      // a failed database write leaves the database as it was. Keeping the
+      // change in memory made a retry find it "already done" and save nothing.
+      this.store = load();
+      throw err;
     }
   }
 

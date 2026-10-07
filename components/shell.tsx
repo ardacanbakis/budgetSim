@@ -11,6 +11,7 @@ import { navTitleKey, orderedNav as orderNav } from "@/components/shell.nav";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
+import { describeError, ErrorDescription } from "@/lib/data/errors";
 import { useApp } from "@/lib/data/provider";
 import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
@@ -33,16 +34,22 @@ export { NAV, orderedNav } from "@/components/shell.nav";
  *     and take this month's net-worth snapshot if there isn't one. Both freeze
  *     the rates they use into history, so a stale table (the static fallback,
  *     or any currency the server had to fill from it) holds them back. They
- *     run when fresh rates arrive: a refetch on focus, or every 15 minutes.
+ *     run when fresh rates arrive: a refetch on focus, or every minute.
+ * If either recurring step fails, a strip under the header says so and why,
+ * with a retry; nothing else tells you the schedule has stopped moving. A
+ * failed snapshot only logs: it's tried again on the next open this month.
  * Works identically in demo and Supabase modes.
  */
 function Bootstrapper() {
   const { session } = useApp();
+  const { t } = useI18n();
   const rates = useRates();
   const queryClient = useQueryClient();
   const scheduling = useRef(false);
   const [scheduled, setScheduled] = useState(false);
   const settling = useRef(false);
+  const [failure, setFailure] = useState<ErrorDescription | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const table = rates.data;
 
   useEffect(() => {
@@ -59,11 +66,12 @@ function Bootstrapper() {
         }
       } catch (err) {
         console.warn("recurring sync failed", err);
+        setFailure(describeError(err));
       }
       // what's already on the ledger can still settle
       setScheduled(true);
     })();
-  }, [session, queryClient]);
+  }, [session, queryClient, attempt]);
 
   useEffect(() => {
     if (settling.current || !scheduled || session.status !== "ready" || !table || isStaleTable(table)) return;
@@ -73,6 +81,11 @@ function Bootstrapper() {
       try {
         const completed = await repo.autoCompleteDue(snapshotFromTable(table));
         if (completed) await queryClient.invalidateQueries({ queryKey: KEYS.transactions });
+      } catch (err) {
+        console.warn("auto-complete failed", err);
+        setFailure(describeError(err));
+      }
+      try {
         const today = todayISO();
         const existing = await repo.listSnapshots();
         if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
@@ -88,12 +101,35 @@ function Bootstrapper() {
           await queryClient.invalidateQueries({ queryKey: KEYS.snapshots });
         }
       } catch (err) {
-        console.warn("auto-complete failed", err);
+        console.warn("net-worth snapshot failed", err);
       }
     })();
   }, [scheduled, session, table, queryClient]);
 
-  return null;
+  // both steps are safe to repeat: materialize only adds what's missing, and
+  // auto-complete only touches rows still planned
+  function retry() {
+    scheduling.current = false;
+    settling.current = false;
+    setScheduled(false);
+    setFailure(null);
+    setAttempt((n) => n + 1);
+  }
+
+  if (!failure) return null;
+  return (
+    <div
+      role="alert"
+      className="no-print flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-red-300 bg-red-50 px-4 py-1.5 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
+      <span className="font-semibold">{t("errors.syncFailed")}</span>
+      <span>{t(`errors.${failure.kind}`)}</span>
+      {failure.kind === "unknown" ? <span className="opacity-75">{failure.detail}</span> : null}
+      <button type="button" className="font-semibold underline" onClick={retry}>
+        {t("errors.retry")}
+      </button>
+    </div>
+  );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {

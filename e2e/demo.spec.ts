@@ -170,6 +170,90 @@ test("recurring: editing an item redoes its upcoming items, one a month", async 
   expect(planned.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
 });
 
+/** Demo saves throw while window.__failSaves is set, the way a full localStorage does. */
+async function failableSaves(page: Page) {
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if ((window as unknown as { __failSaves?: boolean }).__failSaves && key === "renovator-demo-v5") {
+        throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      }
+      return original.call(this, key, value);
+    };
+  });
+}
+const setFailSaves = (page: Page, on: boolean) =>
+  page.evaluate((v) => ((window as unknown as { __failSaves?: boolean }).__failSaves = v), on);
+
+test("errors: a failed save says why and keeps the form open", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await failableSaves(page);
+  await enterDemo(page);
+  await page.goto("/recurring");
+
+  await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+  await page.getByLabel(/^name$|^ad$/i).fill("Gym");
+  await page.getByLabel(/amount|tutar/i).first().fill("900");
+  await setFailSaves(page, true);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+
+  const toast = page.getByRole("alert").filter({ hasText: /Couldn't save|Kaydedilemedi/ });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText(/quota/);
+  // nothing typed is lost
+  await expect(page.getByLabel(/^name$|^ad$/i)).toHaveValue("Gym");
+
+  await toast.getByRole("button", { name: /dismiss|kapat/i }).click();
+  await expect(toast).toHaveCount(0);
+});
+
+test("errors: a failed recurring sync shows a banner, and retry catches up", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await failableSaves(page);
+  await enterDemo(page);
+
+  // an item starting next month with nothing scheduled yet, so the next app
+  // open has rows to save
+  await page.evaluate(() => {
+    const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5")!);
+    const next = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+    const startDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
+    store.templates.push({
+      id: "probe-tpl", name: "Probe bill", accountId: store.accounts[0].id, direction: "expense", categoryId: null,
+      amount: 100, frequency: "monthly", startDate, endDate: null, autoComplete: false, loanId: null,
+      createdAt: new Date().toISOString(),
+    });
+    window.localStorage.setItem("renovator-demo-v5", JSON.stringify(store));
+  });
+  await page.addInitScript(() => ((window as unknown as { __failSaves?: boolean }).__failSaves = true));
+  await page.reload();
+
+  const banner = page.getByRole("alert").filter({ hasText: /Recurring items couldn't be brought up to date|Düzenli işlemler güncellenemedi/ });
+  await expect(banner).toBeVisible({ timeout: 15_000 });
+
+  await setFailSaves(page, false);
+  await banner.getByRole("button", { name: /^retry$|tekrar dene/i }).click();
+  await expect(banner).toHaveCount(0);
+  const probeRows = await page.evaluate(
+    () =>
+      JSON.parse(window.localStorage.getItem("renovator-demo-v5")!).transactions.filter(
+        (t: { recurringTemplateId: string }) => t.recurringTemplateId === "probe-tpl"
+      ).length
+  );
+  // the retry scheduled the item and the save went through this time
+  expect(probeRows).toBeGreaterThan(0);
+});
+
+test("auth: leaving the demo goes back to sign-in, and stays there after a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.getByRole("button", { name: /exit demo|demodan çık/i }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(await page.evaluate(() => window.localStorage.getItem("renovator-mode"))).toBeNull();
+  await page.reload();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
