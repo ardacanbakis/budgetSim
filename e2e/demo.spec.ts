@@ -54,11 +54,32 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
 });
 
+test("recurring: a tab of Transactions, and the old address still lands there", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  // gone from the sidebar…
+  await expect(page.getByRole("link", { name: /^recurring$|^düzenli$/i })).toHaveCount(0);
+  // …and a tab on the Transactions page instead
+  await page.goto("/transactions");
+  const recurringTab = page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i });
+  await expect(page.getByRole("tab", { name: /^transactions$|^işlemler$/i })).toHaveAttribute("aria-selected", "true");
+  await recurringTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Rent", { exact: true })).toBeVisible();
+
+  // a bookmark to the old page redirects to the tab
+  await page.goto("/recurring");
+  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+  await expect(page.getByRole("button", { name: /new recurring item|yeni düzenli/i })).toBeVisible();
+});
+
 test("recurring: a template started in the past backfills its earlier items", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
   await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Backfill Salary");
   // scoped to the form: the page's own filter has an Income button too
@@ -87,7 +108,7 @@ test("recurring: a template started in the past backfills its earlier items", as
 test("recurring: finished items are labelled, filterable, and the label colour is adjustable", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   const monthsAgo = (n: number) => {
     const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
@@ -113,7 +134,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
   await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^recurring$|düzenli işlemler/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
 
@@ -133,7 +154,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
 test("recurring: editing an item redoes its upcoming items, one a month", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   // the demo's rent: due on the 10th, auto-completed, 12 months ahead
   const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
@@ -189,7 +210,7 @@ test("errors: a failed save says why and keeps the form open", async ({ page }) 
   await page.setViewportSize({ width: 1280, height: 900 });
   await failableSaves(page);
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
   await page.getByLabel(/^name$|^ad$/i).fill("Gym");
@@ -941,7 +962,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { ReactNode, Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -15,9 +16,57 @@ import { useApp } from "@/lib/data/provider";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { RecurringTab } from "@/components/recurringTab";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 
+const TABS = ["ledger", "recurring"] as const;
+type Tab = (typeof TABS)[number];
+
 export default function TransactionsPage() {
+  // useSearchParams needs a Suspense boundary on a prerendered page
+  return (
+    <Suspense fallback={<Spinner />}>
+      <TransactionsScreen />
+    </Suspense>
+  );
+}
+
+/**
+ * The ledger and the recurring items that fill it, as two tabs. The open tab
+ * lives in the URL (?tab=recurring), so /recurring can redirect here and the
+ * back button steps between them.
+ */
+function TransactionsScreen() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const params = useSearchParams();
+  const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
+
+  const tabs = (
+    <div role="tablist" aria-label={t("tx.title")} className="flex gap-1 border-b border-[var(--edge)]">
+      {TABS.map((id) => (
+        <button
+          key={id}
+          role="tab"
+          type="button"
+          aria-selected={tab === id}
+          onClick={() => router.replace(id === "ledger" ? "/transactions" : `/transactions?tab=${id}`, { scroll: false })}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            tab === id
+              ? "border-teal-600 text-teal-700 dark:text-teal-300"
+              : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
+        >
+          {id === "ledger" ? t("tx.tabLedger") : t("recurring.title")}
+        </button>
+      ))}
+    </div>
+  );
+
+  return tab === "recurring" ? <RecurringTab tabs={tabs} /> : <LedgerTab tabs={tabs} />;
+}
+
+function LedgerTab({ tabs }: { tabs: ReactNode }) {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();
@@ -182,6 +231,8 @@ export default function TransactionsPage() {
           </Button>
         </div>
       </div>
+
+      {tabs}
 
       <div className="flex flex-wrap gap-2">
         <Select className="!w-auto" value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>

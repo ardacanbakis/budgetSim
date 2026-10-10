@@ -41,7 +41,6 @@ export const en = {
     transactions: "Transactions",
     cards: "Cards",
     victvs: "VICTVS",
-    recurring: "Recurring",
     loans: "Debt",
     reports: "Reports",
     planner: "Planner",
@@ -417,6 +416,7 @@ export const en = {
   },
   tx: {
     title: "Transactions",
+    tabLedger: "Transactions",
     newTransaction: "New transaction",
     newTransfer: "New transfer",
     income: "Income",
@@ -998,7 +998,6 @@ export const tr: Dictionary = {
     transactions: "İşlemler",
     cards: "Kartlar",
     victvs: "VICTVS",
-    recurring: "Düzenli",
     loans: "Borçlar",
     reports: "Raporlar",
     planner: "Planlayıcı",
@@ -1374,6 +1373,7 @@ export const tr: Dictionary = {
   },
   tx: {
     title: "İşlemler",
+    tabLedger: "İşlemler",
     newTransaction: "Yeni işlem",
     newTransfer: "Yeni transfer",
     income: "Gelir",

@@ -8,7 +8,6 @@ export const NAV = [
   { href: "/transactions", key: "nav.transactions", icon: "⇄" },
   { href: "/cards", key: "nav.cards", icon: "💳" },
   { href: "/victvs", key: "nav.victvs", icon: "✓" },
-  { href: "/recurring", key: "nav.recurring", icon: "↻" },
   { href: "/loans", key: "nav.loans", icon: "⌂" },
   { href: "/reports", key: "nav.reports", icon: "◔" },
   { href: "/planner", key: "nav.planner", icon: "◈" },
