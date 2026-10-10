@@ -4,17 +4,21 @@ import { useAccounts, useRates, useTransactions, useVictvsSessions } from "@/lib
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
+import { buildCardBook, CardBook, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
-import { computePurchaseLiability, findDueCardPayments } from "@/lib/domain/purchases";
+import { findDueCardPayments } from "@/lib/domain/purchases";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 
 export interface DashboardData {
   balances: Map<string, number>;
+  /** what you hold, less what every card is owed */
   netWorth: ReturnType<typeof computeNetWorth>;
-  liability: number;
-  ccPostedDebt: number;
+  /** what every card is owed, display currency (see lib/domain/cards.ts) */
+  cardsOwed: number;
+  book: CardBook;
   duePayments: ReturnType<typeof findDueCardPayments>;
   safe: ReturnType<typeof safeToSpend>;
   upcoming: Transaction[];
@@ -47,24 +51,15 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
 
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
-  const balances = computeBalances(accounts.data, transactions.data);
+  const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
+  const book = buildCardBook(accounts.data, transactions.data);
   const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
-  // remaining reflected installments count as debt now (current stat only —
-  // the projector spreads them month by month, so it stays unadjusted)
-  const liability = computePurchaseLiability(transactions.data, accounts.data, rates.data.usdPer, displayCurrency);
-  const netWorth = { ...rawNetWorth, total: rawNetWorth.total - liability };
+  // what the cards are owed counts as debt now (current stat only — the
+  // projector pays it out month by month, so it starts from what you hold)
+  const cardsOwed = totalOwed(book, accounts.data, today, rates.data.usdPer, displayCurrency);
+  const netWorth = { ...rawNetWorth, total: rawNetWorth.total - cardsOwed };
 
-  let ccPostedDebt = 0;
-  for (const a of accounts.data) {
-    if (a.kind !== "credit_card" || a.archived) continue;
-    const balance = balances.get(a.id) ?? 0;
-    if (balance < 0) {
-      const converted = convert(-balance, a.currency, displayCurrency, rates.data.usdPer);
-      if (converted != null) ccPostedDebt += converted;
-    }
-  }
-
-  const duePayments = findDueCardPayments(accounts.data, balances, transactions.data, today);
+  const duePayments = findDueCardPayments(accounts.data, book, today);
   const safe = safeToSpend({
     accounts: accounts.data,
     balances,
@@ -74,12 +69,15 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     today,
   });
 
+  // a card's charges are paid with its statement, which is listed itself
   const upcoming = transactions.data
     .filter((tx) => tx.status === "planned" && tx.dueDate <= addDays(today, 30))
+    .filter((tx) => book.roleOf(tx) !== "charge" && book.roleOf(tx) !== "cardSide")
     .sort((a, b) => (a.dueDate > b.dueDate ? 1 : -1))
     .slice(0, 6);
 
-  // last 6 completed months of income/expense in display currency (transfers excluded)
+  // last 6 completed months of income/expense in display currency: transfers
+  // excluded, a card counted when it's paid (lib/domain/cards.ts)
   const byMonth = new Map<string, { income: number; expense: number }>();
   for (let i = 5; i >= 0; i--) {
     byMonth.set(addMonthsClamped(today, -i).slice(0, 7), { income: 0, expense: 0 });
@@ -88,7 +86,9 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   for (const tx of transactions.data) {
     // legacy = imported history, usually stamped with the import date; it
     // would pile onto whichever month you happened to import in
-    if (tx.status !== "completed" || tx.transferGroupId || tx.legacy) continue;
+    if (tx.status !== "completed" || tx.legacy) continue;
+    const income = isIncome(tx, book);
+    if (!income && !isSpending(tx, book)) continue;
     const bucket = byMonth.get(tx.dueDate.slice(0, 7));
     const currency = currencyOf.get(tx.accountId);
     if (!bucket || !currency) continue;
@@ -96,7 +96,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     const usdPer = tx.fxSnapshot?.usdPer ?? rates.data.usdPer;
     const converted = convert(tx.amount, currency, displayCurrency, usdPer);
     if (converted == null) continue;
-    if (tx.direction === "income") bucket.income += converted;
+    if (income) bucket.income += converted;
     else bucket.expense += converted;
   }
   const flow = [...byMonth.entries()].map(([month, v]) => ({
@@ -108,8 +108,8 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   return {
     balances,
     netWorth,
-    liability,
-    ccPostedDebt,
+    cardsOwed,
+    book,
     duePayments,
     safe,
     upcoming,

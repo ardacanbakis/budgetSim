@@ -13,21 +13,22 @@ import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
 /**
- * Record what you actually paid a card this month. The suggested figure is the
- * whole statement — everything already posted plus every installment falling
- * due — because that's the single number you really transfer. Paying also
- * posts those installments, so the card balance nets out instead of
- * double-counting them.
+ * Record what you pay a card this month: the statement amount, from your
+ * bank. It's the expense (lib/domain/cards.ts), and once it's made it covers
+ * the card's charges from before this month, so none of them need ticking.
+ * The suggestion adds up those charges where any are logged; the statement
+ * itself is the real number.
  */
 export function CardPaymentModal({
   card,
   suggested,
-  installmentsDue,
+  covers,
   onClose,
 }: {
   card: Account | null;
   suggested: number;
-  installmentsDue: Transaction[];
+  /** the charges this payment will cover */
+  covers: Transaction[];
   onClose: () => void;
 }) {
   const { t, locale } = useI18n();
@@ -52,11 +53,6 @@ export function CardPaymentModal({
     KEYS.transactions,
     KEYS.accounts,
   ]);
-  const completeInstallments = useAppMutation(
-    (v: { ids: string[]; snapshot: ReturnType<typeof snapshotFromTable> }) =>
-      Promise.all(v.ids.map((id) => repo.completeTransaction(id, v.snapshot))).then(() => undefined),
-    [KEYS.transactions, KEYS.accounts, KEYS.purchases]
-  );
 
   const payFrom = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
   const from =
@@ -79,7 +75,6 @@ export function CardPaymentModal({
         onSubmit={async (e) => {
           e.preventDefault();
           if (!from || !rates.data || !(toAmount > 0)) return;
-          const snapshot = snapshotFromTable(rates.data);
           await createTransfer.mutateAsync({
             fromAccountId: from.id,
             toAccountId: card.id,
@@ -88,13 +83,8 @@ export function CardPaymentModal({
             date,
             description: `${card.name} statement`,
             marketRate: null,
-            fxSnapshot: snapshot,
+            fxSnapshot: snapshotFromTable(rates.data),
           });
-          // the statement covered these, so post them rather than leave them
-          // planned and counted twice
-          if (installmentsDue.length > 0) {
-            await completeInstallments.mutateAsync({ ids: installmentsDue.map((x) => x.id), snapshot });
-          }
           onClose();
         }}
       >
@@ -132,9 +122,9 @@ export function CardPaymentModal({
             })}
           </p>
         ) : null}
-        {installmentsDue.length > 0 ? (
+        {covers.length > 0 ? (
           <p className="text-xs text-zinc-500">
-            {t("cards.willPost", { count: installmentsDue.length })}
+            {t("cards.willPost", { count: covers.length })}
           </p>
         ) : null}
         <div className="flex justify-end gap-2">

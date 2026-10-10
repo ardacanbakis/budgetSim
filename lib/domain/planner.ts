@@ -199,6 +199,7 @@ export interface Funding {
    * default, because a card bill is a bill: without it the projection lets
    * debt pile up on the card and never touches the cash you'd really use.
    */
+  /** no longer used: card bills are always paid from your accounts (lib/domain/cards.ts); kept so saved plans load */
   payCards?: boolean;
 }
 

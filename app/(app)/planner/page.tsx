@@ -42,6 +42,7 @@ import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { buildPlanExport } from "@/lib/domain/planExport";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
@@ -177,7 +178,6 @@ export default function PlannerPage() {
     order: fundingOrder,
     overrides: plan.funding?.overrides ?? {},
     routine: plan.funding?.routine ?? [],
-    payCards: plan.funding?.payCards ?? true,
   };
 
   const base = projectCashflow({
@@ -185,6 +185,7 @@ export default function PlannerPage() {
     transactions: transactions.data,
     templates: templates.data,
     usdPer: rates.data.usdPer,
+    goldRatios: goldRatiosOf(rates.data),
     display: displayCurrency,
     fromDate: todayISO(),
     months,
@@ -209,6 +210,7 @@ export default function PlannerPage() {
     transactions: transactions.data,
     templates: templates.data,
     usdPer: rates.data.usdPer,
+    goldRatios: goldRatiosOf(rates.data),
     display: displayCurrency,
     fromDate: todayISO(),
     months,
@@ -234,6 +236,7 @@ export default function PlannerPage() {
         transactions: transactions.data,
         templates: templates.data,
         usdPer: rates.data.usdPer,
+        goldRatios: goldRatiosOf(rates.data),
         display: displayCurrency,
         fromDate: todayISO(),
         months,
@@ -245,7 +248,6 @@ export default function PlannerPage() {
           order: planFundingOrder(compareNormalized, drawable.map((a) => a.id)),
           overrides: compareNormalized.funding?.overrides ?? {},
           routine: compareNormalized.funding?.routine ?? [],
-          payCards: compareNormalized.funding?.payCards ?? true,
         },
       })
     : null;
@@ -288,7 +290,7 @@ export default function PlannerPage() {
   ];
   const fundingRows = rankedIds.map((id) => drawable.find((a) => a.id === id)!);
   // what each account holds today, so the card can show start → sold → left
-  const startBalances = computeBalances(accounts.data, transactions.data);
+  const startBalances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
 
   // what-if items read best in the order they'll happen; grouping by
   // direction is a switch because sometimes you want all the outgoings together
@@ -1028,19 +1030,6 @@ export default function PlannerPage() {
           />
           <div className="fill-in-grid space-y-2 p-4">
             <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
-            <label className="flex items-start gap-2 text-xs text-zinc-500">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-3.5 w-3.5 accent-teal-600"
-                checked={plan.funding?.payCards ?? true}
-                onChange={(e) =>
-                  persist({ ...plan, funding: { ...plan.funding, payCards: e.target.checked } })
-                }
-              />
-              <span>
-                <span className="font-medium">{t("planner.payCards")}</span> — {t("planner.payCardsHint")}
-              </span>
-            </label>
             {drawable.length === 0 ? (
               <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
             ) : (

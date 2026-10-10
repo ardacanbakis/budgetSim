@@ -39,6 +39,7 @@ import {
 import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
+import { readHoldings } from "@/lib/domain/gold";
 import { toDbError } from "./errors";
 import { selectAll } from "./paginate";
 
@@ -55,6 +56,7 @@ const accountFromRow = (r: Row): Account => ({
   paymentAccountId: r.payment_account_id ?? null,
   paymentDay: r.payment_day ?? null,
   creditLimit: r.credit_limit == null ? null : Number(r.credit_limit),
+  holdings: readHoldings(r.holdings),
   createdAt: r.created_at,
 });
 
@@ -211,6 +213,9 @@ export class SupabaseRepo implements Repo {
         payment_account_id: input.paymentAccountId ?? null,
         payment_day: input.paymentDay ?? null,
         credit_limit: input.creditLimit ?? null,
+        // only sent when there is something to hold, so a database without
+        // migration 0015 can still create every other kind of account
+        ...(input.holdings?.length ? { holdings: input.holdings } : {}),
       })
       .select()
       .single();
@@ -228,6 +233,7 @@ export class SupabaseRepo implements Repo {
     if (patch.paymentAccountId !== undefined) row.payment_account_id = patch.paymentAccountId;
     if (patch.paymentDay !== undefined) row.payment_day = patch.paymentDay;
     if (patch.creditLimit !== undefined) row.credit_limit = patch.creditLimit;
+    if (patch.holdings !== undefined) row.holdings = patch.holdings?.length ? patch.holdings : null;
     const { error } = await this.db.from("accounts").update(row).eq("id", id);
     throwIf(error);
   }
@@ -368,24 +374,36 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  /**
+   * Updates a row, and the other leg of its transfer if it's one. Completing a
+   * scheduled transfer from the ledger used to settle only the leg you tapped,
+   * so the money left one account and never arrived in the other.
+   */
+  private async updateWithLegs(id: string, row: Row): Promise<void> {
+    const { data, error: readError } = await this.db.from("transactions").select("transfer_group_id").eq("id", id).single();
+    throwIf(readError);
+    const update = this.db.from("transactions").update(row);
+    const { error } = await (data?.transfer_group_id ? update.eq("transfer_group_id", data.transfer_group_id) : update.eq("id", id));
+    throwIf(error);
+  }
+
   async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
     const row: Row = {
       status: "completed",
       completed_at: new Date().toISOString(),
       fx_snapshot: fxSnapshot,
     };
-    if (amount != null) row.amount = amount;
     if (legacy != null) row.legacy = legacy;
-    const { error } = await this.db.from("transactions").update(row).eq("id", id);
-    throwIf(error);
+    // a changed amount belongs to the leg it was changed on
+    if (amount != null) {
+      const { error } = await this.db.from("transactions").update({ amount }).eq("id", id);
+      throwIf(error);
+    }
+    await this.updateWithLegs(id, row);
   }
 
   async reopenTransaction(id: string): Promise<void> {
-    const { error } = await this.db
-      .from("transactions")
-      .update({ status: "planned", completed_at: null, fx_snapshot: null, legacy: false })
-      .eq("id", id);
-    throwIf(error);
+    await this.updateWithLegs(id, { status: "planned", completed_at: null, fx_snapshot: null, legacy: false });
   }
 
   async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
@@ -1078,6 +1096,7 @@ export class SupabaseRepo implements Repo {
       backup.accounts.map((a) => ({
         id: a.id, user_id: u, name: a.name, currency: a.currency, kind: a.kind,
         opening_balance: a.openingBalance, archived: a.archived, created_at: a.createdAt,
+        ...(a.holdings?.length ? { holdings: a.holdings } : {}),
       }))
     );
     for (const a of backup.accounts) {

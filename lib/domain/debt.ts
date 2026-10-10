@@ -1,4 +1,5 @@
 import { Account, Loan, Transaction } from "@/lib/data/types";
+import { buildCardBook } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { amortizationSchedule } from "./loan";
@@ -18,7 +19,7 @@ export interface DebtItem {
 
 export interface DebtOverview {
   items: DebtItem[];
-  /** total outstanding in display currency (loans remaining + card posted debt + upcoming installments) */
+  /** total outstanding in display currency (loans remaining + what each card is owed) */
   totalInDisplay: number;
   /** latest scheduled payment across everything, i.e. the debt-free date */
   debtFreeDate: string | null;
@@ -26,7 +27,7 @@ export interface DebtOverview {
   avalancheTarget: DebtItem | null;
 }
 
-/** Combined debt picture: tracked loans + credit cards (posted + planned installments). */
+/** Combined debt picture: tracked loans + what each credit card is owed (see lib/domain/cards.ts). */
 export function computeDebtOverview(params: {
   loans: Loan[];
   accounts: Account[];
@@ -36,7 +37,7 @@ export function computeDebtOverview(params: {
   display: Currency;
   today: string;
 }): DebtOverview {
-  const { loans, accounts, balances, transactions, usdPer, display, today } = params;
+  const { loans, accounts, transactions, usdPer, display, today } = params;
   const items: DebtItem[] = [];
   let debtFreeDate: string | null = null;
 
@@ -52,19 +53,17 @@ export function computeDebtOverview(params: {
     }
   }
 
+  const book = buildCardBook(accounts, transactions);
   for (const account of accounts) {
     if (account.kind !== "credit_card" || account.archived) continue;
-    const posted = -(balances.get(account.id) ?? 0);
-    const plannedInstallments = transactions.filter(
-      (t) => t.accountId === account.id && t.status === "planned" && t.direction === "expense"
-    );
-    const upcoming = plannedInstallments.reduce((s, t) => s + t.amount, 0);
-    const outstanding = Math.max(0, posted) + upcoming;
-    if (outstanding <= 0) continue;
-    const lastDue = plannedInstallments.reduce<string | null>(
-      (last, t) => (last == null || t.dueDate > last ? t.dueDate : last),
-      null
-    );
+    const outstanding = book.owed(account.id, today);
+    if (outstanding <= 0.005) continue;
+    // the last bill: a payment still to make, or the month an uncovered charge is paid in
+    const dates = [
+      ...book.payments(account.id).filter((p) => !p.made).map((p) => p.date),
+      ...book.uncovered(account.id).map((c) => `${book.paidInMonth(c)}-01`),
+    ];
+    const lastDue = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
     items.push({ kind: "card", id: account.id, name: account.name, currency: account.currency, outstanding, monthlyRatePct: null, endDate: lastDue });
     const cardEnd = lastDue ?? today;
     if (debtFreeDate == null || cardEnd > debtFreeDate) debtFreeDate = cardEnd;

@@ -70,4 +70,12 @@ describe("formatAmount", () => {
     expect(formatAmount(0.05, "BTC")).toBe("0.05 ₿");
     expect(formatAmount(20, "XAU_G")).toBe("20.00 g");
   });
+
+  it("never shows a minus on zero", () => {
+    // a debt of nothing, negated, is -0; a float leftover can round to it too
+    expect(formatAmount(-0, "TRY")).toBe("₺0.00");
+    expect(formatAmount(-0.004, "TRY")).toBe("₺0.00");
+    expect(formatAmount(-0.005, "TRY")).toBe("₺-0.01");
+    expect(formatAmount(-12.5, "USD")).toBe("$-12.50");
+  });
 });

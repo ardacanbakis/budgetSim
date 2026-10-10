@@ -254,6 +254,97 @@ test("auth: leaving the demo goes back to sign-in, and stays there after a reloa
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("cards: a recorded statement counts against the limit until it's paid, and is the spending", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  // a card with a ₺50,000 limit and nothing logged on it
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
+  await page.getByLabel(/^name$|^ad$/i).fill("CC EnPara");
+  await page.getByRole("button", { name: /^💳 (credit card|kredi kartı)$/i }).click();
+  await page.getByLabel(/credit limit|kredi limiti/i).fill("50000");
+  // a card has no opening balance to get wrong: payments and charges say what it owes
+  await expect(page.getByLabel(/opening balance|açılış bakiyesi/i)).toHaveCount(0);
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+
+  // this month's statement, recorded for a date still to come
+  const due = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 16);
+  const dueIso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-16`;
+  await page.goto("/cards");
+  const card = page.getByRole("heading", { name: /^CC EnPara/ });
+  await card.locator("xpath=ancestor::div[contains(@class,'border')][1]").getByRole("button", { name: /^record payment$|ödemeyi kaydet/i }).click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
+  await modal.locator('input[type="number"]').fill("10019.54");
+  await modal.locator('input[type="date"]').fill(dueIso);
+  await modal.getByRole("button", { name: /^Record payment$/ }).click();
+
+  // owed until it's paid, and the limit says so
+  await expect(card).toContainText(/Owed: ₺10,019\.54/);
+  await expect(card).toContainText(/₺39,980\.46 left of ₺50,000\.00/);
+
+  // on the ledger it's an expense, not a neutral transfer
+  await page.goto("/transactions");
+  const row = page.locator("li").filter({ hasText: "CC EnPara statement" }).first();
+  await expect(row).toContainText(/Card payment|Kart ödemesi/);
+  await expect(row).toContainText("−₺10,019.54");
+  await row.getByRole("button", { name: /^complete$|tamamla/i }).click();
+  await page.locator(".fixed.inset-0").getByRole("button", { name: /^confirm$|^onayla$/i }).click();
+
+  // paid: the whole limit is free again
+  await page.goto("/cards");
+  await expect(card).toContainText(/Nothing owed|Borç yok/);
+  await expect(card).toContainText(/₺50,000\.00 left of ₺50,000\.00/);
+});
+
+test("settings: a page can be hidden from the sidebar, but Settings can't", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/settings");
+  const sidebar = page.locator("aside nav");
+  await expect(sidebar).toContainText("VICTVS");
+
+  await page.getByRole("checkbox", { name: /show victvs in the sidebar|victvs menüde görünsün/i }).uncheck();
+  await expect(sidebar).not.toContainText("VICTVS");
+  await expect(page.getByRole("checkbox", { name: /show settings in the sidebar|ayarlar menüde görünsün/i })).toBeDisabled();
+
+  // it sticks, and the page itself is still there
+  await page.reload();
+  await expect(page.locator("aside nav")).not.toContainText("VICTVS");
+  await page.goto("/victvs");
+  await expect(page).toHaveURL(/\/victvs$/);
+});
+
+test("gold: one account holds a mix of coins and gram gold, valued in lira", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
+  const modal = page.locator(".fixed.inset-0").last();
+  await modal.getByLabel(/^name$|^ad$/i).fill("Altın kasası");
+  // the label reads "Currency" plus whatever is selected
+  await modal.getByLabel(/^(currency|para birimi)/i).selectOption("XAU_G");
+
+  const add = async (type: string, qty: string) => {
+    await modal.getByRole("button", { name: /\+ (add gold|altın ekle)/i }).click();
+    await modal.getByLabel(/gold type|altın türü/i).last().selectOption(type);
+    await modal.getByLabel(/quantity|miktar/i).last().fill(qty);
+  };
+  await add("tam", "2");
+  await add("ceyrek", "5");
+  await add("has", "50");
+  await expect(modal.getByText(/^(Worth|Değeri) ₺/)).toBeVisible();
+  await modal.getByRole("button", { name: /^save$|kaydet/i }).click();
+
+  // the row says what's held and what it's worth, in lira
+  const row = page.getByRole("button", { name: /Altın kasası/ }).first();
+  await expect(row).toContainText(/2 (Tam|Tam altın) · 5 (Çeyrek|Çeyrek altın) · \+1/);
+  await expect(row).toContainText("₺");
+  await row.click();
+  // and the detail lists each holding with its price
+  await expect(page.getByText(/50 g (Has gold|Has altın)/)).toBeVisible();
+  await expect(page.getByText(/each|tanesi/i).first()).toBeVisible();
+});
+
 test("victvs v2: month groups, half-month select, new paste formats", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
@@ -333,36 +424,56 @@ test("wave11: month groups with net, edit transaction, report category filter, s
   await expect(page.getByText(/Default deposit account|Varsayılan yatan hesap/)).toBeVisible();
 });
 
-test("wave11: retroactive taksit goes legacy; card payment covers this month's installments", async ({ page }) => {
+test("cards: a big purchase's installments stay off Transactions and are paid with the card", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
 
-  // purchase with the first installment due the 28th of this month (planned)
+  // three installments on the Bonus Card, the first on the 28th of this month
   await page.goto("/cards");
   await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Fridge");
   await page.getByLabel(/amount|tutar/i).first().fill("9000");
   await page.getByRole("checkbox").first().check();
   await page.getByLabel(/number of installments|taksit sayısı/i).fill("3");
-  const now = new Date();
-  const firstDue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-28`;
-  await page.getByLabel(/first installment|ilk taksit/i).fill(firstDue);
+  await page.getByLabel(/first installment|ilk taksit/i).fill(iso(new Date(now.getFullYear(), now.getMonth(), 28)));
   await page.getByRole("button", { name: /^save$|kaydet/i }).click();
   await page.waitForTimeout(700);
 
-  // the card-payment reminder's modal lists the installment in its breakdown
-  await page.goto("/");
-  await page.waitForTimeout(600);
-  await page.getByRole("button", { name: /record payment|ödemeyi kaydet/i }).first().click();
-  await expect(page.getByText(/Fridge \(1\/3\)/).first()).toBeVisible();
+  const fridge = () =>
+    page.getByText("Fridge", { exact: true }).locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
+  await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
+  await expect(fridge()).toContainText(/0 of 3 paid|0\/3/);
 
-  // confirming records the transfer AND posts the installment
-  await page.getByRole("button", { name: /^confirm$|onayla/i }).click();
-  await page.waitForTimeout(700);
+  // the payment is the spending: the installments never show on the ledger
   await page.goto("/transactions");
-  const row = page.locator("li").filter({ hasText: "Fridge (1/3)" }).first();
-  await expect(row).toBeVisible();
-  expect(await row.textContent()).not.toContain("Planned");
+  await expect(page.getByText(/Fridge \(1\/3\)/)).toHaveCount(0);
+
+  // next month's statement pays this month's installment once it's made
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /^cards$|^kartlar$/i }).click();
+  const bonus = page.getByRole("heading", { name: /^Bonus Card/ });
+  await bonus.locator("xpath=ancestor::div[contains(@class,'border')][1]").getByRole("button", { name: /^record payment$|ödemeyi kaydet/i }).click();
+  const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
+  await modal.locator('input[type="number"]').fill("3000");
+  await modal.locator('input[type="date"]').fill(iso(new Date(now.getFullYear(), now.getMonth() + 1, 5)));
+  await modal.getByRole("button", { name: /^Record payment$/ }).click();
+  await page.waitForTimeout(500);
+  await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
+  await expect(fridge()).toContainText(/0 of 3 paid|0\/3/);
+
+  await page.goto("/transactions");
+  const folded = page.getByText(/^▸ \d{4}$/);
+  if ((await folded.count()) > 0) await folded.first().click();
+  const payment = page.locator("li").filter({ hasText: "Bonus Card statement" }).filter({ hasText: /Planned|Planlı/ }).first();
+  await payment.getByRole("button", { name: /^complete$|tamamla/i }).click();
+  await page.locator(".fixed.inset-0").getByRole("button", { name: /^confirm$|^onayla$/i }).click();
+  await page.waitForTimeout(500);
+
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
+  await expect(fridge()).toContainText(/1 of 3 paid|1\/3/);
 });
 
 test("wave12: rate ticker renders quotes and can be switched off in settings", async ({ page }) => {
@@ -720,9 +831,10 @@ test("part2: bulk paste imports a card statement as legacy expenses", async ({ p
   await page.waitForTimeout(600);
   await expect(page.getByText("AKBANK KREDI KARTI ODEME")).toBeVisible();
 
-  // imported as legacy, so balances are untouched
+  // imported as legacy, so balances are untouched; 2025 opens folded
   await page.goto("/transactions");
-  await expect(page.getByText("Migros")).toBeVisible();
+  await page.getByRole("button", { name: /^▸ 2025/ }).click();
+  await expect(page.getByText("Migros", { exact: true })).toBeVisible();
   await page.goto("/");
   await page.waitForTimeout(800);
   expect(await netWorthTile.textContent()).toBe(before);
@@ -1263,8 +1375,10 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
 
-  const netWorthTile = page.locator("text=Net worth").locator("..");
-  const before = await netWorthTile.textContent();
+  // what the paying account holds, on the portfolio
+  const ziraat = () => page.getByRole("button", { name: /Ziraat TRY/ }).first();
+  await page.goto("/accounts");
+  const before = await ziraat().textContent();
 
   await page.goto("/cards");
   await page.getByRole("button", { name: /^Record payment$/ }).first().click();
@@ -1277,10 +1391,9 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
   await modal.getByRole("button", { name: /^Record payment$/ }).click();
   await page.waitForTimeout(700);
 
-  // the money hasn't moved yet, so nothing is deducted
-  await page.goto("/");
-  await page.waitForTimeout(800);
-  expect(await netWorthTile.textContent()).toBe(before);
+  // the money hasn't moved yet
+  await page.goto("/accounts");
+  expect(await ziraat().textContent()).toBe(before);
 
   // and it's waiting in the ledger as planned
   await page.goto("/transactions");

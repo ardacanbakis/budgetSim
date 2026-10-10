@@ -20,6 +20,13 @@ import {
   isDensity,
 } from "@/lib/ui/views";
 import {
+  applyPhoneLayout,
+  DEFAULT_PHONE_LAYOUT,
+  isPhoneLayout,
+  PHONE_LAYOUT_KEY,
+  PhoneLayout,
+} from "@/lib/ui/phone";
+import {
   applyUiStyle,
   DEFAULT_UI_STYLE,
   isUiStyle,
@@ -118,6 +125,9 @@ interface AppContextValue {
   setDensity: (d: Density) => void;
   /** "v2" for every skin but Classic — gates shell and page layout */
   uiVersion: UiVersion;
+  /** how a phone lays the app out — device-local, applies below md only */
+  phoneLayout: PhoneLayout;
+  setPhoneLayout: (l: PhoneLayout) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -130,6 +140,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [uiStyle, setUiStyleState] = useState<UiStyle>(DEFAULT_UI_STYLE);
   const [ratePrefs, setRatePrefsState] = useState<RatePrefs>(DEFAULT_RATE_PREFS);
   const [density, setDensityState] = useState<Density>(DEFAULT_DENSITY);
+  const [phoneLayout, setPhoneLayoutState] = useState<PhoneLayout>(DEFAULT_PHONE_LAYOUT);
   const queryClient = useQueryClient();
   // who the session belongs to, as last reported; undefined until the first answer
   const signedIn = useRef<AuthIdentity | undefined>(undefined);
@@ -159,6 +170,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         savedDensity && isDensity(savedDensity) ? savedDensity : savedCompact ? "compact" : DEFAULT_DENSITY;
       setDensityState(startingDensity);
       applyDensity(startingDensity);
+      const savedPhone = window.localStorage.getItem(PHONE_LAYOUT_KEY);
+      const phone: PhoneLayout = savedPhone && isPhoneLayout(savedPhone) ? savedPhone : DEFAULT_PHONE_LAYOUT;
+      setPhoneLayoutState(phone);
+      applyPhoneLayout(phone);
     });
 
     const inDemo = () => window.localStorage.getItem(MODE_KEY) === "demo";
@@ -273,6 +288,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     applyDensity(d);
   }, []);
 
+  // device-local for the same reason as the style: it's about this screen
+  const setPhoneLayout = useCallback((l: PhoneLayout) => {
+    setPhoneLayoutState(l);
+    window.localStorage.setItem(PHONE_LAYOUT_KEY, l);
+    applyPhoneLayout(l);
+  }, []);
+
   const setRatePrefs = useCallback((p: RatePrefs) => {
     setRatePrefsState(p);
     window.localStorage.setItem(RATE_SOURCE_KEY, JSON.stringify(p));
@@ -297,8 +319,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRatePrefs,
       density,
       setDensity,
+      phoneLayout,
+      setPhoneLayout,
     }),
-    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact, uiStyle, setUiStyle, ratePrefs, setRatePrefs, density, setDensity]
+    [session, enterDemo, signOut, resetDemo, displayCurrency, setDisplayCurrency, theme, setTheme, compact, setCompact, uiStyle, setUiStyle, ratePrefs, setRatePrefs, density, setDensity, phoneLayout, setPhoneLayout]
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

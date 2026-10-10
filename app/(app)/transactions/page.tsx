@@ -7,6 +7,7 @@ import { TransferModal } from "@/components/transferModal";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { Account, Category, Transaction, TxDirection, TxStatus } from "@/lib/data/types";
+import { buildCardBook, isIncome, isSpending } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
@@ -60,7 +61,16 @@ export default function TransactionsPage() {
     invalidate
   );
 
-  const overduePlanned = (transactions.data ?? []).filter((tx) => tx.status === "planned" && tx.dueDate < todayISO());
+  // Cards (lib/domain/cards.ts): a payment into a card is the spending, so
+  // what was charged to the card, and the payment's landing on it, stay off
+  // this page. The Cards page lists them.
+  const book = useMemo(() => buildCardBook(accounts.data ?? [], transactions.data ?? []), [accounts.data, transactions.data]);
+  const listed = useMemo(
+    () => (transactions.data ?? []).filter((tx) => book.roleOf(tx) !== "charge" && book.roleOf(tx) !== "cardSide"),
+    [transactions.data, book]
+  );
+
+  const overduePlanned = listed.filter((tx) => tx.status === "planned" && tx.dueDate < todayISO());
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data]);
   // a transfer is one action written as two rows; pair them so it reads as one
@@ -74,20 +84,21 @@ export default function TransactionsPage() {
   const categoryById = useMemo(() => new Map((categories.data ?? []).map((c) => [c.id, c])), [categories.data]);
 
   const filtered = useMemo(() => {
-    let list = transactions.data ?? [];
+    let list = listed;
     if (filterAccount !== "all") list = list.filter((tx) => tx.accountId === filterAccount);
     if (filterStatus !== "all") list = list.filter((tx) => tx.status === filterStatus);
     if (filterDirection !== "all") list = list.filter((tx) => tx.direction === filterDirection);
     return [...list].sort((a, b) =>
       latestFirst ? (a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0) : a.dueDate > b.dueDate ? 1 : a.dueDate < b.dueDate ? -1 : 0
     );
-  }, [transactions.data, filterAccount, filterStatus, filterDirection, latestFirst]);
+  }, [listed, filterAccount, filterStatus, filterDirection, latestFirst]);
 
   const thisMonth = todayISO().slice(0, 7);
 
   // Year → month grouping with a per-month outcome in the display currency:
-  // income − expense = net, transfers excluded and legacy kept in its own
-  // running total so imported history is visible without skewing the real one.
+  // income − expense = net, transfers excluded but card payments counted (they
+  // are the spending), and legacy kept in its own running total so imported
+  // history is visible without skewing the real one.
   const groups = useMemo(() => {
     const currencyOf = new Map((accounts.data ?? []).map((a) => [a.id, a.currency] as const));
     const byMonth = new Map<
@@ -99,15 +110,16 @@ export default function TransactionsPage() {
       const bucket =
         byMonth.get(month) ?? { items: [], income: 0, expense: 0, legacyIncome: 0, legacyExpense: 0 };
       bucket.items.push(tx);
-      if (!tx.transferGroupId) {
+      const income = isIncome(tx, book);
+      if (income || isSpending(tx, book)) {
         const currency = currencyOf.get(tx.accountId);
         const usdPer = tx.fxSnapshot?.usdPer ?? rates.data?.usdPer;
         const converted = currency && usdPer ? convert(tx.amount, currency, displayCurrency, usdPer) : null;
         if (converted != null) {
           if (tx.legacy) {
-            if (tx.direction === "income") bucket.legacyIncome += converted;
+            if (income) bucket.legacyIncome += converted;
             else bucket.legacyExpense += converted;
-          } else if (tx.direction === "income") bucket.income += converted;
+          } else if (income) bucket.income += converted;
           else bucket.expense += converted;
         }
       }
@@ -133,7 +145,7 @@ export default function TransactionsPage() {
     }
     // years inherit the order their first month landed in
     return [...byYear.entries()];
-  }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth]);
+  }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth, book]);
 
   // history collapses by default: only the current year is open on arrival
   const currentYear = thisMonth.slice(0, 4);
@@ -176,11 +188,14 @@ export default function TransactionsPage() {
           <option value="all">
             {t("tx.filterAccount")}: {t("common.all")}
           </option>
-          {(accounts.data ?? []).map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
+          {/* cards have their own page: nothing on them is listed here */}
+          {(accounts.data ?? [])
+            .filter((a) => a.kind !== "credit_card")
+            .map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
         </Select>
         <Select className="!w-auto" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as never)}>
           <option value="all">
@@ -298,6 +313,7 @@ export default function TransactionsPage() {
                                 onToggleLegacy={() => toggleLegacy.mutate({ id: tx.id, legacy: !tx.legacy })}
                                 onReopen={() => reopenTx.mutate(tx.id)}
                                 onDelete={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(tx.id)}
+                                cardPayment={book.roleOf(tx) === "payment"}
                               />
                             ))}
                           </ul>
@@ -353,6 +369,7 @@ function TxRow({
   onToggleLegacy,
   onReopen,
   onDelete,
+  cardPayment,
 }: {
   tx: Transaction;
   /** the other half of a transfer — the leg that lands, and where */
@@ -367,10 +384,12 @@ function TxRow({
   onToggleLegacy: () => void;
   onReopen: () => void;
   onDelete: () => void;
+  /** a payment into a card: the spending, so it reads as an expense */
+  cardPayment?: boolean;
 }) {
   const { t, locale } = useI18n();
   if (!account) return null;
-  const isTransfer = tx.transferGroupId != null;
+  const isTransfer = tx.transferGroupId != null && !cardPayment;
   const landing = landingAccount;
   return (
     <li className={`flex items-center gap-3 px-4 py-3 ${tx.status === "planned" ? "opacity-70" : ""}`}>
@@ -380,6 +399,7 @@ function TxRow({
             {tx.description || category?.name || (isTransfer ? t("tx.transfer") : "—")}
           </span>
           {isTransfer ? <Badge tone="sky">{t("tx.transfer")}</Badge> : null}
+          {cardPayment ? <Badge tone="red">{t("tx.cardPayment")}</Badge> : null}
           {category && !isTransfer ? (
             <span
               className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
@@ -393,7 +413,7 @@ function TxRow({
         </div>
         <div className="mt-0.5 text-xs text-zinc-500">
           {/* one line for the whole move, not one per leg */}
-          {isTransfer && landing ? `${account.name} → ${landing.name}` : account.name} · {fmtDate(tx.dueDate)}
+          {(isTransfer || cardPayment) && landing ? `${account.name} → ${landing.name}` : account.name} · {fmtDate(tx.dueDate)}
         </div>
       </div>
       <div
@@ -428,7 +448,7 @@ function TxRow({
             </Button>
           </>
         ) : null}
-        {!isTransfer ? (
+        {!isTransfer && !cardPayment ? (
           <Button variant="ghost" aria-label={t("tx.editTitle")} title={t("tx.editTitle")} onClick={onEdit}>
             ✎
           </Button>

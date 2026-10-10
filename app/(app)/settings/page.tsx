@@ -7,8 +7,9 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Se
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { isBackupFile } from "@/lib/data/repo";
-import { DEFAULT_VICTVS_AMOUNTS, TxDirection, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
-import { NAV, orderedNav } from "@/components/shell";
+import { DEFAULT_VICTVS_AMOUNTS, TxDirection, UserSettings, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
+import { NAV } from "@/components/shell";
+import { encodeNav, NavEntry, navEntries } from "@/components/shell.nav";
 import { LegacyImportModal } from "@/components/legacyImportModal";
 import { COLLAPSE_HISTORY_KEY, SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
@@ -18,7 +19,9 @@ import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
+import { PHONE_LAYOUTS } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
+import { useIsPhone } from "@/lib/ui/usePocket";
 import { RateSourcesCard } from "@/components/settingsRates";
 import { ViewsCard } from "@/components/settingsViews";
 
@@ -95,6 +98,7 @@ export default function SettingsPage() {
         <>
           <PreferencesCard />
           <StyleCard />
+          <PhoneLayoutCard />
           <ViewsCard />
           <AppearanceCard />
           <RateSourcesCard />
@@ -398,6 +402,67 @@ function StyleCard() {
   );
 }
 
+/**
+ * The phone layout sits right under the interface style because it's the same
+ * kind of choice, scoped to one kind of screen. It says plainly when the
+ * screen you're on is too wide for the choice to show.
+ */
+function PhoneLayoutCard() {
+  const { t } = useI18n();
+  const { phoneLayout, setPhoneLayout } = useApp();
+  const phone = useIsPhone();
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex items-center gap-2">
+            {t("phone.title")} <Badge tone="sky">{t("phone.newBadge")}</Badge>
+          </span>
+        }
+      />
+      <div className="space-y-3 p-4">
+        <p className="text-xs text-zinc-500">{t("phone.hint")}</p>
+        <div role="group" aria-label={t("phone.title")} className="grid gap-2 sm:grid-cols-2">
+          {PHONE_LAYOUTS.map((id) => {
+            const selected = phoneLayout === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPhoneLayout(id)}
+                aria-pressed={selected}
+                className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                  selected ? "border-teal-500 ring-1 ring-teal-500/50" : "border-[var(--edge)] hover:border-teal-500/40"
+                }`}
+              >
+                <PhoneGlyph pocket={id === "pocket"} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{t(`phone.${id}`)}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{t(`phone.${id}Desc`)}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {phoneLayout === "pocket" && !phone ? <p className="text-xs text-zinc-400">{t("phone.wideNote")}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
+/** A tiny phone outline: Standard has a plain tab bar, Pocket a raised + in the middle. */
+function PhoneGlyph({ pocket }: { pocket: boolean }) {
+  return (
+    <span aria-hidden className="relative flex h-12 w-7 shrink-0 flex-col justify-end overflow-hidden rounded-md border-2 border-zinc-400 dark:border-zinc-500">
+      <span className="flex h-2.5 items-center justify-around border-t border-zinc-400 px-0.5 dark:border-zinc-500">
+        <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />
+        {pocket ? <span className="-mt-1.5 h-2 w-2 rounded-full bg-teal-500" /> : <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />}
+        <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />
+      </span>
+    </span>
+  );
+}
+
 function AppearanceCard() {
   const { t } = useI18n();
   const { theme, setTheme } = useApp();
@@ -678,6 +743,7 @@ function VictvsSettingsCard() {
 function SidebarOrderCard() {
   const { t } = useI18n();
   const repo = useRepo();
+  const queryClient = useQueryClient();
   const settings = useUserSettings();
 
   const save = useAppMutation(
@@ -685,15 +751,30 @@ function SidebarOrderCard() {
     [KEYS.userSettings]
   );
 
-  const nav = orderedNav(settings.data?.navOrder);
+  // A change shows at once, here and in the sidebar, rather than after the
+  // save and refetch; a failed save puts back what the server has.
+  const [draft, setDraft] = useState<string[] | null>(null);
+  const entries = navEntries(draft ?? settings.data?.navOrder);
+  const saveEntries = (next: NavEntry[]) => {
+    const navOrder = encodeNav(next);
+    setDraft(navOrder);
+    queryClient.setQueryData<UserSettings>(KEYS.userSettings, (current) => (current ? { ...current, navOrder } : current));
+    save.mutate(navOrder, {
+      onError: () => queryClient.invalidateQueries({ queryKey: KEYS.userSettings }),
+      onSettled: () => setDraft(null),
+    });
+  };
 
   const move = (index: number, delta: -1 | 1) => {
     const target = index + delta;
-    if (target < 0 || target >= nav.length) return;
-    const next = nav.map((item) => item.href);
+    if (target < 0 || target >= entries.length) return;
+    const next = [...entries];
     [next[index], next[target]] = [next[target], next[index]];
-    save.mutate(next);
+    saveEntries(next);
   };
+
+  const toggle = (index: number) =>
+    saveEntries(entries.map((e, i) => (i === index ? { ...e, hidden: !e.hidden } : e)));
 
   return (
     <Card>
@@ -707,11 +788,21 @@ function SidebarOrderCard() {
           ) : undefined
         }
       />
+      <p className="px-4 pt-2 text-xs text-zinc-500">{t("settings.sidebarHint")}</p>
       <ul className="divide-y divide-[var(--edge-soft)]">
-        {nav.map((item, index) => (
+        {entries.map(({ item, hidden }, index) => (
           <li key={item.href} className="flex items-center gap-3 px-4 py-2">
-            <span className="w-4 text-center text-zinc-400">{item.icon}</span>
-            <span className="flex-1 text-sm">{t(item.key)}</span>
+            <input
+              type="checkbox"
+              checked={!hidden}
+              disabled={item.href === "/settings"}
+              onChange={() => toggle(index)}
+              aria-label={t("settings.sidebarShow", { page: t(item.key) })}
+              title={item.href === "/settings" ? t("settings.sidebarSettingsStays") : undefined}
+              className="h-4 w-4 accent-teal-600 disabled:opacity-40"
+            />
+            <span className={`w-4 text-center text-zinc-400 ${hidden ? "opacity-40" : ""}`}>{item.icon}</span>
+            <span className={`flex-1 text-sm ${hidden ? "text-zinc-400 line-through" : ""}`}>{t(item.key)}</span>
             <button
               onClick={() => move(index, -1)}
               disabled={index === 0}
@@ -722,7 +813,7 @@ function SidebarOrderCard() {
             </button>
             <button
               onClick={() => move(index, 1)}
-              disabled={index === nav.length - 1}
+              disabled={index === entries.length - 1}
               className="px-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
               aria-label={t("layout.moveDown")}
             >

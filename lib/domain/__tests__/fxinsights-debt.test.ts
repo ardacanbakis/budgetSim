@@ -91,9 +91,13 @@ describe("computeDebtOverview", () => {
     const txs = [
       tx({ accountId: "try", direction: "expense", amount: schedule.rows[0].payment, loanId: "l1" }),
       tx({ accountId: "try", direction: "expense", amount: schedule.rows[1].payment, loanId: "l1" }),
-      tx({ accountId: "card", direction: "expense", amount: 14000, status: "planned", dueDate: "2026-09-02" }),
+      // an installment still to come, held against the card
+      tx({ accountId: "card", direction: "expense", amount: 14000, status: "planned", dueDate: "2026-09-02", purchaseId: "p1" }),
+      // this month's statement, recorded and not yet paid
+      tx({ accountId: "try", direction: "expense", amount: 20000, status: "planned", dueDate: "2026-06-20", transferGroupId: "pay" }),
+      tx({ accountId: "card", direction: "income", amount: 20000, status: "planned", dueDate: "2026-06-20", transferGroupId: "pay" }),
     ];
-    const balances = new Map([["card", -20000]]);
+    const balances = new Map<string, number>();
     const overview = computeDebtOverview({
       loans: [loan],
       accounts: [card, account("try", "TRY")],
@@ -107,7 +111,7 @@ describe("computeDebtOverview", () => {
     const loanItem = overview.items.find((i) => i.kind === "loan")!;
     expect(loanItem.outstanding).toBe(schedule.rows[1].remaining);
     const cardItem = overview.items.find((i) => i.kind === "card")!;
-    expect(cardItem.outstanding).toBe(34000); // 20k posted + 14k planned
+    expect(cardItem.outstanding).toBe(34000); // 20k statement to pay + 14k installment
     expect(overview.totalInDisplay).toBeCloseTo(schedule.rows[1].remaining + 34000, 2);
     expect(overview.debtFreeDate).toBe(schedule.rows[35].date); // loan outlives the card plan
     expect(overview.avalancheTarget?.id).toBe("l1");

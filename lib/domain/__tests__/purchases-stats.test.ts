@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { buildCardBook } from "../cards";
 import {
   buildInstallmentPlan,
   buildPurchaseTransactionSpecs,
-  computePurchaseLiability,
   defaultFirstDue,
   findDueCardPayments,
   lastDueDate,
@@ -84,31 +84,38 @@ describe("purchaseProgress", () => {
     createdAt: "2026-04-10",
   };
 
-  it("computes paid/remaining from linked transactions", () => {
-    const txs = [
-      tx({ accountId: "card", direction: "expense", amount: 10000, purchaseId: "p1", status: "completed" }),
-      tx({ accountId: "card", direction: "expense", amount: 10000, purchaseId: "p1", status: "completed" }),
-      tx({ accountId: "card", direction: "expense", amount: 10000, purchaseId: "p1", status: "planned" }),
-      tx({ accountId: "card", direction: "expense", amount: 999, purchaseId: "other" }), // unrelated
-    ];
-    const progress = purchaseProgress(purchase, txs, "TRY");
-    expect(progress.paidCount).toBe(2);
-    expect(progress.paidAmount).toBe(20000);
-    expect(progress.remainingAmount).toBe(40000);
+  const accounts = [account("bank", "TRY"), account("card", "TRY", "credit_card")];
+  const installment = (n: number, status: Transaction["status"] = "planned") =>
+    tx({ accountId: "card", direction: "expense", amount: 10000, purchaseId: "p1", status, dueDate: `2026-0${4 + n}-10` });
+  const payment = (date: string, made: boolean) => [
+    tx({ accountId: "bank", direction: "expense", amount: 10000, dueDate: date, transferGroupId: `g${date}`, status: made ? "completed" : "planned" }),
+    tx({ accountId: "card", direction: "income", amount: 10000, dueDate: date, transferGroupId: `g${date}`, status: made ? "completed" : "planned" }),
+  ];
+
+  it("on a card, an installment is paid once the payment covering it is made", () => {
+    // May and June installments; June's payment (made) covers May, July's (only planned) covers June
+    const txs = [installment(1), installment(2), installment(3), ...payment("2026-06-16", true), ...payment("2026-07-16", false)];
+    const book = buildCardBook(accounts, txs);
+    const progress = purchaseProgress(purchase, book, txs, "TRY");
+    expect(progress.paidCount).toBe(1);
+    expect(progress.paidAmount).toBe(10000);
+    expect(progress.remainingAmount).toBe(50000);
     expect(progress.totalCount).toBe(6);
   });
-});
 
-describe("computePurchaseLiability", () => {
-  it("sums only planned purchase-linked expenses, converted", () => {
-    const accounts = [account("card", "TRY", "credit_card")];
+  it("history from before tracking counts as paid; ticking a row by hand doesn't", () => {
     const txs = [
-      tx({ accountId: "card", direction: "expense", amount: 4000, purchaseId: "p1", status: "planned" }),
-      tx({ accountId: "card", direction: "expense", amount: 4000, purchaseId: "p1", status: "completed" }), // posted, already in balance
-      tx({ accountId: "card", direction: "expense", amount: 999, status: "planned" }), // not purchase-linked
+      tx({ ...installment(1), legacy: true }),
+      installment(2, "completed"),
+      tx({ accountId: "card", direction: "expense", amount: 999, purchaseId: "other" }), // unrelated
     ];
-    // 4000 TRY * 0.025 = 100 USD
-    expect(computePurchaseLiability(txs, accounts, rates, "USD")).toBe(100);
+    expect(purchaseProgress(purchase, buildCardBook(accounts, txs), txs, "TRY").paidCount).toBe(1);
+  });
+
+  it("off a card, an installment is paid when it's completed", () => {
+    const onBank = { ...purchase, accountId: "bank" };
+    const txs = [tx({ accountId: "bank", direction: "expense", amount: 10000, purchaseId: "p1", status: "completed" })];
+    expect(purchaseProgress(onBank, buildCardBook(accounts, txs), txs, "TRY").paidCount).toBe(1);
   });
 });
 
@@ -152,51 +159,26 @@ describe("buildPurchaseTransactionSpecs", () => {
 });
 
 describe("findDueCardPayments", () => {
-  const card = account("card", "TRY", "credit_card");
-  const balances = new Map([["card", -5000]]);
+  const accounts = [account("bank", "TRY"), account("card", "TRY", "credit_card")];
+  const due = (txs: Transaction[], today: string) => findDueCardPayments(accounts, buildCardBook(accounts, txs), today);
+  const charge = (dueDate: string, amount: number) =>
+    tx({ accountId: "card", direction: "expense", amount, dueDate, status: "planned", purchaseId: "p1", completedAt: null });
+  const payment = (date: string) => [
+    tx({ accountId: "bank", direction: "expense", amount: 1, dueDate: date, transferGroupId: `g${date}`, status: "planned" }),
+    tx({ accountId: "card", direction: "income", amount: 1, dueDate: date, transferGroupId: `g${date}`, status: "planned" }),
+  ];
 
-  it("prompts when debt is posted, statement is old, and no payment this month", () => {
-    const txs = [tx({ accountId: "card", direction: "expense", amount: 5000, dueDate: "2026-05-20" })];
-    const due = findDueCardPayments([card], balances, txs, "2026-06-15");
-    expect(due).toHaveLength(1);
-    expect(due[0].suggestedAmount).toBe(5000);
+  it("asks for a payment covering last month's charges", () => {
+    const list = due([charge("2026-05-10", 1400), charge("2026-05-20", 5000), charge("2026-06-10", 1400)], "2026-06-15");
+    expect(list).toHaveLength(1);
+    // this month's charge goes on next month's statement
+    expect(list[0].covers.map((c) => c.dueDate)).toEqual(["2026-05-10", "2026-05-20"]);
+    expect(list[0].suggestedAmount).toBe(6400);
   });
 
-  it("stays silent when a transfer-in exists this month or debt is fresh", () => {
-    const paid = [
-      tx({ accountId: "card", direction: "expense", amount: 5000, dueDate: "2026-05-20" }),
-      tx({ accountId: "card", direction: "income", amount: 5000, dueDate: "2026-06-03", transferGroupId: "g1" }),
-    ];
-    expect(findDueCardPayments([card], balances, paid, "2026-06-15")).toHaveLength(0);
-
-    const fresh = [tx({ accountId: "card", direction: "expense", amount: 5000, dueDate: "2026-06-10" })];
-    expect(findDueCardPayments([card], balances, fresh, "2026-06-15")).toHaveLength(0);
-
-    expect(findDueCardPayments([card], new Map([["card", 0]]), paid, "2026-06-15")).toHaveLength(0);
-  });
-
-  it("statement suggestion includes planned installments due this month (and overdue)", () => {
-    const txs = [
-      tx({ accountId: "card", direction: "expense", amount: 5000, dueDate: "2026-05-20" }),
-      // this month's installment + one overdue from last month, one future
-      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-06-10", status: "planned", purchaseId: "p1", completedAt: null }),
-      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-05-10", status: "planned", purchaseId: "p1", completedAt: null }),
-      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-07-10", status: "planned", purchaseId: "p1", completedAt: null }),
-    ];
-    const due = findDueCardPayments([card], balances, txs, "2026-06-15");
-    expect(due).toHaveLength(1);
-    expect(due[0].postedDebt).toBe(5000);
-    expect(due[0].installmentsDue.map((t) => t.dueDate)).toEqual(["2026-05-10", "2026-06-10"]);
-    expect(due[0].suggestedAmount).toBe(5000 + 2800);
-  });
-
-  it("prompts on installments alone, even with no posted debt yet", () => {
-    const txs = [
-      tx({ accountId: "card", direction: "expense", amount: 1400, dueDate: "2026-06-10", status: "planned", purchaseId: "p1", completedAt: null }),
-    ];
-    const due = findDueCardPayments([card], new Map([["card", 0]]), txs, "2026-06-15");
-    expect(due).toHaveLength(1);
-    expect(due[0].suggestedAmount).toBe(1400);
+  it("stays quiet once this month's payment is recorded, or when nothing is due yet", () => {
+    expect(due([charge("2026-05-20", 5000), ...payment("2026-06-16")], "2026-06-15")).toHaveLength(0);
+    expect(due([charge("2026-06-10", 1400)], "2026-06-15")).toHaveLength(0);
   });
 });
 
@@ -207,13 +189,17 @@ describe("averageMonthlySpend", () => {
     { id: "bills", name: "Bills", direction: "expense" as const, color: "#06b6d4" },
   ];
 
-  it("averages per category and per account over the window, excluding transfers", () => {
+  it("averages per category and per account over the window, counting a card when it's paid", () => {
     const txs = [
+      // charged to the card: the payment below covers them, so they don't count again
       tx({ accountId: "card", direction: "expense", amount: 4000, categoryId: "groc", dueDate: "2026-06-05" }),
       tx({ accountId: "card", direction: "expense", amount: 2000, categoryId: "groc", dueDate: "2026-05-05" }),
+      // the card payment is the spending, and it's the card's
+      tx({ accountId: "try", direction: "expense", amount: 6000, transferGroupId: "pay", dueDate: "2026-06-10" }),
+      tx({ accountId: "card", direction: "income", amount: 6000, transferGroupId: "pay", dueDate: "2026-06-10" }),
       tx({ accountId: "try", direction: "expense", amount: 1500, categoryId: "bills", dueDate: "2026-06-01" }),
       tx({ accountId: "try", direction: "expense", amount: 9999, categoryId: "groc", dueDate: "2026-01-05" }), // outside window
-      tx({ accountId: "try", direction: "expense", amount: 5000, transferGroupId: "g1", dueDate: "2026-06-02" }), // transfer
+      tx({ accountId: "try", direction: "expense", amount: 5000, transferGroupId: "g1", dueDate: "2026-06-02" }), // a transfer, no card
       tx({ accountId: "try", direction: "income", amount: 8888, dueDate: "2026-06-03" }), // income
     ];
     const stats = averageMonthlySpend({
@@ -225,7 +211,8 @@ describe("averageMonthlySpend", () => {
       windowMonths: 3,
       today: "2026-06-15",
     });
-    expect(stats.categories[0]).toMatchObject({ name: "Groceries", monthlyAverage: 2000 }); // 6000/3
+    // the payment has no category of its own
+    expect(stats.categories[0]).toMatchObject({ categoryId: null, monthlyAverage: 2000 }); // 6000/3
     expect(stats.categories[1]).toMatchObject({ name: "Bills", monthlyAverage: 500 }); // 1500/3
     expect(stats.totalMonthlyAverage).toBe(2500);
     expect(stats.byAccount.get("card")).toBe(2000);

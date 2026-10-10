@@ -1,4 +1,5 @@
 import { RateTable } from "@/lib/domain/fx";
+import { GoldPrices } from "@/lib/domain/gold";
 import { FALLBACK_SOURCE, FALLBACK_USD_PER } from "./fallback";
 import {
   DEFAULT_FX_SOURCE,
@@ -17,6 +18,7 @@ import {
   parseGenelParaGold,
   parseTruncgilFx,
   parseTruncgilGold,
+  parseTruncgilGoldPrices,
 } from "./turkishSources";
 
 /**
@@ -149,9 +151,23 @@ export async function fetchRateTable(prefs: RatePrefs = {}): Promise<RateTable> 
     }
   })();
 
+  // every gold type's price, for gold held as coins or bilezik: only
+  // Truncgil quotes them all, so it's asked whichever provider serves the gram
+  let goldTry: GoldPrices | undefined;
+  const goldTypes = (async () => {
+    try {
+      const prices = parseTruncgilGoldPrices(await getJson(SOURCE_URLS.truncgil()));
+      if (Object.keys(prices).length) goldTry = prices;
+      diagnostics.push({ kind: "gold", source: "truncgil (types)", ok: Object.keys(prices).length > 0 });
+    } catch (err) {
+      diagnostics.push({ kind: "gold", source: "truncgil (types)", ok: false, detail: reason(err) });
+    }
+  })();
+
   const tasks: Promise<void>[] = [
     fx,
     gold,
+    goldTypes,
     // yesterday's fiat close — best effort, never blocks the live numbers
     (async () => {
       try {
@@ -193,6 +209,7 @@ export async function fetchRateTable(prefs: RatePrefs = {}): Promise<RateTable> 
     sources,
     prevUsdPer: Object.keys(prevUsdPer).length ? prevUsdPer : undefined,
     diagnostics,
+    goldTry,
   };
 }
 

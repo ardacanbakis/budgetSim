@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildCardBook } from "../cards";
 import { cardsDueSoon, cardStandings, daysUntilPaymentDay } from "../purchases";
 import type { Account, Transaction } from "@/lib/data/types";
 
@@ -53,57 +54,67 @@ describe("daysUntilPaymentDay", () => {
   });
 });
 
-describe("cardStandings", () => {
-  const balances = new Map([["card", -30_000]]);
+const bank: Account = { ...card(), id: "bank", name: "EnPara TRY", kind: "fiat", paymentDay: null, creditLimit: null };
 
-  it("counts what's owed and what's still coming against the limit", () => {
-    const [s] = cardStandings(
-      [card()],
-      balances,
-      [tx({ amount: 20_000 }), tx({ amount: 5_000 })],
-      "2026-08-10"
-    );
-    expect(s.postedDebt).toBe(30_000);
-    expect(s.scheduled).toBe(25_000);
-    // ₺100k limit, ₺55k committed
-    expect(s.available).toBe(45_000);
-    expect(s.daysToDue).toBe(6);
+/** both legs of a payment from the bank into the card */
+const pay = (date: string, amount: number, made: boolean): Transaction[] => {
+  const status = made ? ("completed" as const) : ("planned" as const);
+  return [
+    tx({ accountId: "bank", dueDate: date, amount, status, transferGroupId: `g-${date}` }),
+    tx({ accountId: "card", dueDate: date, amount, status, direction: "income", transferGroupId: `g-${date}` }),
+  ];
+};
+
+const standing = (accounts: Account[], transactions: Transaction[], today: string) =>
+  cardStandings(accounts, buildCardBook(accounts, transactions), today)[0];
+
+describe("cardStandings", () => {
+  it("counts a recorded payment not yet made against the limit, and frees it once made", () => {
+    // CC EnPara: ₺50,000 limit, this month's ₺10,019.54 statement recorded for the 16th
+    const limited = card({ creditLimit: 50_000 });
+    const planned = standing([limited, bank], pay("2026-10-16", 10_019.54, false), "2026-10-07");
+    expect(planned.owed).toBeCloseTo(10_019.54, 2);
+    expect(planned.available).toBeCloseTo(39_980.46, 2);
+    expect(planned.paidThisMonth).toBe(true);
+
+    const made = standing([limited, bank], pay("2026-10-16", 10_019.54, true), "2026-10-20");
+    expect(made.owed).toBe(0);
+    expect(made.available).toBe(50_000);
+  });
+
+  it("never reports more room than the limit because of a payment", () => {
+    const s = standing([card({ creditLimit: 50_000 }), bank], [...pay("2026-10-16", 10_019.54, false), ...pay("2026-11-16", 8_704.84, false)], "2026-10-07");
+    expect(s.available).toBeLessThanOrEqual(50_000);
+  });
+
+  it("holds every installment of a big purchase against the limit", () => {
+    const installments = [1, 2, 3].map((n) => tx({ amount: 5_000, purchaseId: "p", dueDate: `2026-1${n - 1}-05`, status: "planned" }));
+    const s = standing([card(), bank], installments, "2026-10-07");
+    expect(s.owed).toBe(15_000);
+    expect(s.available).toBe(85_000);
+    expect(s.daysToDue).toBe(9);
     expect(s.idle).toBe(false);
   });
 
-  it("gives back the room a scheduled payment will free", () => {
-    const [s] = cardStandings(
-      [card()],
-      balances,
-      [tx({ direction: "income", amount: 30_000, transferGroupId: "g1" })],
-      "2026-08-10"
-    );
-    expect(s.scheduledPayments).toBe(30_000);
-    expect(s.available).toBe(100_000);
-  });
-
   it("says nothing about a limit that was never set", () => {
-    const [s] = cardStandings([card({ creditLimit: null })], balances, [], "2026-08-10");
-    expect(s.available).toBe(null);
+    expect(standing([card({ creditLimit: null }), bank], [], "2026-08-10").available).toBe(null);
   });
 
   it("knows a card with nothing owed and nothing coming is idle", () => {
-    const [s] = cardStandings([card()], new Map(), [], "2026-08-10");
-    expect(s.idle).toBe(true);
+    expect(standing([card(), bank], [], "2026-08-10").idle).toBe(true);
   });
 });
 
 describe("cardsDueSoon", () => {
-  const standings = (days: number, debt: number) =>
-    [{ daysToDue: days, postedDebt: debt } as ReturnType<typeof cardStandings>[number]];
+  const due = (days: number, paidThisMonth = false) =>
+    ({ daysToDue: days, paidThisMonth }) as ReturnType<typeof cardStandings>[number];
 
-  it("nudges once the day is close, soonest first", () => {
-    const list = [...standings(4, 100), ...standings(1, 200)];
-    expect(cardsDueSoon(list).map((s) => s.daysToDue)).toEqual([1, 4]);
+  it("nudges once the day is close and no payment is recorded, soonest first", () => {
+    expect(cardsDueSoon([due(4), due(1)]).map((s) => s.daysToDue)).toEqual([1, 4]);
   });
 
-  it("stays quiet when the day is far off or nothing is owed", () => {
-    expect(cardsDueSoon(standings(9, 5_000))).toEqual([]);
-    expect(cardsDueSoon(standings(1, 0))).toEqual([]);
+  it("stays quiet when the day is far off or this month's payment is recorded", () => {
+    expect(cardsDueSoon([due(9)])).toEqual([]);
+    expect(cardsDueSoon([due(1, true)])).toEqual([]);
   });
 });

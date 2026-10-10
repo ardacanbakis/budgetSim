@@ -2,6 +2,8 @@ import { Account, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
+import { buildCardBook } from "./cards";
+import { GoldRatios } from "./gold";
 import { addMonthsClamped, occurrencesBetween } from "./recurrence";
 
 /** One named contribution to a month, in the display currency at that month's rates. */
@@ -101,6 +103,8 @@ export function projectCashflow(params: {
   transactions: Transaction[];
   templates: RecurringTemplate[];
   usdPer: UsdPerMap;
+  /** what gold held as coins or bilezik is worth in grams (lib/domain/gold.ts) */
+  goldRatios?: GoldRatios;
   display: Currency;
   fromDate: string; // yyyy-mm-dd
   months: number;
@@ -124,8 +128,6 @@ export function projectCashflow(params: {
     overrides?: Record<string, string>;
     /** accounts whose draws are routine conversions, not raids on savings */
     routine?: string[];
-    /** settle credit-card debt monthly from those same accounts */
-    payCards?: boolean;
   };
 }): ProjectionResult {
   const {
@@ -133,6 +135,7 @@ export function projectCashflow(params: {
     transactions,
     templates,
     usdPer,
+    goldRatios,
     display,
     fromDate,
     months,
@@ -146,7 +149,7 @@ export function projectCashflow(params: {
   const horizonEnd = addMonthsClamped(fromDate, months);
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
 
-  const balances = computeBalances(accounts, transactions);
+  const balances = computeBalances(accounts, transactions, goldRatios);
   const { total: startNetWorth, skippedAccountIds } = computeNetWorth(
     accounts,
     balances,
@@ -157,7 +160,31 @@ export function projectCashflow(params: {
   const flows: FlowItem[] = [];
   const materialized = new Set<string>();
 
+  // Cards (lib/domain/cards.ts): money leaves your account when a card is
+  // paid. A recorded payment is that flow. A charge no payment covers yet
+  // leaves the card's paying account in the month it'll be paid; one that's
+  // covered rides on its payment, so it isn't counted again.
+  const book = buildCardBook(accounts, transactions);
+  const fromMonth = fromDate.slice(0, 7);
+  const lastMonth = horizonEnd.slice(0, 7);
+  const accountById = new Map(accounts.map((a) => [a.id, a] as const));
+  const payerOf = (cardId: string): string | undefined => accountById.get(cardId)?.paymentAccountId ?? undefined;
+  const pushCharge = (month: string, cardId: string, direction: FlowItem["direction"], amount: number, categoryId: string | null, label: string) => {
+    if (month < fromMonth || month > lastMonth) return;
+    const currency = currencyOf.get(cardId);
+    if (!currency) return;
+    flows.push({ date: `${month}-01`, accountId: payerOf(cardId), direction, amount, currency, isTransfer: false, categoryId: categoryId ?? "", label });
+  };
+
   for (const t of transactions) {
+    const role = book.roleOf(t);
+    if (role === "cardSide") continue;
+    if (role === "charge") {
+      if (t.recurringTemplateId) materialized.add(`${t.recurringTemplateId}|${t.dueDate}`);
+      if (book.isPaid(t) || book.coverOf(t)) continue;
+      pushCharge(book.paidInMonth(t), t.accountId, t.direction, t.amount, t.categoryId, t.description);
+      continue;
+    }
     if (t.status !== "planned") continue;
     if (t.dueDate < fromDate || t.dueDate > horizonEnd) continue;
     const currency = currencyOf.get(t.accountId);
@@ -169,7 +196,7 @@ export function projectCashflow(params: {
       direction: t.direction,
       amount: t.amount,
       currency,
-      isTransfer: t.transferGroupId != null,
+      isTransfer: role === "transfer",
       categoryId: t.categoryId ?? "",
       label: t.description,
     });
@@ -178,8 +205,15 @@ export function projectCashflow(params: {
   for (const tpl of templates) {
     const currency = currencyOf.get(tpl.accountId);
     if (!currency) continue;
+    const onCard = book.isCard(tpl.accountId);
     for (const date of occurrencesBetween(tpl, fromDate, horizonEnd)) {
       if (materialized.has(`${tpl.id}|${date}`)) continue;
+      if (onCard) {
+        // billed to a card: paid with the statement after it
+        const [y, m] = date.split("-").map(Number);
+        pushCharge(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`, tpl.accountId, tpl.direction, tpl.amount, tpl.categoryId, tpl.name);
+        continue;
+      }
       flows.push({
         date,
         accountId: tpl.accountId,
@@ -230,9 +264,10 @@ export function projectCashflow(params: {
   // so "what I'm worth" and "what I have left to sell" can never drift apart —
   // which is the whole point once a plan starts eating into savings.
   const skipped = new Set(skippedAccountIds);
-  const live = accounts.filter((a) => !a.archived && !skipped.has(a.id));
+  // cards hold no money of their own here: what they're owed is paid out of
+  // the accounts above, as the flows say
+  const live = accounts.filter((a) => !a.archived && !skipped.has(a.id) && a.kind !== "credit_card");
   const balance = new Map<string, number>(live.map((a) => [a.id, balances.get(a.id) ?? 0]));
-  const kindOf = new Map(live.map((a) => [a.id, a.kind] as const));
 
   /**
    * A hypothetical flow has no real account, so it lands on the account that
@@ -321,9 +356,6 @@ export function projectCashflow(params: {
 
     for (const [id, amount] of balance) {
       if (amount >= 0) continue;
-      // a card bill is a bill: unless you've said you'd carry the balance,
-      // it gets paid every month out of the same accounts everything else does
-      if (kindOf.get(id) === "credit_card" && funding?.payCards === false) continue;
       const short = currencyOf.get(id)!;
       let owed = -amount; // in the overdrawn account's own currency
 

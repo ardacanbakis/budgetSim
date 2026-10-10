@@ -430,14 +430,15 @@ function TemplateModal({
             </Select>
           </Field>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label={t("recurring.frequency")}>
-            <Select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
-              <option value="weekly">{t("recurring.weekly")}</option>
-              <option value="monthly">{t("recurring.monthly")}</option>
-              <option value="yearly">{t("recurring.yearly")}</option>
-            </Select>
-          </Field>
+        <Field label={t("recurring.frequency")}>
+          <Select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
+            <option value="weekly">{t("recurring.weekly")}</option>
+            <option value="monthly">{t("recurring.monthly")}</option>
+            <option value="yearly">{t("recurring.yearly")}</option>
+          </Select>
+        </Field>
+        {/* two to a row: three left each date too narrow to show its year */}
+        <div className="grid grid-cols-2 gap-3">
           <Field label={t("recurring.startDate")}>
             <Input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </Field>

@@ -123,13 +123,31 @@ export function Button({
   );
 }
 
+const PICKER_TYPES = new Set(["date", "month", "week", "time", "datetime-local"]);
+
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  // Date fields open their calendar from anywhere in the box, not just the
+  // small icon, and never get narrow enough to hide the year.
+  const picker = props.type != null && PICKER_TYPES.has(props.type);
   return (
     <input
       {...props}
+      onClick={
+        picker
+          ? (e) => {
+              props.onClick?.(e);
+              try {
+                e.currentTarget.showPicker?.();
+              } catch {
+                // read-only, disabled, or a browser that refuses: the field still types
+              }
+            }
+          : props.onClick
+      }
       className={cx(
         "w-full rounded-lg border border-[var(--edge)] bg-[var(--field)] px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100",
         props.type === "number" && "tnum",
+        picker && "min-w-[9.5rem] cursor-pointer tabular-nums",
         props.className
       )}
     />

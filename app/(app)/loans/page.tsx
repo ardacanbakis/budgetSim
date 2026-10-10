@@ -9,6 +9,7 @@ import { Loan, LoanKind } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeBalances } from "@/lib/domain/balances";
+import { goldRatiosOf } from "@/lib/domain/gold";
 import { computeDebtOverview } from "@/lib/domain/debt";
 import {
   BSMV_CONSUMER_PCT,
@@ -98,7 +99,7 @@ export default function LoansPage() {
 
   if (loans.isLoading || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const balances = computeBalances(accounts.data ?? [], transactions.data ?? []);
+  const balances = computeBalances(accounts.data ?? [], transactions.data ?? [], goldRatiosOf(rates.data));
   const overview = rates.data
     ? computeDebtOverview({
         loans: loans.data ?? [],

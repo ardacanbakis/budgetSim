@@ -7,14 +7,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RateTicker } from "@/components/rateTicker";
 import { CardDueBanner } from "@/components/cardDueBanner";
 import { CommandPalette } from "@/components/commandPalette";
-import { navTitleKey, orderedNav as orderNav } from "@/components/shell.nav";
+import { navTitleKey, visibleNav } from "@/components/shell.nav";
 import { Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
 import { describeError, ErrorDescription } from "@/lib/data/errors";
 import { useApp } from "@/lib/data/provider";
 import { KEYS, useRates, useUserSettings } from "@/lib/data/queries";
-import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
+import { netWorthNow } from "@/lib/domain/cards";
 import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
@@ -90,8 +90,7 @@ function Bootstrapper() {
         const existing = await repo.listSnapshots();
         if (!existing.some((s) => s.snapshotDate.slice(0, 7) === today.slice(0, 7))) {
           const [accounts, transactions] = await Promise.all([repo.listAccounts(), repo.listTransactions()]);
-          const balances = computeBalances(accounts, transactions);
-          const { total } = computeNetWorth(accounts, balances, table.usdPer, "USD");
+          const { total, balances } = netWorthNow({ accounts, transactions, usdPer: table.usdPer, goldTry: table.goldTry, display: "USD", today });
           await repo.takeSnapshot({
             snapshotDate: today,
             balances: Object.fromEntries(balances),
@@ -160,7 +159,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rates = useRates();
   const settings = useUserSettings();
-  const nav = orderNav(settings.data?.navOrder);
+  const nav = visibleNav(settings.data?.navOrder);
   // phone bar: the first four, plus More — except that the page you're on is
   // always one of the four, so you can see where you are without opening it
   const primaryNav = nav.slice(0, 4);

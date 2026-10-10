@@ -38,16 +38,17 @@ describe("budgetStatuses", () => {
   it("sums this month's completed spend per budget with conversion, sets levels", () => {
     const txs = [
       tx({ accountId: "try", direction: "expense", amount: 6000, categoryId: "groc" }),
+      // on a card: spent when the card is paid, and that payment has no category
       tx({ accountId: "card", direction: "expense", amount: 4000, categoryId: "groc" }),
       tx({ accountId: "usd", direction: "expense", amount: 50, categoryId: "groc" }), // 50 USD = 2000 TRY
       tx({ accountId: "try", direction: "expense", amount: 9999, categoryId: "groc", dueDate: "2026-05-10" }), // other month
       tx({ accountId: "try", direction: "expense", amount: 500, categoryId: "groc", status: "planned" }), // planned
     ];
-    const [status] = budgetStatuses({ budgets: [groceriesBudget], transactions: txs, accounts, usdPer: rates, month: "2026-06" });
-    expect(status.spent).toBe(12000);
+    const [status] = budgetStatuses({ budgets: [{ ...groceriesBudget, monthlyLimit: 10000 }], transactions: txs, accounts, usdPer: rates, month: "2026-06" });
+    expect(status.spent).toBe(8000);
     expect(status.level).toBe("warn"); // 80%
     const over = budgetStatuses({
-      budgets: [{ ...groceriesBudget, monthlyLimit: 10000 }],
+      budgets: [{ ...groceriesBudget, monthlyLimit: 7000 }],
       transactions: txs,
       accounts,
       usdPer: rates,
@@ -76,10 +77,11 @@ describe("budgetWarningFor", () => {
 });
 
 describe("safeToSpend", () => {
-  it("liquid fiat + remaining planned income − remaining planned expenses this month", () => {
+  it("liquid fiat + remaining planned income − what has still to go out this month", () => {
     const accounts = [
       account("try", "TRY", "fiat"),
       account("card", "TRY", "credit_card"), // excluded from liquid
+      account("card2", "TRY", "credit_card"),
       account("btc", "BTC", "crypto"), // excluded from liquid
     ];
     const balances = new Map([
@@ -90,16 +92,22 @@ describe("safeToSpend", () => {
     const txs = [
       tx({ accountId: "try", direction: "income", amount: 20000, status: "planned", dueDate: "2026-06-20" }),
       tx({ accountId: "try", direction: "expense", amount: 27500, status: "planned", dueDate: "2026-06-25" }),
-      tx({ accountId: "card", direction: "expense", amount: 14000, status: "planned", dueDate: "2026-06-28" }), // installment counts
+      // charged to a card last month and no payment recorded: due now
+      tx({ accountId: "card", direction: "expense", amount: 3000, status: "completed", dueDate: "2026-05-20" }),
+      // charged this month: on next month's statement
+      tx({ accountId: "card", direction: "expense", amount: 14000, status: "planned", dueDate: "2026-06-28" }),
+      // this month's payment to another card, still to make
+      tx({ accountId: "try", direction: "expense", amount: 8000, status: "planned", dueDate: "2026-06-16", transferGroupId: "pay" }),
+      tx({ accountId: "card2", direction: "income", amount: 8000, status: "planned", dueDate: "2026-06-16", transferGroupId: "pay" }),
       tx({ accountId: "try", direction: "expense", amount: 9999, status: "planned", dueDate: "2026-06-05" }), // already past today
       tx({ accountId: "try", direction: "expense", amount: 9999, status: "planned", dueDate: "2026-07-10" }), // next month
-      tx({ accountId: "try", direction: "expense", amount: 5000, status: "planned", dueDate: "2026-06-20", transferGroupId: "g" }),
+      tx({ accountId: "try", direction: "expense", amount: 5000, status: "planned", dueDate: "2026-06-20", transferGroupId: "g" }), // between your own accounts
     ];
     const result = safeToSpend({ accounts, balances, transactions: txs, usdPer: rates, display: "TRY", today: "2026-06-15" });
     expect(result.liquid).toBe(40000);
     expect(result.plannedIncome).toBe(20000);
-    expect(result.plannedExpense).toBe(41500);
-    expect(result.total).toBe(18500);
+    expect(result.plannedExpense).toBe(27500 + 3000 + 8000);
+    expect(result.total).toBe(21500);
   });
 });
 

@@ -82,6 +82,8 @@ export function useLocalChoice<T extends string>(key: string, options: readonly 
 
 /** Which recurring items the Recurring screen shows: by status, and by direction. */
 export const RECURRING_STATUS_FILTER_KEY = "renovator-recurring-status";
+/** the Cards page's open tab: the cards, or the big purchases on them */
+export const CARDS_TAB_KEY = "renovator-cards-tab";
 export const RECURRING_DIRECTION_FILTER_KEY = "renovator-recurring-direction";
 
 /** Below this many lira, a month's shortfall is rounding rather than trouble. */
