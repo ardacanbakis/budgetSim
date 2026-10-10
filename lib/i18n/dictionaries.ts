@@ -671,8 +671,8 @@ export const en = {
     debtFree: "Debt-free",
     avalanche: "Attack first (highest rate)",
     cards: "Credit cards",
-    posted: "posted",
-    upcoming: "upcoming",
+    posted: "in statements to pay",
+    upcoming: "charged or in installments to come",
     perMonth: "per month",
   },
   legacy: {
@@ -1628,8 +1628,8 @@ export const tr: Dictionary = {
     debtFree: "Borçsuz tarih",
     avalanche: "Önce buna saldır (en yüksek faiz)",
     cards: "Kredi kartları",
-    posted: "işlenen",
-    upcoming: "gelecek",
+    posted: "ödenecek ekstrelerde",
+    upcoming: "harcanmış ya da gelecek taksitlerde",
     perMonth: "aylık",
   },
   legacy: {
