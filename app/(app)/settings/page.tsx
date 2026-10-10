@@ -19,7 +19,9 @@ import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
+import { PHONE_LAYOUTS } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
+import { useIsPhone } from "@/lib/ui/usePocket";
 import { RateSourcesCard } from "@/components/settingsRates";
 import { ViewsCard } from "@/components/settingsViews";
 
@@ -96,6 +98,7 @@ export default function SettingsPage() {
         <>
           <PreferencesCard />
           <StyleCard />
+          <PhoneLayoutCard />
           <ViewsCard />
           <AppearanceCard />
           <RateSourcesCard />
@@ -396,6 +399,67 @@ function StyleCard() {
         <p className="text-xs text-zinc-400">{t("style.v2Note")}</p>
       </div>
     </Card>
+  );
+}
+
+/**
+ * The phone layout sits right under the interface style because it's the same
+ * kind of choice, scoped to one kind of screen. It says plainly when the
+ * screen you're on is too wide for the choice to show.
+ */
+function PhoneLayoutCard() {
+  const { t } = useI18n();
+  const { phoneLayout, setPhoneLayout } = useApp();
+  const phone = useIsPhone();
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex items-center gap-2">
+            {t("phone.title")} <Badge tone="sky">{t("phone.newBadge")}</Badge>
+          </span>
+        }
+      />
+      <div className="space-y-3 p-4">
+        <p className="text-xs text-zinc-500">{t("phone.hint")}</p>
+        <div role="group" aria-label={t("phone.title")} className="grid gap-2 sm:grid-cols-2">
+          {PHONE_LAYOUTS.map((id) => {
+            const selected = phoneLayout === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPhoneLayout(id)}
+                aria-pressed={selected}
+                className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                  selected ? "border-teal-500 ring-1 ring-teal-500/50" : "border-[var(--edge)] hover:border-teal-500/40"
+                }`}
+              >
+                <PhoneGlyph pocket={id === "pocket"} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{t(`phone.${id}`)}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{t(`phone.${id}Desc`)}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {phoneLayout === "pocket" && !phone ? <p className="text-xs text-zinc-400">{t("phone.wideNote")}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
+/** A tiny phone outline: Standard has a plain tab bar, Pocket a raised + in the middle. */
+function PhoneGlyph({ pocket }: { pocket: boolean }) {
+  return (
+    <span aria-hidden className="relative flex h-12 w-7 shrink-0 flex-col justify-end overflow-hidden rounded-md border-2 border-zinc-400 dark:border-zinc-500">
+      <span className="flex h-2.5 items-center justify-around border-t border-zinc-400 px-0.5 dark:border-zinc-500">
+        <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />
+        {pocket ? <span className="-mt-1.5 h-2 w-2 rounded-full bg-teal-500" /> : <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />}
+        <span className="h-0.5 w-0.5 rounded-full bg-zinc-400" />
+      </span>
+    </span>
   );
 }
 

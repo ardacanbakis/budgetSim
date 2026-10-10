@@ -315,6 +315,16 @@ export const en = {
     version: "Version {n}",
     v2Note: "Version 2 adds a page title in the header, ⌘K quick jump, and a rebuilt dashboard.",
   },
+  phone: {
+    title: "Phone layout",
+    hint: "How the app is laid out on a phone. Saved on this device and used only at phone width, so a tablet or computer keeps its own style.",
+    standard: "Standard",
+    standardDesc: "The same pages as on a computer, fitted to a narrow screen.",
+    pocket: "Pocket",
+    pocketDesc: "Built for one hand: a home that shows what needs doing, a + in the tab bar, activity grouped by day, and a fast add sheet.",
+    newBadge: "New",
+    wideNote: "This screen is wider than a phone, so it keeps its usual layout. Open the app on your phone to see Pocket.",
+  },
   dashboard: {
     netWorth: "Net worth",
     safeToSpend: "Safe to spend",
@@ -1261,6 +1271,16 @@ export const tr: Dictionary = {
     contrastDesc: "Sert kenarlar, gölge yok, renk yalnızca anlam taşıdığında.",
     version: "Sürüm {n}",
     v2Note: "Sürüm 2; başlıkta sayfa adı, ⌘K hızlı geçiş ve yeniden kurgulanmış bir panel getirir.",
+  },
+  phone: {
+    title: "Telefon yerleşimi",
+    hint: "Uygulamanın telefonda nasıl yerleştiğini belirler. Bu cihaza kaydedilir ve yalnızca telefon genişliğinde kullanılır; tablet ya da bilgisayar kendi stilini korur.",
+    standard: "Standart",
+    standardDesc: "Bilgisayardaki sayfaların dar ekrana sığdırılmış hali.",
+    pocket: "Cep",
+    pocketDesc: "Tek elle kullanım için: yapılacakları gösteren bir ana sayfa, sekme çubuğunda +, güne göre gruplanmış hareketler ve hızlı ekleme.",
+    newBadge: "Yeni",
+    wideNote: "Bu ekran telefondan geniş, bu yüzden her zamanki yerleşimini korur. Cep'i görmek için uygulamayı telefonundan aç.",
   },
   dashboard: {
     netWorth: "Toplam varlık",
