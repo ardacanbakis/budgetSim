@@ -321,3 +321,31 @@ describe("credit card bills", () => {
     expect(r.months.map((m) => Math.round(m.expense))).toEqual([0, 1000, 1000]);
   });
 });
+
+describe("recurring items already on the ledger", () => {
+  const bank = account("bank", "TRY", 200_000);
+  const base = { completedAt: null, fxSnapshot: null, transferMarketRate: null, loanId: null, victvsPayoutId: null, purchaseId: null, legacy: false, createdAt: "2025-01-01T00:00:00Z", categoryId: "housing", transferGroupId: null, description: "Rent" };
+  const rentRow = (dueDate: string, status: Transaction["status"]): Transaction => ({
+    ...base, id: `rent-${dueDate}`, accountId: "bank", direction: "expense", amount: 40_000, status, dueDate, recurringTemplateId: "rent-bank",
+  });
+  const project = (transactions: Transaction[]) =>
+    projectCashflow({ accounts: [bank], transactions, templates: [rent("bank", 40_000)], usdPer: RATES, display: "USD", fromDate: FROM, months: 3 });
+
+  it("doesn't count again an occurrence that was paid early", () => {
+    // January's rent, due on the 5th, already paid: it isn't coming again
+    const r = project([rentRow("2026-01-05", "completed"), rentRow("2026-02-05", "planned"), rentRow("2026-03-05", "planned")]);
+    expect(r.months.map((m) => Math.round(m.expense))).toEqual([0, 1000, 1000]);
+  });
+
+  it("doesn't bring back an occurrence that was moved or deleted", () => {
+    // January moved to the 20th; February deleted on purpose
+    const r = project([rentRow("2026-01-20", "planned"), rentRow("2026-03-05", "planned")]);
+    expect(r.months.map((m) => Math.round(m.expense))).toEqual([1000, 0, 1000]);
+  });
+
+  it("still projects the dates no row exists for yet", () => {
+    // only January on the ledger: February and March come from the template
+    const r = project([rentRow("2026-01-05", "planned")]);
+    expect(r.months.map((m) => Math.round(m.expense))).toEqual([1000, 1000, 1000]);
+  });
+});
