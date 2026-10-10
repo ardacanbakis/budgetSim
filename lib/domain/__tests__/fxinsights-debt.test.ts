@@ -131,3 +131,39 @@ describe("computeDebtOverview", () => {
     expect(overview.debtFreeDate).toBeNull();
   });
 });
+
+describe("computeDebtOverview: a loan's own schedule", () => {
+  it("reads what's outstanding off the loan's real schedule, not a plain annuity", () => {
+    // equal principal, with Turkish levies: nothing like an untaxed annuity
+    const loan: Loan = {
+      id: "ep",
+      name: "Equal principal",
+      kind: "other",
+      currency: "TRY",
+      principal: 120000,
+      monthlyRatePct: 3,
+      termMonths: 12,
+      startDate: "2026-01-01",
+      installment: 0,
+      scheduleKind: "equalPrincipal",
+      kkdfPct: 15,
+      bsmvPct: 10,
+      customInstalments: null,
+      recurringTemplateId: null,
+      createdAt: "2026-01-01",
+    };
+    const txs = [1, 2, 3].map(() => tx({ accountId: "try", direction: "expense", amount: 1, loanId: "ep" }));
+    const overview = computeDebtOverview({
+      loans: [loan],
+      accounts: [account("try", "TRY")],
+      balances: new Map(),
+      transactions: txs,
+      usdPer: rates,
+      display: "TRY",
+      today: "2026-06-15",
+    });
+    // three of twelve equal slices of principal repaid
+    expect(overview.items[0].outstanding).toBe(90000);
+    expect(overview.debtFreeDate).toBe("2027-01-01");
+  });
+});
