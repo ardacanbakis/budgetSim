@@ -2080,11 +2080,13 @@ test("portfolio: a balance can be adjusted to match the bank, with a reason", as
   await expect(row).toBeVisible();
   await expect(row.getByText(/^Adjustment$|^Düzeltme$/)).toBeVisible();
 
-  // or say what the bank shows, and the difference is worked out
+  // or type what the bank shows, the way the bank writes it, and the
+  // difference is worked out (a number field would read this as 12.4655)
   await page.getByRole("button", { name: /Adjust balance|Bakiyeyi düzelt/ }).click();
-  await page.getByLabel(/Balance the bank shows|Bankanın gösterdiği/).fill("1000");
+  await page.getByLabel(/Balance the bank shows|Bankanın gösterdiği/).fill("12.465,50");
+  await expect(page.getByText(/New balance: ₺12,465\.50|Yeni bakiye: ₺12\.465,50/)).toBeVisible();
   await page.getByRole("button", { name: /Record adjustment|Düzeltmeyi kaydet/ }).click();
-  await expect.poll(read).toBe(1000);
+  await expect.poll(read).toBe(12465.5);
   await expect(page.locator("li").filter({ hasText: /Balance adjustment|Bakiye düzeltmesi/ }).first()).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/portfolio-adjusted.png" });
 

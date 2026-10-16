@@ -20,6 +20,11 @@ describe("planAdjustment", () => {
     expect(planAdjustment(0.5, 0.49990001, "BTC")).toEqual({ direction: "expense", amount: 0.00009999 });
   });
 
+  it("refuses a target too big to work out", () => {
+    expect(planAdjustment(100, 1e307, "TRY")).toBeNull();
+    expect(planAdjustment(100, Number.POSITIVE_INFINITY, "TRY")).toBeNull();
+  });
+
   it("can take a balance below zero", () => {
     expect(planAdjustment(20, -5, "TRY")).toEqual({ direction: "expense", amount: 25 });
   });

@@ -395,7 +395,9 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
 
       <EditModal
         tx={editing}
-        accounts={(accounts.data ?? []).filter((a) => !a.archived)}
+        // an adjustment corrects a bank or cash balance; on a card it would
+        // turn into a charge under the card rules, so cards aren't offered
+        accounts={(accounts.data ?? []).filter((a) => !a.archived && !(editing?.adjustment && a.kind === "credit_card"))}
         categories={categories.data ?? []}
         onClose={() => setEditing(null)}
         onSave={async (patch) => {

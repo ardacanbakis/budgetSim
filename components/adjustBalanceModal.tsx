@@ -7,9 +7,9 @@ import { KEYS, useAppMutation, useCategories, useRates } from "@/lib/data/querie
 import { NewTransaction } from "@/lib/data/repo";
 import { Account, TxDirection } from "@/lib/data/types";
 import { balanceAfter, planAdjustment, planChange } from "@/lib/domain/adjustments";
-import { formatAmount } from "@/lib/domain/currencies";
+import { CURRENCY_META, formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
-import { roundTo } from "@/lib/domain/money";
+import { amountForEditing, parseTypedAmount } from "@/lib/domain/money";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
@@ -60,7 +60,7 @@ export function AdjustBalanceModal({
   if (open && account && initialized !== account.id) {
     setInitialized(account.id);
     setMode("set");
-    setTarget(String(roundTo(balance, account.currency)));
+    setTarget(amountForEditing(balance, account.currency, locale));
     setChangeDir("expense");
     setChangeAmount("");
     setDate(todayISO());
@@ -72,16 +72,22 @@ export function AdjustBalanceModal({
   const currency = account.currency;
   const fmt = (n: number) => formatAmount(n, currency, locale);
 
-  // nothing typed yet, or something the number field couldn't read (it hands
-  // back "" for "12.465,50" in some locales) — not the same as "matches"
-  const entered = mode === "set" ? target : changeAmount;
-  const readable = entered.trim() !== "" && Number.isFinite(Number(entered));
+  // The fields are text, read by parseTypedAmount: a number field turns the
+  // bank's "12.465,50" into 12.4655 in Chrome, silently. A change is always
+  // positive; its direction comes from the toggle.
+  const decimals = CURRENCY_META[currency].decimals;
+  const typedTarget = parseTypedAmount(target, decimals);
+  const typedChange = parseTypedAmount(changeAmount, decimals);
   const plan =
     mode === "set"
-      ? target.trim() === "" || !Number.isFinite(Number(target))
+      ? Number.isNaN(typedTarget)
         ? null
-        : planAdjustment(balance, Number(target), currency)
-      : planChange(Number(changeAmount), changeDir, currency);
+        : planAdjustment(balance, typedTarget, currency)
+      : typedChange > 0
+        ? planChange(typedChange, changeDir, currency)
+        : null;
+  // "already matches" only means something when a balance was typed
+  const matches = mode === "set" && !Number.isNaN(typedTarget) && plan == null;
   const direction = plan?.direction ?? (mode === "change" ? changeDir : "expense");
   const options = (categories.data ?? []).filter((c) => c.direction === direction);
   // a category picked for the other direction no longer applies
@@ -129,9 +135,9 @@ export function AdjustBalanceModal({
         {mode === "set" ? (
           <Field label={`${t("adjust.actual")} (${currency === "XAU_G" ? "g" : currency})`}>
             <Input
-              type="number"
-              step="any"
+              type="text"
               inputMode="decimal"
+              autoComplete="off"
               required
               value={target}
               onChange={(e) => setTarget(e.target.value)}
@@ -149,10 +155,9 @@ export function AdjustBalanceModal({
             </div>
             <Field label={`${t("adjust.amount")} (${currency === "XAU_G" ? "g" : currency})`}>
               <Input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 required
                 value={changeAmount}
                 onChange={(e) => setChangeAmount(e.target.value)}
@@ -172,7 +177,7 @@ export function AdjustBalanceModal({
           }`}
         >
           {!plan ? (
-            readable ? t("adjust.noChange") : t("adjust.enterAmount")
+            matches ? t("adjust.noChange") : t("adjust.enterAmount")
           ) : (
             <>
               {t(plan.direction === "expense" ? "adjust.willTakeOff" : "adjust.willAdd", { amount: fmt(plan.amount) })}{" "}

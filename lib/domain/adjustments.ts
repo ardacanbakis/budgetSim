@@ -23,7 +23,8 @@ export interface AdjustmentPlan {
  */
 export function planAdjustment(current: number, target: number, currency: Currency): AdjustmentPlan | null {
   const diff = toMinor(target, currency) - toMinor(current, currency);
-  if (diff === 0) return null;
+  // an absurd target (1e307) overflows to Infinity: nothing sensible to record
+  if (!Number.isFinite(diff) || diff === 0) return null;
   return { direction: diff > 0 ? "income" : "expense", amount: fromMinor(Math.abs(diff), currency) };
 }
 
