@@ -186,9 +186,14 @@ test("recurring: editing an item redoes its upcoming items, one a month", async 
   // one a month: a rent already paid on the 10th isn't charged again on the 20th
   expect(new Set(months).size).toBe(months.length);
   expect(months.every((m) => m <= month(5))).toBe(true);
-  const planned = rows.filter((r) => r.status === "planned");
-  expect(planned.length).toBeGreaterThan(0);
-  expect(planned.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
+  // An edit redoes what's still to come and leaves the past alone: after the
+  // 10th, this month's old-schedule rent is already behind us (and, created
+  // before the demo's template, waits to be confirmed), so it stays as it was.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const upcoming = rows.filter((r) => r.status === "planned" && r.dueDate >= today);
+  expect(upcoming.length).toBeGreaterThan(0);
+  expect(upcoming.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
 });
 
 /** Demo saves throw while window.__failSaves is set, the way a full localStorage does. */
@@ -337,6 +342,14 @@ test("settings: a page can be hidden from the sidebar, but Settings can't", asyn
 
 test("gold: one account holds a mix of coins and gram gold, valued in lira", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
+  // Coin prices come from Truncgil. Pin them, so the test needs neither the
+  // network nor Truncgil being up; the rest of the rate table stays real.
+  await page.route("**/api/rates**", async (route) => {
+    const response = await route.fetch();
+    const table = await response.json();
+    table.goldTry = { gram: 5600, has: 5572, ceyrek: 8998, yarim: 17940, tam: 35700 };
+    await route.fulfill({ response, json: table });
+  });
   await enterDemo(page);
   await page.goto("/accounts");
   await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
