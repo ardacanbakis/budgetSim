@@ -1,3 +1,12 @@
+import * as pocketCore from "./pocket/core";
+import * as pocketAdd from "./pocket/add";
+import * as pocketLists from "./pocket/lists";
+import * as pocketHome from "./pocket/home";
+import * as pocketActivity from "./pocket/activity";
+import * as pocketPortfolio from "./pocket/portfolio";
+import * as pocketCards from "./pocket/cards";
+import * as pocketDesk from "./pocket/desk";
+
 export const en = {
   common: {
     columns: "Columns",
@@ -337,6 +346,16 @@ export const en = {
     save: "Record adjustment",
     badge: "Adjustment",
     defaultDescription: "Balance adjustment",
+  },
+  pocket: {
+    ...pocketCore.en,
+    add: pocketAdd.en,
+    lists: pocketLists.en,
+    home: pocketHome.en,
+    activity: pocketActivity.en,
+    portfolio: pocketPortfolio.en,
+    cards: pocketCards.en,
+    desk: pocketDesk.en,
   },
   phone: {
     title: "Phone layout",
@@ -1318,6 +1337,16 @@ export const tr: Dictionary = {
     save: "Düzeltmeyi kaydet",
     badge: "Düzeltme",
     defaultDescription: "Bakiye düzeltmesi",
+  },
+  pocket: {
+    ...pocketCore.tr,
+    add: pocketAdd.tr,
+    lists: pocketLists.tr,
+    home: pocketHome.tr,
+    activity: pocketActivity.tr,
+    portfolio: pocketPortfolio.tr,
+    cards: pocketCards.tr,
+    desk: pocketDesk.tr,
   },
   phone: {
     title: "Telefon yerleşimi",

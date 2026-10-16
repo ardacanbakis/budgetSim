@@ -10,6 +10,8 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { PocketSheet } from "@/components/pocket/sheet";
+import { usePocket } from "@/lib/ui/usePocket";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -271,30 +273,41 @@ export function Modal({
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
 }) {
   const body = useRef<HTMLDivElement>(null);
+  // On a Pocket phone the form opens in Pocket's sheet instead, which brings
+  // its own Escape, focus and keyboard handling; off Pocket this is false and
+  // nothing below changes.
+  const pocket = usePocket();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || pocket) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, pocket]);
 
   // Land the caret in the first field rather than making you reach for it —
   // but only where there's a real pointer. On a phone this would throw the
   // keyboard up over the dialog before you've read it.
   useEffect(() => {
-    if (!open) return;
+    if (!open || pocket) return;
     if (!window.matchMedia("(pointer: fine)").matches) return;
     const first = body.current?.querySelector<HTMLElement>(
       "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
     );
     first?.focus();
-  }, [open]);
+  }, [open, pocket]);
 
   if (!open) return null;
   const content = onSubmit ? <form onSubmit={onSubmit}>{children}</form> : children;
+  if (pocket) {
+    return (
+      <PocketSheet open onClose={onClose} title={title} size={wide ? "full" : "auto"}>
+        <div data-pocket-legacy-form>{content}</div>
+      </PocketSheet>
+    );
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div

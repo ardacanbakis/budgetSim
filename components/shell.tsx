@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -21,6 +22,7 @@ import { MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize";
 import { todayISO } from "@/lib/domain/recurrence";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { useI18n } from "@/lib/i18n";
+import { usePocket } from "@/lib/ui/usePocket";
 
 const SIDEBAR_KEY = "renovator-sidebar";
 
@@ -131,13 +133,33 @@ function Bootstrapper() {
   );
 }
 
+/**
+ * Pocket's shell, loaded only on a device that has the phone layout switched
+ * on: a Standard device never downloads it. Its loading state is the spinner
+ * AppShell already shows, so switching never flashes the other shell.
+ */
+const PocketShell = dynamic(() => import("@/components/pocket/shell").then((m) => m.PocketShell), {
+  ssr: false,
+  loading: () => (
+    <main className="flex min-h-screen items-center justify-center">
+      <Spinner />
+    </main>
+  ),
+});
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { session } = useApp();
+  const { session, phoneLayout } = useApp();
   const router = useRouter();
+  const pocket = usePocket();
 
   useEffect(() => {
     if (session.status === "signedOut") router.replace("/welcome");
   }, [session.status, router]);
+
+  // fetch Pocket's code while the session is still loading
+  useEffect(() => {
+    if (phoneLayout === "pocket") void import("@/components/pocket/shell");
+  }, [phoneLayout]);
 
   // repo-backed hooks (useUserSettings etc.) live in ShellChrome, which only
   // mounts once the session is ready — also keeps prerender repo-free
@@ -148,6 +170,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
+  if (pocket) return <PocketShell sync={<Bootstrapper />}>{children}</PocketShell>;
   return <ShellChrome>{children}</ShellChrome>;
 }
 
