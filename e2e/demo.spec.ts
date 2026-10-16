@@ -2045,3 +2045,37 @@ test("loans: an interest-free plan charges no interest and no levies", async ({ 
   await expect(page.getByText("Effective /year")).toHaveCount(0);
   expect(await tile(page, "Total payback").innerText()).toContain("120,000");
 });
+
+test("portfolio: a balance can be adjusted to match the bank, with a reason", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+  const figure = page.locator(".text-3xl").first();
+  const read = async () => Number((await figure.textContent())!.replace(/[^0-9.-]/g, ""));
+  const before = await read();
+
+  // a known fee: take off 35.50
+  await page.getByRole("button", { name: /Adjust balance|Bakiyeyi düzelt/ }).click();
+  await page.getByRole("button", { name: /Add or take off|Ekle ya da düş/ }).click();
+  await page.getByLabel(/^Amount|^Tutar/).fill("35.5");
+  await page.getByLabel(/Reason|Neden/).fill("EFT fee");
+  await expect(page.getByText(/will be taken off|düşülecek/)).toBeVisible();
+  await page.getByRole("button", { name: /Record adjustment|Düzeltmeyi kaydet/ }).click();
+  await expect.poll(read).toBeCloseTo(before - 35.5, 2);
+  const row = page.locator("li").filter({ hasText: "EFT fee" }).first();
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/^Adjustment$|^Düzeltme$/)).toBeVisible();
+
+  // or say what the bank shows, and the difference is worked out
+  await page.getByRole("button", { name: /Adjust balance|Bakiyeyi düzelt/ }).click();
+  await page.getByLabel(/Balance the bank shows|Bankanın gösterdiği/).fill("1000");
+  await page.getByRole("button", { name: /Record adjustment|Düzeltmeyi kaydet/ }).click();
+  await expect.poll(read).toBe(1000);
+  await expect(page.locator("li").filter({ hasText: /Balance adjustment|Bakiye düzeltmesi/ }).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/portfolio-adjusted.png" });
+
+  // it's an ordinary entry in the ledger, labelled
+  await page.goto("/transactions");
+  await expect(page.locator("li").filter({ hasText: "EFT fee" }).getByText(/^Adjustment$|^Düzeltme$/).first()).toBeVisible();
+});

@@ -61,6 +61,8 @@ export interface NewTransaction {
   loanId?: string | null;
   /** true = reference-only history; never touches balances or current stats */
   legacy?: boolean;
+  /** true = a manual balance correction (see lib/domain/adjustments.ts) */
+  adjustment?: boolean;
 }
 
 export interface NewTransfer {

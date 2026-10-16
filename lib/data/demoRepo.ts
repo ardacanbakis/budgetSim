@@ -231,6 +231,7 @@ export class DemoRepo implements Repo {
       victvsPayoutId: null,
       purchaseId: null,
       legacy: input.legacy ?? false,
+      ...(input.adjustment ? { adjustment: true } : {}),
       createdAt: new Date().toISOString(),
     };
     this.store.transactions.push(tx);

@@ -9,6 +9,7 @@ import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
 import { GoldType, goldRatiosOf, readHoldings } from "@/lib/domain/gold";
 import { HoldingsEditor, HoldingsList, HoldingsSummary } from "@/components/goldHoldings";
+import { AdjustBalanceModal } from "@/components/adjustBalanceModal";
 import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { useFormatDate } from "@/lib/useFormatDate";
@@ -45,6 +46,7 @@ export default function PortfolioPage() {
   const [editing, setEditing] = useState<Account | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [latestFirst, setLatestFirst] = useState(true);
+  const [adjusting, setAdjusting] = useState(false);
 
   const createAccount = useAppMutation((input: NewAccount) => repo.createAccount(input), [KEYS.accounts]);
   const updateAccount = useAppMutation(
@@ -250,6 +252,7 @@ export default function PortfolioPage() {
             {tx.transferGroupId ? <Badge tone="sky">{t("tx.transfer")}</Badge> : null}
             {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
             {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
+            {tx.adjustment ? <Badge tone="violet">{t("adjust.badge")}</Badge> : null}
           </div>
           <div className="text-[11px] text-zinc-400">{fmtDate(tx.dueDate)}</div>
         </div>
@@ -356,7 +359,13 @@ export default function PortfolioPage() {
                     </div>
                   ) : null}
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
+                  {/* a mixed gold account is corrected by editing its holdings */}
+                  {!selected.archived && !mixed(selected) && selected.kind !== "credit_card" ? (
+                    <Button variant="ghost" onClick={() => setAdjusting(true)}>
+                      ± {t("adjust.title")}
+                    </Button>
+                  ) : null}
                   <Button variant="ghost" onClick={() => setEditing(selected)}>
                     {t("common.edit")}
                   </Button>
@@ -415,6 +424,13 @@ export default function PortfolioPage() {
           )}
         </Card>
       </div>
+
+      <AdjustBalanceModal
+        open={adjusting && selected != null}
+        account={selected}
+        balance={selected ? (balances.get(selected.id) ?? 0) : 0}
+        onClose={() => setAdjusting(false)}
+      />
 
       <AccountModal
         open={modalOpen || editing != null}

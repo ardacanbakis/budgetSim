@@ -99,6 +99,8 @@ const txFromRow = (r: Row): Transaction => ({
   victvsPayoutId: r.victvs_payout_id,
   purchaseId: r.purchase_id ?? null,
   legacy: r.legacy ?? false,
+  // absent before migration 0016
+  adjustment: r.adjustment === true,
   createdAt: r.created_at,
 });
 
@@ -340,6 +342,9 @@ export class SupabaseRepo implements Repo {
       recurring_template_id: input.recurringTemplateId ?? null,
       loan_id: input.loanId ?? null,
       legacy: input.legacy ?? false,
+      // sent only when set, so a database without 0016 still saves every
+      // other entry; only recording an adjustment needs the migration
+      ...(input.adjustment ? { adjustment: true } : {}),
     };
   }
 
@@ -1142,6 +1147,7 @@ export class SupabaseRepo implements Repo {
       description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
       transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
       loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
+      ...(t.adjustment ? { adjustment: true } : {}),
     })));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {

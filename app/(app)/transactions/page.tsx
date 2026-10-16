@@ -461,6 +461,7 @@ function TxRow({
           ) : null}
           {tx.status === "planned" ? <Badge tone="amber">{t("tx.planned")}</Badge> : null}
           {tx.legacy ? <Badge tone="zinc">{t("legacy.badge")}</Badge> : null}
+          {tx.adjustment ? <Badge tone="violet">{t("adjust.badge")}</Badge> : null}
         </div>
         <div className="mt-0.5 text-xs text-zinc-500">
           {/* one line for the whole move, not one per leg */}
