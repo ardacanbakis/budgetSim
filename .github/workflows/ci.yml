@@ -1,0 +1,63 @@
+# Every pull request, and every push to main, runs the checks the work
+# rules ask for before a commit: typecheck, lint, unit tests, and the
+# Playwright functional suite against a production build in demo mode
+# (no Supabase keys needed). The 5-viewport screenshot loop is left out to
+# keep the run short.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# a newer push to the same branch makes an older run pointless
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      # Vitest's bundler (rolldown) needs Node 20.19+ or 22.12+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  e2e:
+    name: Playwright (demo mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      # playwright.config.ts starts `pnpm start` itself when nothing is on :3000
+      - run: pnpm exec playwright test --grep-invert "renders at"
+      - name: Keep what a failing test saw
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

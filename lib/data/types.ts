@@ -73,6 +73,12 @@ export interface Transaction {
   purchaseId: string | null;
   /** settled history imported for reference — excluded from balances and current stats */
   legacy: boolean;
+  /**
+   * a manual balance correction (fees, small leaks, interest) entered to bring
+   * the account in line with the bank; an ordinary income or expense in every
+   * sum, flagged only so the screens can label it. See lib/domain/adjustments.ts.
+   */
+  adjustment?: boolean;
   createdAt: string;
 }
 

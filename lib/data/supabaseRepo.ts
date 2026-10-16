@@ -99,6 +99,8 @@ const txFromRow = (r: Row): Transaction => ({
   victvsPayoutId: r.victvs_payout_id,
   purchaseId: r.purchase_id ?? null,
   legacy: r.legacy ?? false,
+  // absent before migration 0016
+  adjustment: r.adjustment === true,
   createdAt: r.created_at,
 });
 
@@ -340,6 +342,9 @@ export class SupabaseRepo implements Repo {
       recurring_template_id: input.recurringTemplateId ?? null,
       loan_id: input.loanId ?? null,
       legacy: input.legacy ?? false,
+      // sent only when set, so a database without 0016 still saves every
+      // other entry; only recording an adjustment needs the migration
+      ...(input.adjustment ? { adjustment: true } : {}),
     };
   }
 
@@ -1082,11 +1087,21 @@ export class SupabaseRepo implements Repo {
 
   /** replaces all data; inserts follow FK dependency order with two-pass patches for circular refs */
   async importAll(backup: BackupFile): Promise<void> {
+    // A backup holding adjustments needs migration 0016's column. Find out
+    // before anything is deleted, so an older database refuses the restore
+    // instead of being wiped and left half-filled.
+    if (backup.transactions.some((t) => t.adjustment)) {
+      const { error } = await this.db.from("transactions").select("adjustment").limit(0);
+      throwIf(error);
+    }
     await this.deleteAllData();
     const u = this.userId;
     const insert = async (table: string, rows: Row[]) => {
       if (!rows.length) return;
-      const { error } = await this.db.from(table).insert(rows);
+      // PostgREST inserts the union of every row's keys, so a key only some
+      // rows carry (adjustment, holdings) would arrive as NULL on the others,
+      // and `adjustment` is NOT NULL. Missing keys take the column default.
+      const { error } = await this.db.from(table).insert(rows, { defaultToNull: false });
       throwIf(error);
     };
 
@@ -1142,6 +1157,7 @@ export class SupabaseRepo implements Repo {
       description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
       transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
       loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
+      ...(t.adjustment ? { adjustment: true } : {}),
     })));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {

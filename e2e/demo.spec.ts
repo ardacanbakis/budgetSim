@@ -54,11 +54,32 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
 });
 
+test("recurring: a tab of Transactions, and the old address still lands there", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+
+  // gone from the sidebar…
+  await expect(page.getByRole("link", { name: /^recurring$|^düzenli$/i })).toHaveCount(0);
+  // …and a tab on the Transactions page instead
+  await page.goto("/transactions");
+  const recurringTab = page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i });
+  await expect(page.getByRole("tab", { name: /^transactions$|^işlemler$/i })).toHaveAttribute("aria-selected", "true");
+  await recurringTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Rent", { exact: true })).toBeVisible();
+
+  // a bookmark to the old page redirects to the tab
+  await page.goto("/recurring");
+  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+  await expect(page.getByRole("button", { name: /new recurring item|yeni düzenli/i })).toBeVisible();
+});
+
 test("recurring: a template started in the past backfills its earlier items", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
   await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Backfill Salary");
   // scoped to the form: the page's own filter has an Income button too
@@ -87,7 +108,7 @@ test("recurring: a template started in the past backfills its earlier items", as
 test("recurring: finished items are labelled, filterable, and the label colour is adjustable", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   const monthsAgo = (n: number) => {
     const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
@@ -113,7 +134,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
   await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^recurring$|düzenli işlemler/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
 
@@ -133,7 +154,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
 test("recurring: editing an item redoes its upcoming items, one a month", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   // the demo's rent: due on the 10th, auto-completed, 12 months ahead
   const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
@@ -165,9 +186,14 @@ test("recurring: editing an item redoes its upcoming items, one a month", async 
   // one a month: a rent already paid on the 10th isn't charged again on the 20th
   expect(new Set(months).size).toBe(months.length);
   expect(months.every((m) => m <= month(5))).toBe(true);
-  const planned = rows.filter((r) => r.status === "planned");
-  expect(planned.length).toBeGreaterThan(0);
-  expect(planned.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
+  // An edit redoes what's still to come and leaves the past alone: after the
+  // 10th, this month's old-schedule rent is already behind us (and, created
+  // before the demo's template, waits to be confirmed), so it stays as it was.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const upcoming = rows.filter((r) => r.status === "planned" && r.dueDate >= today);
+  expect(upcoming.length).toBeGreaterThan(0);
+  expect(upcoming.every((r) => r.amount === 30000 && r.dueDate.endsWith("-20"))).toBe(true);
 });
 
 /** Demo saves throw while window.__failSaves is set, the way a full localStorage does. */
@@ -189,7 +215,7 @@ test("errors: a failed save says why and keeps the form open", async ({ page }) 
   await page.setViewportSize({ width: 1280, height: 900 });
   await failableSaves(page);
   await enterDemo(page);
-  await page.goto("/recurring");
+  await page.goto("/transactions?tab=recurring");
 
   await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
   await page.getByLabel(/^name$|^ad$/i).fill("Gym");
@@ -316,6 +342,14 @@ test("settings: a page can be hidden from the sidebar, but Settings can't", asyn
 
 test("gold: one account holds a mix of coins and gram gold, valued in lira", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
+  // Coin prices come from Truncgil. Pin them, so the test needs neither the
+  // network nor Truncgil being up; the rest of the rate table stays real.
+  await page.route("**/api/rates**", async (route) => {
+    const response = await route.fetch();
+    const table = await response.json();
+    table.goldTry = { gram: 5600, has: 5572, ceyrek: 8998, yarim: 17940, tam: 35700 };
+    await route.fulfill({ response, json: table });
+  });
   await enterDemo(page);
   await page.goto("/accounts");
   await page.getByRole("button", { name: /new account|yeni hesap/i }).first().click();
@@ -941,7 +975,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/recurring", "/loans", "/reports", "/planner", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -2023,4 +2057,40 @@ test("loans: an interest-free plan charges no interest and no levies", async ({ 
   await expect(page.getByText("KKDF + BSMV")).toHaveCount(0);
   await expect(page.getByText("Effective /year")).toHaveCount(0);
   expect(await tile(page, "Total payback").innerText()).toContain("120,000");
+});
+
+test("portfolio: a balance can be adjusted to match the bank, with a reason", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+  const figure = page.locator(".text-3xl").first();
+  const read = async () => Number((await figure.textContent())!.replace(/[^0-9.-]/g, ""));
+  const before = await read();
+
+  // a known fee: take off 35.50
+  await page.getByRole("button", { name: /Adjust balance|Bakiyeyi düzelt/ }).click();
+  await page.getByRole("button", { name: /Add or take off|Ekle ya da düş/ }).click();
+  await page.getByLabel(/^Amount|^Tutar/).fill("35.5");
+  await page.getByLabel(/Reason|Neden/).fill("EFT fee");
+  await expect(page.getByText(/will be taken off|düşülecek/)).toBeVisible();
+  await page.getByRole("button", { name: /Record adjustment|Düzeltmeyi kaydet/ }).click();
+  await expect.poll(read).toBeCloseTo(before - 35.5, 2);
+  const row = page.locator("li").filter({ hasText: "EFT fee" }).first();
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/^Adjustment$|^Düzeltme$/)).toBeVisible();
+
+  // or type what the bank shows, the way the bank writes it, and the
+  // difference is worked out (a number field would read this as 12.4655)
+  await page.getByRole("button", { name: /Adjust balance|Bakiyeyi düzelt/ }).click();
+  await page.getByLabel(/Balance the bank shows|Bankanın gösterdiği/).fill("12.465,50");
+  await expect(page.getByText(/New balance: ₺12,465\.50|Yeni bakiye: ₺12\.465,50/)).toBeVisible();
+  await page.getByRole("button", { name: /Record adjustment|Düzeltmeyi kaydet/ }).click();
+  await expect.poll(read).toBe(12465.5);
+  await expect(page.locator("li").filter({ hasText: /Balance adjustment|Bakiye düzeltmesi/ }).first()).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/portfolio-adjusted.png" });
+
+  // it's an ordinary entry in the ledger, labelled
+  await page.goto("/transactions");
+  await expect(page.locator("li").filter({ hasText: "EFT fee" }).getByText(/^Adjustment$|^Düzeltme$/).first()).toBeVisible();
 });

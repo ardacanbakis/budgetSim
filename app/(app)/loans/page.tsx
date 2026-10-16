@@ -9,6 +9,7 @@ import { Loan, LoanKind } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeBalances } from "@/lib/domain/balances";
+import { buildCardBook } from "@/lib/domain/cards";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { computeDebtOverview } from "@/lib/domain/debt";
 import {
@@ -112,6 +113,11 @@ export default function LoansPage() {
       })
     : null;
   const cardItems = overview?.items.filter((i) => i.kind === "card") ?? [];
+  // a card owes the statements recorded but not paid, plus the charges no
+  // payment covers yet (lib/domain/cards.ts); its ledger balance means nothing
+  const book = buildCardBook(accounts.data ?? [], transactions.data ?? []);
+  const statementsDue = (cardId: string) =>
+    book.payments(cardId).filter((p) => !p.made).reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]">
@@ -145,18 +151,23 @@ export default function LoansPage() {
           <CardHeader title={t("debt.cards")} />
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {cardItems.map((item) => {
-              const posted = -(balances.get(item.id) ?? 0);
-              const upcoming = item.outstanding - Math.max(0, posted);
+              const posted = statementsDue(item.id);
+              const upcoming = item.outstanding - posted;
               return (
                 <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
                   <span className="font-medium">💳 {item.name}</span>
                   <span className="tabular-nums text-zinc-500">
-                    <span className="font-semibold text-red-600">{formatAmount(Math.max(0, posted), item.currency, locale)}</span>{" "}
-                    {t("debt.posted")}
-                    {upcoming > 0 ? (
+                    <span className="font-semibold text-red-600">{formatAmount(item.outstanding, item.currency, locale)}</span>
+                    {posted > 0.005 ? (
                       <>
-                        {" "}
-                        + {formatAmount(upcoming, item.currency, locale)} {t("debt.upcoming")}
+                        {" · "}
+                        {formatAmount(posted, item.currency, locale)} {t("debt.posted")}
+                      </>
+                    ) : null}
+                    {upcoming > 0.005 ? (
+                      <>
+                        {" · "}
+                        {formatAmount(upcoming, item.currency, locale)} {t("debt.upcoming")}
                       </>
                     ) : null}
                     {item.endDate ? ` · ${t("debt.debtFree").toLowerCase()}: ${item.endDate}` : ""}

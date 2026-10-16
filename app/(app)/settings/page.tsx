@@ -533,7 +533,9 @@ function downloadFile(name: string, content: string, type: string) {
 
 function toCsv(rows: Record<string, unknown>[]): string {
   if (!rows.length) return "";
-  const headers = Object.keys(rows[0]);
+  // every row's keys: an optional field (adjustment, holdings) may be missing
+  // from the first row and present further down
+  const headers = [...new Set(rows.flatMap((r) => Object.keys(r)))];
   const escape = (v: unknown) => {
     const s = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
     return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;

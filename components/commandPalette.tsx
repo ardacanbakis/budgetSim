@@ -49,6 +49,13 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go(item.href),
     }));
+    // a tab of Transactions now, not a page of its own, but still a place to jump to
+    pages.push({
+      id: "nav:/transactions?tab=recurring",
+      label: t("recurring.title"),
+      hint: t("palette.page"),
+      run: go("/transactions?tab=recurring"),
+    });
     const actions: Command[] = [
       {
         id: "act:tx",

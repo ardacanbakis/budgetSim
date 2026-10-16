@@ -69,7 +69,8 @@ function SurfaceRow({ id }: { id: SurfaceId }) {
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-      <span className="text-sm">{t(`nav.${id === "accounts" ? "accounts" : id}`)}</span>
+      {/* Recurring is a tab of Transactions, so it has no sidebar name of its own */}
+      <span className="text-sm">{id === "recurring" ? t("recurring.title") : t(`nav.${id}`)}</span>
       <span className="flex items-center gap-2">
         {spec.columns && view.shape === "grid" ? (
           <span role="group" aria-label={`${t("views.gridColumns")} — ${id}`} className="flex rounded-lg border border-[var(--edge)] p-0.5">

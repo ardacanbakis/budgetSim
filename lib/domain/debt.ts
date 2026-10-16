@@ -2,7 +2,7 @@ import { Account, Loan, Transaction } from "@/lib/data/types";
 import { buildCardBook } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
-import { amortizationSchedule } from "./loan";
+import { buildSchedule } from "./loanSchedule";
 
 export interface DebtItem {
   kind: "loan" | "card";
@@ -42,9 +42,22 @@ export function computeDebtOverview(params: {
   let debtFreeDate: string | null = null;
 
   for (const loan of loans) {
-    const schedule = amortizationSchedule(loan.principal, loan.monthlyRatePct, loan.termMonths, loan.startDate, loan.currency);
+    // the loan's own shape and levies: a plain annuity misstates what's left
+    // of an equal-principal, interest-only or custom loan, or a taxed one
+    const schedule = buildSchedule({
+      kind: loan.scheduleKind,
+      principal: loan.principal,
+      monthlyRatePct: loan.monthlyRatePct,
+      termMonths: loan.termMonths,
+      startDate: loan.startDate,
+      currency: loan.currency,
+      kkdfPct: loan.kkdfPct,
+      bsmvPct: loan.bsmvPct,
+      customInstalments: loan.customInstalments ?? undefined,
+    });
+    if (schedule.rows.length === 0) continue;
     const paidCount = transactions.filter((t) => t.loanId === loan.id && t.status === "completed").length;
-    const paid = Math.min(paidCount, loan.termMonths);
+    const paid = Math.min(paidCount, schedule.rows.length);
     const outstanding = paid > 0 ? schedule.rows[paid - 1].remaining : loan.principal;
     const endDate = schedule.rows[schedule.rows.length - 1].date;
     if (outstanding > 0) {

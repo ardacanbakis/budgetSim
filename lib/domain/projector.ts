@@ -3,8 +3,9 @@ import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { buildCardBook } from "./cards";
+import { computeMissingOccurrences } from "./materialize";
 import { GoldRatios } from "./gold";
-import { addMonthsClamped, occurrencesBetween } from "./recurrence";
+import { addMonthsClamped } from "./recurrence";
 
 /** One named contribution to a month, in the display currency at that month's rates. */
 export interface ProjectionLine {
@@ -158,7 +159,6 @@ export function projectCashflow(params: {
   );
 
   const flows: FlowItem[] = [];
-  const materialized = new Set<string>();
 
   // Cards (lib/domain/cards.ts): money leaves your account when a card is
   // paid. A recorded payment is that flow. A charge no payment covers yet
@@ -180,7 +180,6 @@ export function projectCashflow(params: {
     const role = book.roleOf(t);
     if (role === "cardSide") continue;
     if (role === "charge") {
-      if (t.recurringTemplateId) materialized.add(`${t.recurringTemplateId}|${t.dueDate}`);
       if (book.isPaid(t) || book.coverOf(t)) continue;
       pushCharge(book.paidInMonth(t), t.accountId, t.direction, t.amount, t.categoryId, t.description);
       continue;
@@ -189,7 +188,6 @@ export function projectCashflow(params: {
     if (t.dueDate < fromDate || t.dueDate > horizonEnd) continue;
     const currency = currencyOf.get(t.accountId);
     if (!currency) continue;
-    if (t.recurringTemplateId) materialized.add(`${t.recurringTemplateId}|${t.dueDate}`);
     flows.push({
       date: t.dueDate,
       accountId: t.accountId,
@@ -202,29 +200,30 @@ export function projectCashflow(params: {
     });
   }
 
-  for (const tpl of templates) {
+  // Template dates with no row yet, found the way materialize finds them:
+  // forward from each template's latest row (lib/domain/materialize.ts). A
+  // date already paid early, moved or deleted has a row, or had one, so it
+  // isn't projected a second time on top of what the ledger says.
+  for (const { template: tpl, dueDate: date } of computeMissingOccurrences(templates, transactions, months, fromDate)) {
+    if (date < fromDate || date > horizonEnd) continue;
     const currency = currencyOf.get(tpl.accountId);
     if (!currency) continue;
-    const onCard = book.isCard(tpl.accountId);
-    for (const date of occurrencesBetween(tpl, fromDate, horizonEnd)) {
-      if (materialized.has(`${tpl.id}|${date}`)) continue;
-      if (onCard) {
-        // billed to a card: paid with the statement after it
-        const [y, m] = date.split("-").map(Number);
-        pushCharge(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`, tpl.accountId, tpl.direction, tpl.amount, tpl.categoryId, tpl.name);
-        continue;
-      }
-      flows.push({
-        date,
-        accountId: tpl.accountId,
-        direction: tpl.direction,
-        amount: tpl.amount,
-        currency,
-        isTransfer: false,
-        categoryId: tpl.categoryId ?? "",
-        label: tpl.name,
-      });
+    if (book.isCard(tpl.accountId)) {
+      // billed to a card: paid with the statement after it
+      const [y, m] = date.split("-").map(Number);
+      pushCharge(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`, tpl.accountId, tpl.direction, tpl.amount, tpl.categoryId, tpl.name);
+      continue;
     }
+    flows.push({
+      date,
+      accountId: tpl.accountId,
+      direction: tpl.direction,
+      amount: tpl.amount,
+      currency,
+      isTransfer: false,
+      categoryId: tpl.categoryId ?? "",
+      label: tpl.name,
+    });
   }
 
   // flows grouped by month, kept in their native currency so each month can be
