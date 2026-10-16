@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useEffect } from "react";
+import { Transaction } from "@/lib/data/types";
 
 /**
  * How a Pocket screen talks to the shell around it: what the header shows,
@@ -29,6 +30,10 @@ export interface AddRequest {
   mode: AddMode;
   /** start on this account (an account page's own +) */
   accountId?: string;
+  /** open an existing entry for editing instead of adding one */
+  edit?: Transaction;
+  /** start from a copy of this entry, dated today */
+  duplicateOf?: Transaction;
 }
 
 export interface PocketChrome {
