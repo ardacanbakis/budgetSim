@@ -72,6 +72,10 @@ export function AdjustBalanceModal({
   const currency = account.currency;
   const fmt = (n: number) => formatAmount(n, currency, locale);
 
+  // nothing typed yet, or something the number field couldn't read (it hands
+  // back "" for "12.465,50" in some locales) — not the same as "matches"
+  const entered = mode === "set" ? target : changeAmount;
+  const readable = entered.trim() !== "" && Number.isFinite(Number(entered));
   const plan =
     mode === "set"
       ? target.trim() === "" || !Number.isFinite(Number(target))
@@ -168,7 +172,7 @@ export function AdjustBalanceModal({
           }`}
         >
           {!plan ? (
-            t("adjust.noChange")
+            readable ? t("adjust.noChange") : t("adjust.enterAmount")
           ) : (
             <>
               {t(plan.direction === "expense" ? "adjust.willTakeOff" : "adjust.willAdd", { amount: fmt(plan.amount) })}{" "}
