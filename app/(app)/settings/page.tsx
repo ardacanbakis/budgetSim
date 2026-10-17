@@ -21,7 +21,9 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
 import { PHONE_LAYOUTS } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
-import { useIsPhone } from "@/lib/ui/usePocket";
+import { useIsPhone, usePocket } from "@/lib/ui/usePocket";
+import { DEFAULT_FOURTH, fourthTabChoices } from "@/lib/ui/pocket/bar";
+import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { RateSourcesCard } from "@/components/settingsRates";
 import { ViewsCard } from "@/components/settingsViews";
 
@@ -38,6 +40,7 @@ const TAB_ICON: Record<SettingsTab, string> = {
 export default function SettingsPage() {
   const { t } = useI18n();
   const { session, signOut, resetDemo } = useApp();
+  const pocket = usePocket();
   const repo = useRepo();
   const categories = useCategories();
   const router = useRouter();
@@ -96,9 +99,11 @@ export default function SettingsPage() {
 
       {tab === "preferences" ? (
         <>
+          {/* on a Pocket phone the way back to Standard comes first */}
+          {pocket ? <PhoneLayoutCard /> : null}
           <PreferencesCard />
           <StyleCard />
-          <PhoneLayoutCard />
+          {pocket ? null : <PhoneLayoutCard />}
           <ViewsCard />
           <AppearanceCard />
           <RateSourcesCard />
@@ -274,6 +279,7 @@ function BudgetsEditor() {
 function PreferencesCard() {
   const { t, locale, setLocale } = useI18n();
   const { displayCurrency, setDisplayCurrency } = useApp();
+  const pocket = usePocket();
   const repo = useRepo();
   const settings = useUserSettings();
   const save = useAppMutation(
@@ -323,6 +329,7 @@ function PreferencesCard() {
           <span>
             <span className="block text-sm font-medium">{t("settings.quickAdd")}</span>
             <span className="block text-xs text-zinc-500">{t("settings.quickAddHint")}</span>
+            {pocket ? <span className="block text-xs text-amber-600 dark:text-amber-400">{t("pocket.notInPocket")}</span> : null}
           </span>
         </label>
         <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3 sm:col-span-2">
@@ -335,6 +342,7 @@ function PreferencesCard() {
           <span>
             <span className="block text-sm font-medium">{t("settings.rateTicker")}</span>
             <span className="block text-xs text-zinc-500">{t("settings.rateTickerHint")}</span>
+            {pocket ? <span className="block text-xs text-amber-600 dark:text-amber-400">{t("pocket.notInPocket")}</span> : null}
           </span>
         </label>
       </div>
@@ -411,8 +419,15 @@ function PhoneLayoutCard() {
   const { t } = useI18n();
   const { phoneLayout, setPhoneLayout } = useApp();
   const phone = useIsPhone();
+  const settings = useUserSettings();
+  const [fourth, setFourth] = usePocketPref(POCKET_KEYS.tab, DEFAULT_FOURTH);
+  const [hero, setHero] = usePocketPref(POCKET_KEYS.hero, "net", isHeroFigure);
+  const [hideAmounts, setHideAmounts] = usePocketFlag(POCKET_KEYS.hideAmounts);
+  const [range, setRange] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
+  const choices = fourthTabChoices(settings.data?.navOrder);
   return (
     <Card>
+      <span id="phone-layout" className="block scroll-mt-20" />
       <CardHeader
         title={
           <span className="flex items-center gap-2">
@@ -445,6 +460,69 @@ function PhoneLayoutCard() {
           })}
         </div>
         {phoneLayout === "pocket" && !phone ? <p className="text-xs text-zinc-400">{t("phone.wideNote")}</p> : null}
+        {/* Pocket's own choices, kept on this device like the layout itself */}
+        {phoneLayout === "pocket" ? (
+          <div className="space-y-3 border-t border-[var(--edge-soft)] pt-3">
+            {choices.length > 0 ? (
+              <Field label={t("pocket.fourthTab")} hint={t("pocket.fourthTabHint")}>
+                <Select value={choices.some((c) => c.href === fourth) ? fourth : choices[0].href} onChange={(e) => setFourth(e.target.value)}>
+                  {choices.map((c) => (
+                    <option key={c.href} value={c.href}>
+                      {t(c.key)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
+            <Fieldset label={t("pocket.homeLeads")}>
+              <div role="group" aria-label={t("pocket.homeLeads")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+                {(["net", "safe"] as const).map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    aria-pressed={hero === h}
+                    onClick={() => setHero(h)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                      hero === h ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+                    }`}
+                  >
+                    {t(h === "net" ? "pocket.leadNet" : "pocket.leadSafe")}
+                  </button>
+                ))}
+              </div>
+            </Fieldset>
+            <Fieldset label={t("pocket.upcomingRange")}>
+              <div role="group" aria-label={t("pocket.upcomingRange")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+                {(["7", "30"] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={range === r}
+                    onClick={() => setRange(r)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                      range === r ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+                    }`}
+                  >
+                    {t(r === "7" ? "pocket.days7" : "pocket.days30")}
+                  </button>
+                ))}
+              </div>
+            </Fieldset>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={hideAmounts}
+                onChange={(e) => setHideAmounts(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-teal-600"
+              />
+              <span>
+                <span className="block text-sm font-medium">{t("pocket.hideAmounts")}</span>
+                <span className="block text-xs text-zinc-500">{t("pocket.hideAmountsHint")}</span>
+              </span>
+            </label>
+          </div>
+        ) : null}
       </div>
     </Card>
   );

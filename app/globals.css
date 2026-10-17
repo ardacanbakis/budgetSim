@@ -541,3 +541,149 @@ html[data-ui="v2"] table.sticky-head thead th {
 [data-grid-card] thead {
   z-index: 1;
 }
+
+/* POCKET:BEGIN
+   ==========================================================================
+   Pocket — the opt-in phone layout (Settings → Phone layout)
+   ==========================================================================
+   Every rule for Pocket lives in this block, inside the phone media query and
+   under html[data-phone="pocket"]. Standard sets no attribute and a wider
+   screen fails the query, so nothing here can reach the default design on
+   any device. lib/ui/__tests__/phoneCss.test.ts holds the block to that.
+
+   Touch targets are in px, not rem, so the legacy 14px "compact" root can't
+   shrink them below 44px.
+   ========================================================================== */
+
+/* components write pocket:… for a class that only applies in Pocket */
+@custom-variant pocket {
+  @media (max-width: 767.98px) {
+    &:where([data-phone="pocket"] *) {
+      @slot;
+    }
+  }
+}
+
+@media (max-width: 767.98px) {
+  html[data-phone="pocket"] {
+    --pocket-head: 44px;
+    --pocket-bar: 56px;
+    --pocket-bottom: calc(var(--pocket-bar) + env(safe-area-inset-bottom));
+    --pocket-row: 56px;
+    --pocket-row-tx: 60px;
+    --pocket-chip-radius: 9999px;
+    --pocket-fab-radius: 9999px;
+    --pocket-sheet-radius: var(--radius-2xl);
+    --pocket-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    /* Android's own pull-to-refresh would fire over Pocket's sheets */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* density steps rows in px, like everything else it scales */
+  html[data-phone="pocket"][data-density="compact"] {
+    --pocket-row: 48px;
+    --pocket-row-tx: 52px;
+  }
+  html[data-phone="pocket"][data-density="spacious"] {
+    --pocket-row: 64px;
+    --pocket-row-tx: 68px;
+  }
+
+  /* the sharp skins keep their corners on chips and the + */
+  html[data-phone="pocket"][data-skin="terminal"],
+  html[data-phone="pocket"][data-skin="contrast"] {
+    --pocket-chip-radius: var(--radius-md);
+  }
+  html[data-phone="pocket"][data-skin="contrast"] {
+    --pocket-fab-radius: var(--radius-lg);
+  }
+
+  /* iOS zooms into any field under 16px and doesn't zoom back */
+  html[data-phone="pocket"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    font-size: max(16px, 1rem);
+  }
+  html[data-phone="pocket"] input:is([type="checkbox"], [type="radio"]) {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* A Classic page inside Pocket (Debt, Reports, Planner, Evim sistemi,
+     Settings): its first heading becomes the large title, and its controls
+     reach a thumb. Pocket's own screens mark their title and size themselves. */
+  html[data-phone="pocket"] main:not(:has([data-pocket-title])) h1:first-of-type {
+    font-size: 1.75rem;
+    line-height: 2.125rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  html[data-phone="pocket"] :is(main:not(:has([data-pocket-title])), [data-pocket-legacy-form]) :is(button, select, [role="tab"]) {
+    min-height: 44px;
+  }
+  html[data-phone="pocket"] main .grid > * {
+    min-width: 0;
+  }
+
+  /* A Classic form in a Pocket sheet: its button row stays in reach while the
+     fields above it scroll, and above the keyboard */
+  html[data-phone="pocket"] [data-pocket-legacy-form] > :is(form, div) > :last-child:has(> button),
+  html[data-phone="pocket"] [data-pocket-legacy-form] > form > div > :last-child:has(> button) {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.25rem;
+    background: var(--surface);
+    border-top: 1px solid var(--edge-soft);
+  }
+
+  /* Hide amounts (Settings → Phone layout): visual only */
+  html[data-phone="pocket"][data-hide-amounts="on"] [data-amount] {
+    filter: blur(0.45em);
+  }
+
+  /* Marker classes. Classic markup carries them; they mean nothing elsewhere. */
+  html[data-phone="pocket"] .pocket-first {
+    order: -1;
+  }
+  html[data-phone="pocket"] .pocket-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  html[data-phone="pocket"] .pocket-cols-2 > * {
+    min-width: 0;
+  }
+  html[data-phone="pocket"] .pocket-auto-h {
+    height: auto;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  html[data-phone="pocket"] .pocket-scroll-x {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    scrollbar-width: none;
+  }
+  html[data-phone="pocket"] .pocket-unscroll {
+    max-height: none;
+    overflow: visible;
+  }
+  html[data-phone="pocket"] .pocket-canvas {
+    display: flex !important;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  html[data-phone="pocket"] .pocket-canvas > * {
+    grid-area: auto !important;
+    height: auto !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html[data-phone="pocket"] [data-pocket-sheet],
+    html[data-phone="pocket"] [data-pocket-header] {
+      transition: none !important;
+    }
+  }
+}
+/* POCKET:END */

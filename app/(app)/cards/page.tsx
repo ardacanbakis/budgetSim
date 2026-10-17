@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -34,11 +35,19 @@ import { todayISO } from "@/lib/domain/recurrence";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
+import { pocketable } from "@/components/pocket/pocketable";
+
+const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) => m.PocketCards), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(PurchasesPage, PocketCards);
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
 const TABS = ["cards", "purchases"] as const;
 
-export default function PurchasesPage() {
+function PurchasesPage() {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();
@@ -491,7 +500,7 @@ export default function PurchasesPage() {
   );
 }
 
-function PurchaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const accounts = useAccounts();

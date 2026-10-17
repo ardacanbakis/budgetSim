@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -22,6 +23,7 @@ import {
   useUserSettings,
 } from "@/lib/data/queries";
 import { DashboardV2 } from "@/components/dashboardV2";
+import { pocketable } from "@/components/pocket/pocketable";
 import { DashboardLayout } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
@@ -29,6 +31,13 @@ import { todayISO } from "@/lib/domain/recurrence";
 import { useDashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
+
+const PocketHome = dynamic(() => import("@/components/pocket/home").then((m) => m.PocketHome), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(DashboardPage, PocketHome);
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -90,7 +99,7 @@ function normalizeLayout(saved: DashboardLayout | null): DashboardLayout {
   return { order, hidden };
 }
 
-export default function DashboardPage() {
+function DashboardPage() {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();

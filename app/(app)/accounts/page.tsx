@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -18,6 +19,14 @@ import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { ViewSwitcher } from "@/components/viewSwitcher";
 import { useSurfaceView } from "@/lib/ui/useViews";
 import { useLocalToggle } from "@/lib/prefs";
+import { pocketable } from "@/components/pocket/pocketable";
+
+const PocketPortfolio = dynamic(() => import("@/components/pocket/portfolio").then((m) => m.PocketPortfolio), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(PortfolioPage, PocketPortfolio);
 
 /** Day-of-month as an ordinal: "15th" (en) / "15." (tr). */
 function ordinal(day: number, locale: string): string {
@@ -28,7 +37,7 @@ function ordinal(day: number, locale: string): string {
   return `${day}${suffix}`;
 }
 
-export default function PortfolioPage() {
+function PortfolioPage() {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();

@@ -90,7 +90,7 @@ test("recurring: a template started in the past backfills its earlier items", as
   const now = new Date();
   const past = new Date(now.getFullYear(), now.getMonth() - 4, 5);
   const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, "0")}-05`;
-  await page.locator('input[type="date"]').first().fill(iso);
+  await page.locator('input[data-date-input]').first().fill(iso);
   // a start in the past asks what to do with the dates already gone by;
   // leaving them to confirm is the default
   await expect(page.getByText(/\d+ past items since|\d+ geçmiş öğe/)).toBeVisible();
@@ -301,7 +301,7 @@ test("cards: a recorded statement counts against the limit until it's paid, and 
   await card.locator("xpath=ancestor::div[contains(@class,'border')][1]").getByRole("button", { name: /^record payment$|ödemeyi kaydet/i }).click();
   const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
   await modal.locator('input[type="number"]').fill("10019.54");
-  await modal.locator('input[type="date"]').fill(dueIso);
+  await modal.locator('input[data-date-input]').fill(dueIso);
   await modal.getByRole("button", { name: /^Record payment$/ }).click();
 
   // owed until it's paid, and the limit says so
@@ -491,7 +491,7 @@ test("cards: a big purchase's installments stay off Transactions and are paid wi
   await bonus.locator("xpath=ancestor::div[contains(@class,'border')][1]").getByRole("button", { name: /^record payment$|ödemeyi kaydet/i }).click();
   const modal = page.locator(".fixed.inset-0").filter({ hasText: /Record payment —/ });
   await modal.locator('input[type="number"]').fill("3000");
-  await modal.locator('input[type="date"]').fill(iso(new Date(now.getFullYear(), now.getMonth() + 1, 5)));
+  await modal.locator('input[data-date-input]').fill(iso(new Date(now.getFullYear(), now.getMonth() + 1, 5)));
   await modal.getByRole("button", { name: /^Record payment$/ }).click();
   await page.waitForTimeout(500);
   await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
@@ -1421,7 +1421,7 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
   // schedule it for next year
   const future = new Date();
   future.setFullYear(future.getFullYear() + 1);
-  await modal.locator('input[type="date"]').fill(future.toISOString().slice(0, 10));
+  await modal.locator('input[data-date-input]').fill(future.toISOString().slice(0, 10));
   await modal.getByRole("button", { name: /^Record payment$/ }).click();
   await page.waitForTimeout(700);
 
@@ -2093,4 +2093,50 @@ test("portfolio: a balance can be adjusted to match the bank, with a reason", as
   // it's an ordinary entry in the ledger, labelled
   await page.goto("/transactions");
   await expect(page.locator("li").filter({ hasText: "EFT fee" }).getByText(/^Adjustment$|^Düzeltme$/).first()).toBeVisible();
+});
+
+test("dates: a date field takes typed days and month names, and still has a calendar", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/transactions");
+  await page.getByRole("button", { name: /new transaction|yeni işlem/i }).first().click();
+  const form = page.locator("form").last();
+  await form.getByLabel(/^amount|^tutar/i).fill("120");
+  const date = form.getByLabel(/due date|vade tarihi/i);
+  const year = new Date().getFullYear();
+  const shown = (y: number, m: number, d: number) =>
+    new Date(y, m, d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+  // a day and a month's first letters; what it understood shows while typing
+  await date.fill("17 oct");
+  await expect(form.getByText(shown(year, 9, 17))).toBeVisible();
+  await form.getByLabel(/^amount|^tutar/i).click();
+  await expect(date).toHaveValue(shown(year, 9, 17));
+
+  // words work too
+  await date.fill("yesterday");
+  await form.getByLabel(/^amount|^tutar/i).click();
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  await expect(date).toHaveValue(shown(y.getFullYear(), y.getMonth(), y.getDate()));
+
+  // something it can't read keeps the form from saving
+  await date.fill("someday");
+  await expect(date).toHaveAttribute("aria-invalid", "true");
+  await form.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(form).toBeVisible();
+
+  // the calendar is still a button away
+  await expect(form.getByRole("button", { name: /open calendar|takvimi aç/i })).toBeVisible();
+
+  // and a typed date is what gets saved
+  await date.fill("17.10");
+  await form.getByLabel(/^description|^açıklama/i).fill("Typed date");
+  await form.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(form).toBeHidden();
+  const saved = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem("renovator-demo-v5") ?? "{}");
+    return (store.transactions as { description: string; dueDate: string }[]).find((t) => t.description === "Typed date")?.dueDate;
+  });
+  expect(saved).toBe(`${year}-10-17`);
 });

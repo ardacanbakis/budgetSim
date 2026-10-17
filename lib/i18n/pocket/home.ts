@@ -1,0 +1,65 @@
+/**
+ * Pocket strings for the "home" package, under pocket.home.* — English and
+ * Turkish side by side, so a key can't exist in one and not the other.
+ *
+ * Reused as they are, not repeated here: nav.dashboard (the page title, as
+ * the tab says it), dashboard.netWorth, dashboard.safeToSpend,
+ * dashboard.safeHint, dashboard.skippedAccounts, dashboard.accounts,
+ * dashboard.monthlyFlow, dashboard.income, dashboard.expense, budgets.title,
+ * budgets.editIn, goals.title, gold.title, accounts.empty, rates.title,
+ * common.ratesUpdated, common.stale, nav.victvs, pocket.hideAmounts,
+ * pocket.refreshRates, pocket.lists.waitingRates.
+ */
+export const en = {
+  comingUp: "Coming up",
+  nextDays: "Next {count} days · {amount}",
+  nothingDue: "Nothing due in the next {count} days.",
+  seeAllN: "See all ({count})",
+  unpaidSessionsOne: "1 unpaid session",
+  unpaidSessionsMany: "{count} unpaid sessions",
+  pay: "Pay",
+  payCard: "Pay {name}",
+  totalOwed: "Total owed {amount}",
+  owedOnCards: "{amount} owed on cards",
+  thisMonth: "This month",
+  recent: "Recent activity",
+  nothingRecent: "Nothing in the last {count} days.",
+  seeAllActivity: "See all activity",
+  allAccounts: "All accounts",
+  allBudgetsN: "All budgets ({count})",
+  perDay: "{amount}/day for {count} days",
+  perDayOne: "{amount} left for today",
+  over: "{amount} over",
+  paceLabel: "Spent {spent} of {limit}; {elapsed}% of the month gone",
+  safeLiquid: "Cash and bank accounts",
+  safeIncome: "Income still expected this month",
+  safeBills: "Bills and instalments still due",
+  ratesAt: "Rates at {time}",
+};
+
+export const tr: typeof en = {
+  comingUp: "Yaklaşanlar",
+  nextDays: "Önümüzdeki {count} gün · {amount}",
+  nothingDue: "Önümüzdeki {count} günde ödenecek bir şey yok.",
+  seeAllN: "Tümünü gör ({count})",
+  unpaidSessionsOne: "1 ödenmemiş seans",
+  unpaidSessionsMany: "{count} ödenmemiş seans",
+  pay: "Öde",
+  payCard: "{name} ekstresini öde",
+  totalOwed: "Toplam borç {amount}",
+  owedOnCards: "Kart borcu {amount}",
+  thisMonth: "Bu ay",
+  recent: "Son hareketler",
+  nothingRecent: "Son {count} günde hareket yok.",
+  seeAllActivity: "Tüm hareketleri gör",
+  allAccounts: "Tüm hesaplar",
+  allBudgetsN: "Tüm bütçeler ({count})",
+  perDay: "{count} gün boyunca günde {amount}",
+  perDayOne: "Bugün için {amount} kaldı",
+  over: "Limit {amount} aşıldı",
+  paceLabel: "{limit} limitten {spent} harcandı; ayın %{elapsed} kadarı geçti",
+  safeLiquid: "Nakit ve banka hesapları",
+  safeIncome: "Bu ay beklenen gelir",
+  safeBills: "Kalan fatura ve taksitler",
+  ratesAt: "Kurlar {time} itibarıyla",
+};

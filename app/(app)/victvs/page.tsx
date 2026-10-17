@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
@@ -24,12 +25,20 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { pocketable } from "@/components/pocket/pocketable";
+
+const PocketVictvs = dynamic(() => import("@/components/pocket/victvs").then((m) => m.PocketVictvs), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(VictvsPage, PocketVictvs);
 
 type Filter = "unpaid" | "paid" | "all";
 
 const VICTVS_KEYS = [KEYS.victvsSessions, KEYS.victvsPayouts, KEYS.transactions, KEYS.accounts];
 
-function typeBadgeTone(type: string): "sky" | "green" | "amber" | "zinc" {
+export function typeBadgeTone(type: string): "sky" | "green" | "amber" | "zinc" {
   switch (type) {
     case "IWCF":
       return "sky";
@@ -42,7 +51,7 @@ function typeBadgeTone(type: string): "sky" | "green" | "amber" | "zinc" {
   }
 }
 
-export default function VictvsPage() {
+function VictvsPage() {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const repo = useRepo();
@@ -443,7 +452,7 @@ function SessionRow({
   );
 }
 
-function PasteModal({
+export function PasteModal({
   open,
   defaults,
   onClose,
@@ -595,7 +604,7 @@ function PasteModal({
   );
 }
 
-function AddModal({
+export function AddModal({
   open,
   defaults,
   onClose,
@@ -673,7 +682,7 @@ function AddModal({
   );
 }
 
-function MarkPaidModal({
+export function MarkPaidModal({
   open,
   onClose,
   sessions,
