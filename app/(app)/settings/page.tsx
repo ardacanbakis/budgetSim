@@ -423,6 +423,7 @@ function PhoneLayoutCard() {
   const [fourth, setFourth] = usePocketPref(POCKET_KEYS.tab, DEFAULT_FOURTH);
   const [hero, setHero] = usePocketPref(POCKET_KEYS.hero, "net", isHeroFigure);
   const [hideAmounts, setHideAmounts] = usePocketFlag(POCKET_KEYS.hideAmounts);
+  const [range, setRange] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const choices = fourthTabChoices(settings.data?.navOrder);
   return (
     <Card>
@@ -486,6 +487,23 @@ function PhoneLayoutCard() {
                     }`}
                   >
                     {t(h === "net" ? "pocket.leadNet" : "pocket.leadSafe")}
+                  </button>
+                ))}
+              </div>
+            </Fieldset>
+            <Fieldset label={t("pocket.upcomingRange")}>
+              <div role="group" aria-label={t("pocket.upcomingRange")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+                {(["7", "30"] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={range === r}
+                    onClick={() => setRange(r)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                      range === r ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+                    }`}
+                  >
+                    {t(r === "7" ? "pocket.days7" : "pocket.days30")}
                   </button>
                 ))}
               </div>

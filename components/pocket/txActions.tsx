@@ -33,7 +33,9 @@ import { ActionItem, PocketActionSheet } from "./sheet";
  *   sums the row up (title, amount, date, account). Then:
  *   - planned: Mark as paid, Paid a different amount…, Edit, Duplicate,
  *     Delete. A row due more than three months ago leads with Paid a
- *     different amount… (it opens with "complete as legacy" on).
+ *     different amount… (it opens with "complete as legacy" on). A card's
+ *     planned instalment (book.roleOf → "charge") gets neither: the card
+ *     payment that covers it pays it.
  *   - completed: Edit, Duplicate, Reopen, Mark/unmark legacy, Delete.
  *   - Edit isn't offered for a transfer or a card payment; Reopen and
  *     legacy aren't for a transfer (both as in Classic). Delete is last
@@ -185,7 +187,8 @@ export function PocketTxActionSheet({ tx, onClose }: { tx: Transaction | null; o
   };
 
   const items: ActionItem[] = [];
-  if (planned) {
+  // a card's instalment is paid by the card payment that covers it, never ticked by hand
+  if (planned && lookup.book.roleOf(tx) !== "charge") {
     if (isLongOverdue(tx, lookup.today)) items.push(paidDifferent, markPaid);
     else items.push(markPaid, paidDifferent);
   }

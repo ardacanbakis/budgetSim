@@ -22,6 +22,8 @@ export const POCKET_KEYS = {
   hideAmounts: "renovator-pocket-hide-amounts",
   lastExpenseAccount: "renovator-pocket-last-account-expense",
   lastIncomeAccount: "renovator-pocket-last-account-income",
+  /** Home's sections, in order, with hidden ones marked (lib/ui/pocket/homeSections.ts) */
+  home: "renovator-pocket-home",
   /** "7" | "30": how far ahead Home's "Coming up" looks */
   upcomingRange: "renovator-pocket-upcoming-range",
   /** a desk page's "easier on a larger screen" note, dismissed: + route */

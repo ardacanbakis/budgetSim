@@ -63,7 +63,7 @@ export function ActivitySearch({ value, onChange }: { value: string; onChange: (
         placeholder={label}
         enterKeyHint="search"
         autoComplete="off"
-        className="h-11 w-full rounded-full border border-transparent bg-[var(--edge-soft)] pl-10 pr-11 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100 dark:placeholder:text-zinc-500 [&::-webkit-search-cancel-button]:hidden"
+        className="h-11 w-full text-ellipsis rounded-full border border-transparent bg-[var(--edge-soft)] pl-10 pr-11 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100 dark:placeholder:text-zinc-500 [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button

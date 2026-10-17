@@ -58,6 +58,13 @@ const balance = (page: Page) => page.locator("[data-account-balance] [data-figur
 const amountOf = (text: string) => Number(text.replace("−", "-").replace(/[^0-9.-]/g, ""));
 const read = async (locator: Locator) => amountOf((await locator.innerText()).trim());
 
+/** Scroll to y and wait for the header to condense, so a screenshot isn't taken mid-scroll. */
+async function scrollAndSettle(page: Page, y: number) {
+  await page.evaluate((to) => window.scrollTo(0, to), y);
+  await expect(page.locator("[data-pocket-header]")).toHaveAttribute("data-condensed", "");
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
 async function openAccount(page: Page, name: string) {
   await row(page, name).click();
   await expect(page).toHaveURL(/\/accounts\?account=/);
@@ -139,7 +146,9 @@ test.describe("Pocket portfolio", () => {
     await openAccount(page, "Ziraat TRY");
     await expect(balance(page)).toHaveText(/^₺[\d,]+\.\d\d$/);
     await expect(page.locator("[data-account-balance]")).toContainText(/≈ \$[\d,]+\.\d\d/);
-    await expect(page.locator("[data-account-balance]")).toContainText("Turkish");
+    // the top block: what kind of account, and no back label to truncate
+    await expect(page.locator("[data-account-detail] > section").first()).toContainText("Turkish Lira");
+    await expect(page.getByRole("button", { name: "Back" })).toHaveText("");
     // what's planned, each with a ✓, then the history by month and day
     await expect(page.getByRole("heading", { level: 2, name: "Upcoming" })).toBeVisible();
     await expect(page.locator("[data-account-upcoming] li").first().getByRole("button", { name: /as paid/ })).toBeVisible();
@@ -207,8 +216,13 @@ test.describe("Pocket portfolio", () => {
     await expect(classic).toBeVisible();
     await expect(classic.getByText("Adjustment", { exact: true })).toBeVisible();
     await expect(classic).toContainText("−₺37.50");
-    // and the Classic button is still there
-    await expect(page.getByRole("button", { name: /Adjust balance/ })).toBeVisible();
+    // and the Classic button still opens its own modal
+    await page.getByRole("button", { name: /Adjust balance/ }).click();
+    // the Classic Modal (no dialog role there): its title, then Escape closes it
+    const classicTitle = page.getByRole("heading", { name: "Adjust balance · Ziraat TRY" });
+    await expect(classicTitle).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(classicTitle).toBeHidden();
   });
 
   test("a card offers Card payment instead; coins and archived accounts aren't adjusted", async ({ page }) => {
@@ -223,7 +237,17 @@ test.describe("Pocket portfolio", () => {
     await expect(balance(page)).toHaveText(/^−₺[\d,]+\.\d\d$/);
     await expect(page.locator("[data-account-balance]")).toContainText(/Due the 15th · owed ₺[\d,]+\.\d\d/);
     await expect(actions(page, "Bonus Card").getByRole("button", { name: "Adjust", exact: true })).toHaveCount(0);
+    // its instalments are listed, but paid by the card payment, never ticked
+    await expect(page.locator("[data-account-upcoming] li").first()).toBeVisible();
+    await expect(page.locator("[data-account-upcoming]").getByRole("button", { name: /as paid/ })).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-card-light.png` });
+    // nor does its action sheet offer to tick one
+    await page.locator("[data-account-upcoming] li").first().getByRole("button").first().click();
+    const instalment = page.getByRole("dialog");
+    await expect(instalment.getByRole("button", { name: "Duplicate" })).toBeVisible();
+    await expect(instalment.getByRole("button", { name: /Mark as paid|Paid a different amount/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(instalment).toBeHidden();
     await actions(page, "Bonus Card").getByRole("button", { name: "Card payment" }).click();
     await expect(page.getByRole("dialog").getByRole("heading", { name: /Record payment — Bonus Card/ })).toBeVisible();
     await page.keyboard.press("Escape");
@@ -254,7 +278,9 @@ test.describe("Pocket portfolio", () => {
     await fold.click();
     await expect(fold).toHaveAttribute("aria-expanded", "true");
     await expect(row(page, "EUR Savings")).toContainText("Archived");
-    await page.screenshot({ path: `${SHOTS}/pocket-portfolio-archived-light.png`, fullPage: true });
+    await row(page, "EUR Savings").scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, 120));
+    await page.screenshot({ path: `${SHOTS}/pocket-portfolio-archived-light.png` });
     await page.reload();
     await expect(page.getByRole("button", { name: "Archived (1)" })).toHaveAttribute("aria-expanded", "true");
   });
@@ -323,7 +349,7 @@ test.describe("Pocket portfolio", () => {
   test("reads in Turkish", async ({ page }) => {
     await enterPocket(page, { locale: "tr" });
     await expect(page.getByRole("heading", { level: 1, name: "Portföy" })).toBeVisible();
-    expect(await headings(page)).toEqual(["Nakit ve banka", "Kripto ve altın", "Kredi kartları", "Borç"]);
+    expect(await headings(page)).toEqual(["Nakit ve banka", "Kripto ve altın", "Kredi kartları", "Borçlar"]);
     await expect(page.getByRole("radiogroup").getByRole("radio", { name: "Varlıklar" })).toBeVisible();
     await openAccount(page, "Ziraat TRY");
     await expect(actions(page, "Ziraat TRY").getByRole("button", { name: "Düzelt", exact: true })).toBeVisible();
@@ -338,15 +364,30 @@ test.describe("Pocket portfolio, dark", () => {
     await enterPocket(page);
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-list-dark.png` });
-    await page.mouse.wheel(0, 500);
-    await expect(page.locator("[data-pocket-header]")).toHaveAttribute("data-condensed", "");
+    await scrollAndSettle(page, 500);
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-list-scrolled-dark.png` });
     await page.evaluate(() => window.scrollTo(0, 0));
     await openAccount(page, "Ziraat TRY");
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-account-dark.png` });
-    await page.mouse.wheel(0, 600);
+    await scrollAndSettle(page, 900);
     await expect(page.locator("[data-pocket-header]")).toContainText("Ziraat TRY");
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-account-scrolled-dark.png` });
+
+    // an adjustment in the feed, dark: the violet tag still reads
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const before = await read(balance(page));
+    await actions(page, "Ziraat TRY").getByRole("button", { name: "Adjust", exact: true }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByLabel(/Balance the bank shows/).fill((before - 12).toFixed(2));
+    await sheet.getByLabel(/Reason/).fill("Card fee");
+    await page.screenshot({ path: `${SHOTS}/pocket-portfolio-adjust-dark.png` });
+    await sheet.getByRole("button", { name: "Record adjustment" }).click();
+    await expect(sheet).toBeHidden();
+    const first = page.locator("[data-account-feed] li").first();
+    await expect(first).toContainText("Card fee");
+    await first.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: `${SHOTS}/pocket-portfolio-adjusted-dark.png` });
+
     await page.getByRole("button", { name: "Back" }).click();
     await openAccount(page, "Bonus Card");
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-card-dark.png` });

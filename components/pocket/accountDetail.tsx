@@ -284,7 +284,9 @@ export function AccountDetail({ account }: { account: Account }) {
     window.scrollTo(0, 0);
   }, [account.id]);
 
-  const back = useMemo(() => ({ label: t("portfolio.title"), onBack: () => closeAccount(router) }), [t, router]);
+  // the chevron alone, as the design draws the 44px slot: "Portfolio" doesn't
+  // fit the shell's label and would read "Portfo…"; the button's name is "Back"
+  const back = useMemo(() => ({ label: "", onBack: () => closeAccount(router) }), [router]);
 
   const { display, usdPer, ratesSettled, today, book, balances } = base;
   const line =
@@ -422,7 +424,16 @@ export function AccountDetail({ account }: { account: Account }) {
           <Section title={t("portfolio.upcoming")} flush>
             <ul className="divide-y divide-[var(--edge-soft)]" data-account-upcoming>
               {upcoming.map((tx) => (
-                <PocketTxRow key={tx.id} tx={tx} lookup={lookup} onTap={txSheet.open} onComplete={txSheet.complete} accountScoped due />
+                <PocketTxRow
+                  key={tx.id}
+                  tx={tx}
+                  lookup={lookup}
+                  onTap={txSheet.open}
+                  // a card's instalment is paid by the card payment that covers it, never ticked by hand
+                  onComplete={card ? undefined : txSheet.complete}
+                  accountScoped
+                  due
+                />
               ))}
             </ul>
             {feed.upcoming.length > upcoming.length ? (

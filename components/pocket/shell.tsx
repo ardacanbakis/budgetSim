@@ -226,6 +226,8 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
   const plusHandlers = {
     onPointerDown: (e: React.PointerEvent) => {
       press.current.fired = false;
+      // only a primary press is a long-press; a right click opens the menu through onContextMenu
+      if (e.button !== 0) return;
       press.current.x = e.clientX;
       press.current.y = e.clientY;
       press.current.timer = setTimeout(() => {
@@ -254,6 +256,9 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
     },
     onContextMenu: (e: React.MouseEvent) => {
       e.preventDefault();
+      // the menu opens now: a pending long-press must not reopen it after an item was chosen
+      if (press.current.timer) clearTimeout(press.current.timer);
+      press.current.timer = null;
       setSheet("menu");
     },
   };
@@ -330,7 +335,7 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
           </div>
         </header>
 
-        <main ref={mainRef} className="px-4 pt-1 pb-[calc(var(--pocket-bottom,56px)+1.5rem)]">
+        <main ref={mainRef} className="px-4 pt-1 pb-[calc(var(--pocket-bottom,56px)+var(--pocket-float,0px)+1.5rem)]">
           {DESK_NOTE.has(pathname) && !noteDismissed ? (
             <div className="mb-3">
               <NoteCard onDismiss={() => dismissNote(true)}>{t("pocket.bestOnLarger")}</NoteCard>

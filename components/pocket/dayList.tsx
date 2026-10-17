@@ -386,7 +386,8 @@ export function PocketTxRow({
   // list is one account's, where each leg is
   const sign: MoneySign = d.transfer && !accountScoped ? "none" : tx.direction === "income" ? "in" : "out";
   const cross = d.other && d.otherAccount && d.otherAccount.currency !== d.account.currency ? d.other : null;
-  const showCheck = planned && onComplete != null;
+  // a card's instalment is paid by the card payment that covers it, never ticked by hand
+  const showCheck = planned && onComplete != null && lookup.book.roleOf(tx) !== "charge";
 
   const parts: Array<{ key: string; node: ReactNode; shrink?: boolean }> = [];
   if (when) {

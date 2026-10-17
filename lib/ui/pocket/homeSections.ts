@@ -6,6 +6,7 @@ import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays } from "@/lib/domain/recurrence";
 import { ComingUpItem } from "./attention";
 import { isTransferLanding } from "./dayGroups";
+import { POCKET_KEYS } from "./prefs";
 
 /**
  * What Pocket's Home shows, and in which order. Pure, so the arithmetic can be
@@ -48,7 +49,7 @@ export const SECTION_IDS = ["comingUp", "accounts", "budgets", "recent", "flow",
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** The device key Home's order and hidden sections live under. */
-export const HOME_SECTIONS_KEY = "renovator-pocket-home";
+export const HOME_SECTIONS_KEY = POCKET_KEYS.home;
 
 const HIDDEN = "!";
 const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set(["flow", "goals", "gold"]);
