@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ReactNode, Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
@@ -17,12 +18,20 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { RecurringTab } from "@/components/recurringTab";
+import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+
+const PocketTransactions = dynamic(() => import("@/components/pocket/transactions").then((m) => m.PocketTransactions), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(TransactionsPage, PocketTransactions);
 
 const TABS = ["ledger", "recurring"] as const;
 type Tab = (typeof TABS)[number];
 
-export default function TransactionsPage() {
+function TransactionsPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
   return (
     <Suspense fallback={<Spinner />}>

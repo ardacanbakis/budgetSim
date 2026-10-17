@@ -263,7 +263,7 @@ export default function LoansPage() {
 
             {sim ? (
               <>
-                <div className="grid grid-cols-3 gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                <div className="pocket-cols-2 grid grid-cols-3 gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60 pocket:[&_.text-lg]:text-base">
                   <div>
                     <div className="text-xs text-zinc-500">{t("loans.installment")}</div>
                     <div className="text-lg font-bold tabular-nums">{formatAmount(sim.installment, currency, locale)}</div>
@@ -304,8 +304,8 @@ export default function LoansPage() {
                 </Button>
                 <details>
                   <summary className="cursor-pointer text-sm text-zinc-500">{t("loans.schedule")}</summary>
-                  <div className="mt-2 max-h-64 overflow-y-auto">
-                    <table className="stack-sm sticky-head w-full text-xs tabular-nums">
+                  <div className="pocket-unscroll mt-2 max-h-64 overflow-y-auto">
+                    <table className="stack-sm sticky-head w-full text-xs tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold">
                       <thead className="sticky top-0 bg-white dark:bg-zinc-900">
                         <tr className="text-left text-zinc-400">
                           <th className="py-1 pr-2 font-medium">#</th>
@@ -336,7 +336,7 @@ export default function LoansPage() {
         </Card>
 
         {/* tracked loans */}
-        <Card>
+        <Card className="pocket-first">
           <CardHeader title={t("loans.tracked")} />
           <div className="space-y-3 p-4">
             {(loans.data ?? []).length === 0 ? (

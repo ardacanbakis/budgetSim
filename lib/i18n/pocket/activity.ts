@@ -1,7 +1,89 @@
 /**
  * Pocket strings for the "activity" package, under pocket.activity.* — English and
  * Turkish side by side, so a key can't exist in one and not the other.
+ *
+ * Reused as they are, not repeated here: tx.title, tx.tabLedger, tx.planned,
+ * tx.income, tx.expense, tx.empty, tx.filterAccount, recurring.title,
+ * recurring.newTemplate, recurring.empty, recurring.noneMatch,
+ * recurring.showAll, recurring.monthly, recurring.weekly, recurring.yearly,
+ * recurring.status_*, recurring.openCount, recurring.filterStatus,
+ * portfolio.sortLatest, portfolio.sortOldest, pocket.chooseAccount,
+ * pocket.lists.* (markPaid, paidDifferent, waitingRates, inDays, deleted).
  */
-export const en = {};
+export const en = {
+  // Activity
+  searchActivity: "Search descriptions, categories, accounts",
+  clearSearch: "Clear search",
+  filters: "Filters",
+  allAccounts: "All accounts",
+  sortBy: "Order: {order}",
+  overdueN: "Overdue ({count})",
+  clearFilters: "Clear filters",
+  needsAction: "Needs attention",
+  overdueBlock: "Overdue · {count}",
+  comingBlock: "Coming up · {count}",
+  show30: "Show 30 days",
+  show7: "Show 7 days",
+  nothingSoon: "Nothing due in the next {days} days.",
+  laterPlanned: "Later: {count} planned",
+  showEarlier: "Show earlier months",
+  showLater: "Show later months",
+  // Recurring
+  commitments: "Commitments",
+  period: "Period",
+  outLabel: "Out",
+  inLabel: "In",
+  nextUp: "Next: {name} {when}",
+  whenToday: "today",
+  whenTomorrow: "tomorrow",
+  dueToday: "Due today",
+  finishedN: "Finished ({count})",
+  managedByLoan: "Managed by its loan — edit on Debt",
+  seeItems: "See its items",
+  autoTag: "Auto",
+  loanTag: "Loan",
+  autoWaiting: "Auto · waiting for live rates",
+  dueItems: "Waiting to be confirmed",
+  deleteTemplate: "Delete {name}?",
+  deleteWithPlanned: "Delete it and its planned items",
+  deleteKeepPlanned: "Delete it, keep its planned items",
+};
 
-export const tr: typeof en = {};
+export const tr: typeof en = {
+  // Activity
+  searchActivity: "Açıklama, kategori ya da hesap ara",
+  clearSearch: "Aramayı temizle",
+  filters: "Filtreler",
+  allAccounts: "Tüm hesaplar",
+  sortBy: "Sıralama: {order}",
+  overdueN: "Gecikmiş ({count})",
+  clearFilters: "Filtreleri temizle",
+  needsAction: "İlgilenmen gerekenler",
+  overdueBlock: "Gecikmiş · {count}",
+  comingBlock: "Yaklaşan · {count}",
+  show30: "30 günü göster",
+  show7: "7 günü göster",
+  nothingSoon: "Önümüzdeki {days} günde ödenecek bir şey yok.",
+  laterPlanned: "Sonrası: {count} planlı",
+  showEarlier: "Önceki ayları göster",
+  showLater: "Sonraki ayları göster",
+  // Recurring
+  commitments: "Taahhütler",
+  period: "Dönem",
+  outLabel: "Giden",
+  inLabel: "Gelen",
+  nextUp: "Sıradaki: {name} {when}",
+  whenToday: "bugün",
+  whenTomorrow: "yarın",
+  dueToday: "Bugün ödenecek",
+  finishedN: "Bitenler ({count})",
+  managedByLoan: "Kredisi yönetiyor — Borçlar sayfasında düzenle",
+  seeItems: "Kayıtlarını gör",
+  autoTag: "Otomatik",
+  loanTag: "Kredi",
+  autoWaiting: "Otomatik · canlı kurlar bekleniyor",
+  dueItems: "Onay bekleyenler",
+  deleteTemplate: "{name} silinsin mi?",
+  deleteWithPlanned: "Planlı kayıtlarıyla birlikte sil",
+  deleteKeepPlanned: "Sil, planlı kayıtlar kalsın",
+};

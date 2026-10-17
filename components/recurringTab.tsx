@@ -305,7 +305,7 @@ function ProgressLine({ progress, barClass }: { progress: TemplateProgress; barC
   );
 }
 
-function TemplateModal({
+export function TemplateModal({
   open,
   initial,
   onClose,

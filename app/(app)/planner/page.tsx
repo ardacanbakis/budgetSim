@@ -686,8 +686,8 @@ export default function PlannerPage() {
           <div className="border-b border-[var(--edge-soft)] p-3">
             <HorizonSlider months={months} onChange={setHorizon} />
           </div>
-          <div className="fill-in-grid max-h-[28rem] overflow-auto p-2">
-            <table className="stack-sm w-full text-sm tabular-nums">
+          <div className="pocket-unscroll fill-in-grid max-h-[28rem] overflow-auto p-2">
+            <table className="stack-sm w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-left text-xs text-zinc-400">
                   <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
@@ -1131,7 +1131,7 @@ export default function PlannerPage() {
                 const average = averageByCategory.get(c.id) ?? 0;
                 return (
                   <div key={c.id} className="flex flex-wrap items-center gap-2">
-                    <label className="flex min-w-40 flex-1 items-center gap-2 text-sm">
+                    <label className="flex min-w-40 flex-1 items-center gap-2 text-sm pocket:basis-full">
                       <input
                         type="checkbox"
                         className="h-4 w-4 accent-teal-600"
@@ -1169,7 +1169,7 @@ export default function PlannerPage() {
                       step="any"
                       min="0"
                       inputMode="decimal"
-                      className="!w-32 text-right"
+                      className="!w-32 text-right pocket:w-auto! pocket:min-w-0 pocket:flex-1"
                       placeholder="0"
                       value={budget ? String(budget.monthlyAmount) : ""}
                       onChange={(e) => setBudget(c.id, { monthlyAmount: Number(e.target.value) || 0, enabled: true })}
@@ -1236,7 +1236,7 @@ export default function PlannerPage() {
     <div
       className={
         view === "custom"
-          ? "mx-[5%] w-[90%] space-y-4"
+          ? "mx-[5%] w-[90%] space-y-4 pocket:mx-0 pocket:w-full"
           : "mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]"
       }
     >
