@@ -212,6 +212,33 @@ test.describe("Pocket desk pages", () => {
     await expect(note).toBeHidden();
   });
 
+  test("More → Phone layout opens the card, from another page and from Settings on another tab", async ({ page }) => {
+    await enterPocket(page);
+    const card = page.locator("#phone-layout");
+    const row = async () => {
+      await page.getByRole("button", { name: /^More/ }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Phone layout · Pocket" }).click();
+    };
+    const inView = () => card.evaluate((el) => el.getBoundingClientRect().top).then((top) => top >= 0 && top < 200);
+
+    await page.evaluate(() => localStorage.setItem("renovator-settings-tab", "data"));
+    await page.goto("/");
+    await expect(page.locator("[data-pocket-shell]")).toBeVisible({ timeout: 15_000 });
+    await row();
+    await expect(page).toHaveURL(/\/settings#phone-layout$/);
+    await expect(card).toBeAttached({ timeout: 15_000 });
+    await expect.poll(inView).toBe(true);
+
+    // already on Settings, with another tab open: a link to the page would change nothing
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.getByRole("button", { name: "⇅ Data", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    await row();
+    await expect(card).toBeAttached();
+    await expect(page.getByRole("button", { name: "⚙ Preferences", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(inView).toBe(true);
+  });
+
   test("screenshots: every desk page at 390 (light and dark), 402 and 440", async ({ page }) => {
     test.setTimeout(300_000);
     await enterPocket(page);

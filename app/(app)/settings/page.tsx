@@ -19,7 +19,7 @@ import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
-import { PHONE_LAYOUTS } from "@/lib/ui/phone";
+import { PHONE_LAYOUT_ANCHOR, PHONE_LAYOUTS, SHOW_PHONE_LAYOUT_EVENT } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
 import { useIsPhone, usePocket } from "@/lib/ui/usePocket";
 import { DEFAULT_FOURTH, fourthTabChoices } from "@/lib/ui/pocket/bar";
@@ -48,13 +48,25 @@ export default function SettingsPage() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatDirection, setNewCatDirection] = useState<TxDirection>("expense");
   const [tab, setTab] = useState<SettingsTab>("preferences");
+  // how many times Pocket's More sheet asked for the Phone layout card here
+  const [showPhone, setShowPhone] = useState(0);
 
   useEffect(() => {
     queueMicrotask(() => {
       const saved = window.localStorage.getItem("renovator-settings-tab");
       if (saved && (SETTINGS_TABS as readonly string[]).includes(saved)) setTab(saved as SettingsTab);
     });
+    const show = () => {
+      setTab("preferences");
+      setShowPhone((n) => n + 1);
+    };
+    window.addEventListener(SHOW_PHONE_LAYOUT_EVENT, show);
+    return () => window.removeEventListener(SHOW_PHONE_LAYOUT_EVENT, show);
   }, []);
+  // once Preferences is showing, the card is there to scroll to
+  useEffect(() => {
+    if (showPhone) document.getElementById(PHONE_LAYOUT_ANCHOR)?.scrollIntoView({ block: "start" });
+  }, [showPhone]);
   const switchTab = (v: SettingsTab) => {
     setTab(v);
     window.localStorage.setItem("renovator-settings-tab", v);
@@ -85,6 +97,8 @@ export default function SettingsPage() {
           {SETTINGS_TABS.map((v) => (
             <button
               key={v}
+              type="button"
+              aria-pressed={tab === v}
               onClick={() => switchTab(v)}
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
@@ -427,7 +441,7 @@ function PhoneLayoutCard() {
   const choices = fourthTabChoices(settings.data?.navOrder);
   return (
     <Card>
-      <span id="phone-layout" className="block scroll-mt-20" />
+      <span id={PHONE_LAYOUT_ANCHOR} className="block scroll-mt-20" />
       <CardHeader
         title={
           <span className="flex items-center gap-2">

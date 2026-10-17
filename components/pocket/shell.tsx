@@ -20,6 +20,7 @@ import { useI18n } from "@/lib/i18n";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { activeSlot, barSlots, DEFAULT_FOURTH } from "@/lib/ui/pocket/bar";
 import { formatSigned } from "@/lib/ui/pocket/format";
+import { PHONE_LAYOUT_ANCHOR, SHOW_PHONE_LAYOUT_EVENT } from "@/lib/ui/phone";
 import { POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { dismissSnack, useSnack } from "@/lib/ui/pocket/snackbar";
 import { NavItem } from "@/components/shell.nav";
@@ -419,7 +420,8 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
                   } catch {
                     // the page opens on its last tab instead
                   }
-                  router.push("/settings#phone-layout");
+                  if (pathname === "/settings") window.dispatchEvent(new Event(SHOW_PHONE_LAYOUT_EVENT));
+                  else router.push(`/settings#${PHONE_LAYOUT_ANCHOR}`);
                 }}
                 className="flex min-h-[52px] w-full items-center gap-3 px-4 text-left text-[15px] active:bg-[var(--edge-soft)]"
               >
