@@ -9,6 +9,10 @@ import * as pocketDesk from "./pocket/desk";
 
 export const en = {
   common: {
+    openCalendar: "Open calendar",
+    notADate: "Not a date this field can read. Try 17 Oct, 17.10 or 2026-10-17.",
+    dateOutOfRange: "That date is outside what this field allows.",
+    datePlaceholder: "e.g. 17 Oct",
     columns: "Columns",
     columnsN: "{count} columns",
     save: "Save",
@@ -1000,6 +1004,10 @@ export type Dictionary = typeof en;
 
 export const tr: Dictionary = {
   common: {
+    openCalendar: "Takvimi aç",
+    notADate: "Bu tarih okunamadı. 17 Eki, 17.10 ya da 2026-10-17 gibi yazabilirsin.",
+    dateOutOfRange: "Bu tarih bu alan için izin verilen aralığın dışında.",
+    datePlaceholder: "örn. 17 Eki",
     columns: "Sütun",
     columnsN: "{count} sütun",
     save: "Kaydet",
