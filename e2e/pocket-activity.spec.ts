@@ -390,9 +390,12 @@ test.describe("Pocket activity", () => {
     await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
     await expect(monthHeads(page).first()).toBeInViewport();
     await expect(monthHeads(page).filter({ hasText: thisMonth })).toHaveCount(1);
-    // oldest first lists from the start, nothing folded
+    // oldest first lists from the start, nothing folded above it (the
+    // button under the list pages on, as it always does)
     await chips(page).getByRole("button", { name: /^Order/ }).click();
-    await expect(later).toHaveCount(0);
+    await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
+    const lastHead = (await monthHeads(page).last().boundingBox())!;
+    if (await later.count()) expect((await later.boundingBox())!.y).toBeGreaterThan(lastHead.y);
     // a new search folds them again
     await search(page).fill("rent");
     await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
@@ -613,6 +616,21 @@ test.describe("Pocket recurring", () => {
     await tabs(page).getByRole("button", { name: "Recurring" }).click();
     await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
     await expect(page.locator("[data-commitments]")).toBeVisible();
+
+    // the tab bar's Activity, from the page itself and from another
+    const bar = page.getByRole("navigation", { name: "Sections" });
+    await page.goto("/transactions?tab=recurring");
+    await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
+    await bar.getByRole("link", { name: "Activity" }).click();
+    await expect(page).toHaveURL(/\/transactions$/);
+    await expect(needs(page)).toBeVisible();
+    await page.goto("/transactions?tab=recurring");
+    await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
+    await bar.locator('a[href="/"]').click();
+    await expect(page).toHaveURL(/\/$/);
+    await bar.getByRole("link", { name: "Activity" }).click();
+    await expect(page).toHaveURL(/\/transactions$/);
+    await expect(needs(page)).toBeVisible();
   });
 
   test("+ opens TemplateModal as a sheet, and a new item lands in the list", async ({ page }) => {

@@ -89,6 +89,20 @@ test("recurring: a tab of Transactions, and the old address still lands there", 
   await recurringTab.click();
   await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
   await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+
+  // nor does the old query come back by the sidebar, here or from another page
+  await page.goto("/recurring");
+  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  const sidebar = page.locator("aside nav");
+  await sidebar.locator('a[href="/transactions"]').click();
+  await expect(page).toHaveURL(/\/transactions$/);
+  await expect(ledgerTab).toHaveAttribute("aria-selected", "true");
+  await page.goto("/recurring");
+  await sidebar.locator('a[href="/accounts"]').click();
+  await expect(page).toHaveURL(/\/accounts$/);
+  await sidebar.locator('a[href="/transactions"]').click();
+  await expect(page).toHaveURL(/\/transactions$/);
+  await expect(ledgerTab).toHaveAttribute("aria-selected", "true");
 });
 
 test("recurring: a template started in the past backfills its earlier items", async ({ page }) => {
