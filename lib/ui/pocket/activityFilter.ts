@@ -34,7 +34,8 @@ import { groupMonthsDays, GroupOptions, isTransferLanding } from "./dayGroups";
  * - filtersFromParams({ filter, account, q }): a deep link's filters
  *   (?filter=overdue|planned, ?account=id, ?q=text).
  * - monthsAhead(months, filters, today): how many months a newest-first
- *   search folds away at the top, so the list opens at this month.
+ *   search folds away at the top, so the list opens at this month (or at
+ *   the nearest months found, when they're all ahead).
  */
 
 export type ActivitySort = "newest" | "oldest";
@@ -195,8 +196,9 @@ export function needsAction(
  * after this month. A search lists planned rows too, and the year of them
  * the recurring items keep ahead would otherwise open the list, with what
  * was found a dozen months down; they wait behind "Show later months".
- * Nothing folds when Planned or Overdue is on, when the list is oldest
- * first, or when every month is ahead (there'd be nothing else to show).
+ * When every month found is ahead (an item that hasn't started yet), the
+ * nearest page of them stays open instead. Nothing folds when Planned or
+ * Overdue is on, or when the list is oldest first.
  */
 export function monthsAhead(
   months: readonly { month: string }[],
@@ -207,7 +209,7 @@ export function monthsAhead(
   const thisMonth = today.slice(0, 7);
   let ahead = 0;
   while (ahead < months.length && months[ahead].month > thisMonth) ahead += 1;
-  return ahead === months.length ? 0 : ahead;
+  return ahead === months.length ? Math.max(0, ahead - MONTHS_PER_PAGE) : ahead;
 }
 
 /** What rows add up to, by the month headers' rule (null-safe on missing rates: those rows are left out). */

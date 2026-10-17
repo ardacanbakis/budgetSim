@@ -231,9 +231,15 @@ describe("monthsAhead: a search opens at this month", () => {
     expect(ahead({})).toBe(0);
   });
 
-  it("folds nothing when every month found is ahead", () => {
+  it("when every month found is ahead, keeps the nearest page of them open", () => {
     expect(months({ search: "invoice" }).map((m) => m.month)).toEqual(["2026-11"]);
     expect(ahead({ search: "invoice" })).toBe(0);
+    // an item starting next month: a year of planned rows, none yet
+    const notStarted = ["2027-10", "2027-09", "2027-08", "2027-07", "2027-06", "2027-05", "2027-04", "2027-03", "2027-02", "2027-01", "2026-12", "2026-11"];
+    const folded = monthsAhead(notStarted.map((month) => ({ month })), { ...NO_FILTERS, search: "gym" }, TODAY);
+    expect(folded).toBe(9);
+    expect(notStarted.slice(folded)).toEqual(["2027-01", "2026-12", "2026-11"]);
+    expect(monthsAhead([{ month: "2027-01" }, { month: "2026-12" }, { month: "2026-11" }], { ...NO_FILTERS, search: "gym" }, TODAY)).toBe(0);
   });
 
   it("counts from today's month, not the rows'", () => {

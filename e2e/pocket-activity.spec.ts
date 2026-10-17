@@ -384,11 +384,13 @@ test.describe("Pocket activity", () => {
     const later = page.getByRole("button", { name: "Show later months" });
     await expect(later).toBeVisible();
     expect((await later.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await later.click();
+    await later.focus();
+    await page.keyboard.press("Enter");
     await expect(later).toHaveCount(0);
-    // the later months open above, in view, newest first
+    // the later months open above, in view, newest first, with focus on the first
     await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
     await expect(monthHeads(page).first()).toBeInViewport();
+    await expect(monthHeads(page).first()).toBeFocused();
     await expect(monthHeads(page).filter({ hasText: thisMonth })).toHaveCount(1);
     // oldest first lists from the start, nothing folded above it (the
     // button under the list pages on, as it always does)
@@ -396,10 +398,14 @@ test.describe("Pocket activity", () => {
     await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
     const lastHead = (await monthHeads(page).last().boundingBox())!;
     if (await later.count()) expect((await later.boundingBox())!.y).toBeGreaterThan(lastHead.y);
-    // a new search folds them again
+    // a new search folds them again: Rent starts this month, so oldest
+    // first opens there and runs on; newest first folds what comes after
     await search(page).fill("rent");
-    await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
+    await expect(historyRow(page, "Car loan installment")).toHaveCount(0);
+    await expect(monthHeads(page).first()).toHaveText(thisMonth);
+    await expect(monthHeads(page)).not.toHaveCount(1);
     await chips(page).getByRole("button", { name: /^Order/ }).click();
+    await expect(monthHeads(page)).toHaveCount(1);
     await expect(monthHeads(page).first()).toHaveText(thisMonth);
     await expect(later).toBeVisible();
   });
@@ -591,10 +597,14 @@ test.describe("Pocket recurring", () => {
 
     await page.goto("/transactions?tab=recurring");
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
+    // from further down the list: the search still opens at its top
+    await recurringRows(page).last().scrollIntoViewIfNeeded();
     await recurringRows(page).filter({ hasText: "Rent" }).getByRole("button").click();
     await sheet(page).getByRole("button", { name: "See its items" }).click();
     await expect(page).toHaveURL(/\/transactions\?q=Rent$/);
     await expect(search(page)).toHaveValue("Rent");
+    await expect(search(page)).toBeInViewport();
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
     await expect(tabs(page).getByRole("button", { name: "Transactions" })).toHaveAttribute("aria-pressed", "true");
     await expect(historyRow(page, "Rent").first()).toBeVisible();
     // Back returns to the list it came from, Forward to the search

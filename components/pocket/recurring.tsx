@@ -354,8 +354,10 @@ export function PocketRecurring({
         }}
         onItems={(tpl) => {
           setOpened(null);
-          // the same page, so the URL changes in place (lib/ui/shallowUrl.ts)
+          // the same page, so the URL changes in place (lib/ui/shallowUrl.ts),
+          // scroll and all: the search starts at its top
           pushQuery(`/transactions?q=${encodeURIComponent(tpl.name)}`);
+          window.scrollTo(0, 0);
         }}
       />
 

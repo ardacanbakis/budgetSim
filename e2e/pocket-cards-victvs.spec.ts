@@ -295,6 +295,18 @@ test.describe("Pocket cards", () => {
     await expect(sheet(page)).toHaveCount(0);
   });
 
+  test("Card purchase from the Add menu on Cards itself adds nothing for Back to undo", async ({ page }) => {
+    await openCards(page);
+    const length = await page.evaluate(() => history.length);
+    await page.getByRole("button", { name: "Add", exact: true }).click({ button: "right" });
+    await sheet(page).getByRole("button", { name: "Card purchase" }).click();
+    await expect(sheet(page).getByRole("heading", { name: "New purchase" })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/cards$/);
+    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toBeHidden();
+    expect(await page.evaluate(() => history.length)).toBe(length);
+  });
+
   test("?add=purchase opened cold opens the form once, and the link is cleared", async ({ page }) => {
     // a production build once ignored a router call to the same page with
     // another query after loading with one (lib/ui/shallowUrl.ts)

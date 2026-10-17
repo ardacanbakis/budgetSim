@@ -66,6 +66,7 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
   const [filters, setFiltersState] = useState<ActivityFilters>(() => filtersFromParams(link));
   const [pages, setPages] = useState(1);
   const [aheadOpen, setAheadOpen] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [range, setRange] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const days = Number(range);
@@ -108,6 +109,16 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
   const fromNow = months.slice(ahead);
   const shownMonths = [...(aheadOpen ? months.slice(0, ahead) : []), ...fromNow.slice(0, pages * MONTHS_PER_PAGE)];
   const currency: Currency = account?.currency ?? display;
+
+  // "Show later months" goes once used: focus moves to the first month it
+  // brought, rather than falling back to the page
+  useEffect(() => {
+    if (!aheadOpen) return;
+    const head = historyRef.current?.querySelector<HTMLElement>("h2");
+    if (!head) return;
+    head.tabIndex = -1;
+    head.focus({ preventScroll: true });
+  }, [aheadOpen]);
 
   // ?show=due: once the list is there, bring the card under the header
   const scrolled = useRef(false);
@@ -171,12 +182,14 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
             <MoreMonths onClick={() => setAheadOpen(true)}>{t("pocket.activity.showLater")}</MoreMonths>
           ) : null}
           {shownMonths.length > 0 ? (
-            <PocketDayList
-              months={shownMonths}
-              onRowTap={sheet.open}
-              onComplete={sheet.complete}
-              accountCurrency={account?.currency}
-            />
+            <div ref={historyRef}>
+              <PocketDayList
+                months={shownMonths}
+                onRowTap={sheet.open}
+                onComplete={sheet.complete}
+                accountCurrency={account?.currency}
+              />
+            </div>
           ) : null}
           {fromNow.length > pages * MONTHS_PER_PAGE ? (
             <MoreMonths onClick={() => setPages((p) => p + 1)}>

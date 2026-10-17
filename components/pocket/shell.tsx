@@ -21,6 +21,7 @@ import { isStaleTable } from "@/lib/rates/fallback";
 import { activeSlot, barSlots, DEFAULT_FOURTH } from "@/lib/ui/pocket/bar";
 import { formatSigned } from "@/lib/ui/pocket/format";
 import { PHONE_LAYOUT_ANCHOR, SHOW_PHONE_LAYOUT_EVENT } from "@/lib/ui/phone";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { dismissSnack, useSnack } from "@/lib/ui/pocket/snackbar";
 import { NavItem } from "@/components/shell.nav";
@@ -66,6 +67,13 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
   const [paying, setPaying] = useState<Account | null>(null);
   const [adjusting, setAdjusting] = useState<Account | null>(null);
   const headerRef = useRef<HTMLElement>(null);
+  // a page's own form, opened by its ?add= link; on that page already, the
+  // link takes this history entry's place, or Back would have nothing to undo
+  const openForm = (href: string) => {
+    setSheet(null);
+    if (pathname === href.split("?")[0]) replaceQuery(href);
+    else router.push(href);
+  };
   const mainRef = useRef<HTMLElement>(null);
 
   const slots = barSlots(settings.data?.navOrder, fourthPref);
@@ -527,10 +535,10 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
                 ]
               : []),
             ...(visible.has("/cards")
-              ? [{ label: t("pocket.cardPurchase"), icon: "card" as const, onSelect: () => { setSheet(null); router.push("/cards?add=purchase"); } }]
+              ? [{ label: t("pocket.cardPurchase"), icon: "card" as const, onSelect: () => openForm("/cards?add=purchase") }]
               : []),
             ...(visible.has("/victvs")
-              ? [{ label: t("pocket.victvsSession"), icon: "checkCircle" as const, onSelect: () => { setSheet(null); router.push("/victvs?add=session"); } }]
+              ? [{ label: t("pocket.victvsSession"), icon: "checkCircle" as const, onSelect: () => openForm("/victvs?add=session") }]
               : []),
             ...(adjustable.length > 0 ? [{ label: t("pocket.adjust"), icon: "adjust" as const, onSelect: () => setSheet("pickAccount") }] : []),
           ]}
