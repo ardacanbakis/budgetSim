@@ -27,7 +27,7 @@ import { isTransferLanding } from "./dayGroups";
  * - overdueCount(listed, today): planned rows past their date, a transfer once.
  * - isLongOverdue(tx, today): due more than LEGACY_AGE_MONTHS ago, the rule
  *   that pre-ticks "complete as legacy" (Classic CompleteModal).
- * - daysUntil(date, today): whole days, negative once the date has passed.
+ * Relative wording ("in 3 days", "2 days late") is core's: lib/ui/pocket/dates.ts.
  */
 
 /** Older than this (months) → completing defaults to legacy, as in Classic. */
@@ -35,13 +35,6 @@ export const LEGACY_AGE_MONTHS = 3;
 
 export function isLongOverdue(tx: Transaction, today: string): boolean {
   return tx.status === "planned" && tx.dueDate < addMonthsClamped(today, -LEGACY_AGE_MONTHS);
-}
-
-/** Whole days from today to date: 0 today, 1 tomorrow, −2 two days ago. */
-export function daysUntil(date: string, today: string): number {
-  const a = parseISODate(today);
-  const b = parseISODate(date);
-  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
 }
 
 /** Planned rows already past their date, counted as the list shows them. */

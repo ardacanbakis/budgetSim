@@ -4,7 +4,7 @@ import { buildCardBook, CardBook, isIncome, isSpending } from "@/lib/domain/card
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import {
-  dayLabel,
+  dayDate,
   groupMonthsDays,
   isTransferLanding,
   listedRows,
@@ -262,23 +262,15 @@ describe("groupMonthsDays — one account", () => {
 });
 
 describe("labels", () => {
-  const words = { today: "Today", yesterday: "Yesterday", tomorrow: "Tomorrow" };
-
-  it("names the days around today", () => {
-    expect(dayLabel("2026-10-16", "2026-10-16", "en", words)).toBe("Today");
-    expect(dayLabel("2026-10-15", "2026-10-16", "en", words)).toBe("Yesterday");
-    expect(dayLabel("2026-10-17", "2026-10-16", "en", words)).toBe("Tomorrow");
-    expect(dayLabel("2026-10-31", "2026-11-01", "en", words)).toBe("Yesterday");
-  });
-
-  it("writes other days with the weekday, and the year only when it isn't this one", () => {
-    expect(dayLabel("2026-10-09", "2026-10-16", "en", words)).toBe("Fri, Oct 9");
-    expect(dayLabel("2026-10-09", "2026-10-16", "tr", words)).toBe("9 Eki Cum");
-    expect(dayLabel("2025-12-30", "2026-01-02", "en", words)).toBe("Tue, Dec 30, 2025");
-  });
-
   it("writes a month with its year", () => {
     expect(monthLabel("2026-10", "en")).toBe("October 2026");
     expect(monthLabel("2026-10", "tr")).toBe("Ekim 2026");
+    expect(monthLabel("2027-01", "en")).toBe("January 2027");
+  });
+
+  it("writes a date the way the day headers do, with the year on request", () => {
+    expect(dayDate("2026-10-09", "en")).toBe("Fri 9 Oct");
+    expect(dayDate("2026-10-09", "tr")).toBe("9 Eki Cum");
+    expect(dayDate("2025-12-30", "en", true)).toBe("Tue, 30 Dec 2025");
   });
 });

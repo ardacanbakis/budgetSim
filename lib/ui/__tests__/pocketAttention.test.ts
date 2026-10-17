@@ -7,7 +7,6 @@ import { todayISO } from "@/lib/domain/recurrence";
 import {
   comingUp,
   ComingUpItem,
-  daysUntil,
   isLongOverdue,
   LEGACY_AGE_MONTHS,
   overdueCount,
@@ -58,16 +57,7 @@ function tx(accountId: string, dueDate: string, amount: number, overrides: Parti
 const today = "2026-10-16";
 const keys = (items: ComingUpItem[]) => items.map((i) => (i.kind === "planned" ? i.tx.description : i.key));
 
-describe("daysUntil and isLongOverdue", () => {
-  it("counts whole calendar days", () => {
-    expect(daysUntil("2026-10-16", today)).toBe(0);
-    expect(daysUntil("2026-10-17", today)).toBe(1);
-    expect(daysUntil("2026-10-14", today)).toBe(-2);
-    expect(daysUntil("2026-11-01", today)).toBe(16);
-    // across the March clock change, still whole days
-    expect(daysUntil("2026-04-01", "2026-03-25")).toBe(7);
-  });
-
+describe("isLongOverdue", () => {
   it("calls a planned row long overdue past the Classic legacy age", () => {
     expect(LEGACY_AGE_MONTHS).toBe(3);
     expect(isLongOverdue(tx("bank", "2026-07-15", 1), today)).toBe(true);

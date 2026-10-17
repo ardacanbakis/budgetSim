@@ -2,7 +2,6 @@ import { Account, Transaction } from "@/lib/data/types";
 import { CardBook, isIncome, isSpending } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
-import { addDays } from "@/lib/domain/recurrence";
 
 /**
  * The ledger as Pocket lists it: months, then days, then rows. Pure, so the
@@ -24,10 +23,14 @@ import { addDays } from "@/lib/domain/recurrence";
  *   - with accountId, one account's history: only that account's rows, every
  *     one of them (both kinds of transfer leg too), and nets in that
  *     account's currency signed by direction, legacy listed but not summed.
- *     This is the Classic Portfolio history (completedMonths).
+ *     Given the completed rows, this is the Classic Portfolio history
+ *     (completedMonths).
  *   Rows whose account is unknown are dropped, as the Classic row renders
  *   nothing for them. `order` sorts months, days and the rows within a day.
- * - monthLabel(month, locale), dayLabel(date, today, locale, words): headings.
+ * - monthLabel(month, locale): "October 2026" / "Ekim 2026".
+ * - dayDate(date, locale, withYear?): a date with no "Today" in it, written
+ *   like the day headers ("Fri 9 Oct", "9 Eki Cum"). The headers themselves
+ *   use dayLabel from lib/ui/pocket/dates.ts.
  */
 
 export interface DayGroup {
@@ -141,30 +144,24 @@ export function groupMonthsDays(rows: readonly Transaction[], options: GroupOpti
   return months;
 }
 
-const intlLocale = (locale: string) => (locale === "tr" ? "tr-TR" : "en-US");
+const intlLocale = (locale: string) => (locale === "tr" ? "tr-TR" : "en-GB");
 
 /** "October 2026" / "Ekim 2026" */
 export function monthLabel(month: string, locale: string): string {
-  return new Date(`${month}-01T00:00:00`).toLocaleDateString(intlLocale(locale), { month: "long", year: "numeric" });
+  const [y, m] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat(intlLocale(locale), { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, 1))
+  );
 }
 
-/**
- * A day heading: "Today", "Yesterday", "Tomorrow", else the weekday, day and
- * month ("Fri, Oct 9" / "9 Eki Cum"), with the year when it isn't this year's.
- */
-export function dayLabel(
-  date: string,
-  today: string,
-  locale: string,
-  words: { today: string; yesterday: string; tomorrow: string }
-): string {
-  if (date === today) return words.today;
-  if (date === addDays(today, -1)) return words.yesterday;
-  if (date === addDays(today, 1)) return words.tomorrow;
-  return new Date(`${date}T00:00:00`).toLocaleDateString(intlLocale(locale), {
+/** "Fri 9 Oct" / "9 Eki Cum", as dates.ts writes day headers; with the year on request. */
+export function dayDate(date: string, locale: string, withYear = false): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     weekday: "short",
     day: "numeric",
     month: "short",
-    year: date.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
-  });
+    year: withYear ? "numeric" : undefined,
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
