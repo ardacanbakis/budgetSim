@@ -1,4 +1,10 @@
 import { expect, Locator, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * Pocket's Activity and Recurring (/transactions and ?tab=recurring): the
@@ -368,6 +374,33 @@ test.describe("Pocket activity", () => {
     await expect(needs(page)).toBeVisible();
   });
 
+  test("a search opens at this month; the planned months after it wait behind a button", async ({ page }) => {
+    await enterPocket(page);
+    // Ziraat carries the rent and the loan: a year of planned rows ahead
+    await search(page).fill("ziraat");
+    const thisMonth = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    await expect(monthHeads(page).first()).toHaveText(thisMonth);
+    await expect(historyRow(page, "Dentist follow-up")).toBeVisible();
+    const later = page.getByRole("button", { name: "Show later months" });
+    await expect(later).toBeVisible();
+    expect((await later.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await later.click();
+    await expect(later).toHaveCount(0);
+    // the later months open above, in view, newest first
+    await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
+    await expect(monthHeads(page).first()).toBeInViewport();
+    await expect(monthHeads(page).filter({ hasText: thisMonth })).toHaveCount(1);
+    // oldest first lists from the start, nothing folded
+    await chips(page).getByRole("button", { name: /^Order/ }).click();
+    await expect(later).toHaveCount(0);
+    // a new search folds them again
+    await search(page).fill("rent");
+    await expect(monthHeads(page).first()).not.toHaveText(thisMonth);
+    await chips(page).getByRole("button", { name: /^Order/ }).click();
+    await expect(monthHeads(page).first()).toHaveText(thisMonth);
+    await expect(later).toBeVisible();
+  });
+
   test("in Turkish, the dotted İ and dotless ı fold into i", async ({ page }) => {
     await enterPocket(page, {
       locale: "tr",
@@ -561,6 +594,25 @@ test.describe("Pocket recurring", () => {
     await expect(search(page)).toHaveValue("Rent");
     await expect(tabs(page).getByRole("button", { name: "Transactions" })).toHaveAttribute("aria-pressed", "true");
     await expect(historyRow(page, "Rent").first()).toBeVisible();
+    // Back returns to the list it came from, Forward to the search
+    await page.goBack();
+    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+    await expect(page.locator("[data-commitments]")).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(/\/transactions\?q=Rent$/);
+    await expect(search(page)).toHaveValue("Rent");
+  });
+
+  test("opened at ?tab=recurring, the segment still moves between the tabs", async ({ page }) => {
+    // a production build once ignored a router call to the same page with
+    // another query after loading with one (lib/ui/shallowUrl.ts)
+    await enterPocket(page, { path: "/transactions?tab=recurring" });
+    await tabs(page).getByRole("button", { name: "Transactions" }).click();
+    await expect(page).toHaveURL(/\/transactions$/);
+    await expect(needs(page)).toBeVisible();
+    await tabs(page).getByRole("button", { name: "Recurring" }).click();
+    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+    await expect(page.locator("[data-commitments]")).toBeVisible();
   });
 
   test("+ opens TemplateModal as a sheet, and a new item lands in the list", async ({ page }) => {

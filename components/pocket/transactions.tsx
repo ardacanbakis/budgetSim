@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { Spinner } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { ActivityLink, PocketActivity } from "./activity";
 import { Icon } from "./icons";
 import { PocketPage, Segmented } from "./kit";
@@ -34,7 +35,6 @@ export function PocketTransactions() {
 
 function TransactionsScreen() {
   const { t } = useI18n();
-  const router = useRouter();
   const params = useSearchParams();
   const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
   const [creating, setCreating] = useState(false);
@@ -71,7 +71,7 @@ function TransactionsScreen() {
           { value: "ledger", label: t("tx.tabLedger") },
           { value: "recurring", label: t("recurring.title") },
         ]}
-        onChange={(next) => router.replace(next === "ledger" ? "/transactions" : "/transactions?tab=recurring", { scroll: false })}
+        onChange={(next) => replaceQuery(next === "ledger" ? "/transactions" : "/transactions?tab=recurring")}
       />
       {tab === "recurring" ? (
         <PocketRecurring creating={creating} onCreatingChange={setCreating} />

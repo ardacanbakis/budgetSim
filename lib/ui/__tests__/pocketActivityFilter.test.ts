@@ -10,6 +10,7 @@ import {
   foldSearch,
   hasActiveFilters,
   historyStatus,
+  monthsAhead,
   needsAction,
   netOf,
   NO_FILTERS,
@@ -209,6 +210,36 @@ describe("applyFilters: search", () => {
   it("never lists a card's charges or a payment's landing on the card", () => {
     expect(run({ search: "migros" })).toEqual([]);
     expect(ids(run({ search: "bonus" }))).toEqual([cardPaying.id]);
+  });
+});
+
+describe("monthsAhead: a search opens at this month", () => {
+  const months = (filters: Partial<ActivityFilters>) => groupMonthsDays(run(filters), { accountsById, usdPer, display: "USD", book, order: filters.sort ?? "newest" });
+  const ahead = (filters: Partial<ActivityFilters>) => monthsAhead(months(filters), { ...NO_FILTERS, ...filters }, TODAY);
+
+  it("folds the months after this one, newest first", () => {
+    // "wise": November's invoice, then October, then nothing earlier on Wise
+    expect(months({ search: "wise" }).map((m) => m.month)).toEqual(["2026-11", "2026-10"]);
+    expect(ahead({ search: "wise" })).toBe(1);
+    expect(ahead({ search: "wise", direction: "expense" })).toBe(0);
+  });
+
+  it("folds nothing oldest first, with Planned or Overdue on, or without a search", () => {
+    expect(ahead({ search: "wise", sort: "oldest" })).toBe(0);
+    expect(ahead({ search: "wise", planned: true, sort: "newest" })).toBe(0);
+    expect(ahead({ planned: true, sort: "newest" })).toBe(0);
+    expect(ahead({})).toBe(0);
+  });
+
+  it("folds nothing when every month found is ahead", () => {
+    expect(months({ search: "invoice" }).map((m) => m.month)).toEqual(["2026-11"]);
+    expect(ahead({ search: "invoice" })).toBe(0);
+  });
+
+  it("counts from today's month, not the rows'", () => {
+    const later = [{ month: "2027-10" }, { month: "2027-01" }, { month: "2026-11" }, { month: "2026-10" }, { month: "2026-09" }];
+    expect(monthsAhead(later, { ...NO_FILTERS, search: "x" }, TODAY)).toBe(3);
+    expect(monthsAhead(later, { ...NO_FILTERS, search: "x" }, "2026-12-01")).toBe(2);
   });
 });
 

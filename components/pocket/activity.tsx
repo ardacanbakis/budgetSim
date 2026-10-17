@@ -13,6 +13,7 @@ import {
   filtersFromParams,
   hasActiveFilters,
   MONTHS_PER_PAGE,
+  monthsAhead,
   NeedsAction,
   needsAction,
   netOf,
@@ -38,9 +39,10 @@ import { PocketTxSheet, usePocketTxSheet } from "./txActions";
  *    days (the choice is kept on the device, shared with Home), each with
  *    its ✓; "Later: n planned ›" turns the Planned chip on.
  * 3. The history: completed rows by default; with Planned or Overdue, those
- *    rows, oldest first; with a search, everything that matches. Month
- *    separators with the month's net, sticky day headers, three months at
- *    a time.
+ *    rows, oldest first; with a search, everything that matches, opening at
+ *    this month (the months of planned rows after it wait behind "Show
+ *    later months" at the top). Month separators with the month's net,
+ *    sticky day headers, three months at a time.
  *
  * Same numbers as Classic: the rows the Classic ledger lists (listedRows),
  * grouped and summed by lib/ui/pocket/dayGroups.ts (the Classic month
@@ -63,6 +65,7 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
   const sheet = usePocketTxSheet();
   const [filters, setFiltersState] = useState<ActivityFilters>(() => filtersFromParams(link));
   const [pages, setPages] = useState(1);
+  const [aheadOpen, setAheadOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [range, setRange] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const days = Number(range);
@@ -72,6 +75,7 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
   const setFilters = (next: ActivityFilters) => {
     setFiltersState(next);
     setPages(1);
+    setAheadOpen(false);
   };
 
   const { accountsById, categoriesById, book, today, usdPer, display } = lookup;
@@ -99,7 +103,10 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
   }, [listed, active, today, categoriesById, accountsById, locale, groupOptions, days, account]);
 
   const showCard = !active.planned && !active.overdue && !active.search.trim() && scoped.some((tx) => tx.status === "planned");
-  const shownMonths = months.slice(0, pages * MONTHS_PER_PAGE);
+  // a search opens at this month; the months after it wait behind a button
+  const ahead = monthsAhead(months, active, today);
+  const fromNow = months.slice(ahead);
+  const shownMonths = [...(aheadOpen ? months.slice(0, ahead) : []), ...fromNow.slice(0, pages * MONTHS_PER_PAGE)];
   const currency: Currency = account?.currency ?? display;
 
   // ?show=due: once the list is there, bring the card under the header
@@ -160,6 +167,9 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
               onLater={() => setFilters(toggleChip(filters, "planned"))}
             />
           ) : null}
+          {ahead > 0 && !aheadOpen ? (
+            <MoreMonths onClick={() => setAheadOpen(true)}>{t("pocket.activity.showLater")}</MoreMonths>
+          ) : null}
           {shownMonths.length > 0 ? (
             <PocketDayList
               months={shownMonths}
@@ -168,14 +178,10 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
               accountCurrency={account?.currency}
             />
           ) : null}
-          {months.length > shownMonths.length ? (
-            <button
-              type="button"
-              onClick={() => setPages((p) => p + 1)}
-              className="flex min-h-[44px] w-full items-center justify-center rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] text-sm font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
-            >
+          {fromNow.length > pages * MONTHS_PER_PAGE ? (
+            <MoreMonths onClick={() => setPages((p) => p + 1)}>
               {active.sort === "newest" ? t("pocket.activity.showEarlier") : t("pocket.activity.showLater")}
-            </button>
+            </MoreMonths>
           ) : null}
         </>
       )}
@@ -189,6 +195,19 @@ export function PocketActivity({ link }: { link: ActivityLink }) {
         onChange={(accountId) => setFilters({ ...filters, accountId })}
       />
     </div>
+  );
+}
+
+/** More months: under the list, the next page; over it, a search's later months. */
+function MoreMonths({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-[44px] w-full items-center justify-center rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] text-sm font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
+    >
+      {children}
+    </button>
   );
 }
 

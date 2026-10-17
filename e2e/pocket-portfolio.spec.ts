@@ -1,4 +1,10 @@
 import { expect, Locator, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * Pocket's Portfolio (/accounts): the net-worth hero with All | Assets |
@@ -337,6 +343,22 @@ test.describe("Pocket portfolio", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Portfolio" })).toBeVisible();
     await expect(row(page, "Cash drawer")).toHaveCount(0);
     await expect.poll(async () => (await store(page)).accounts.some((a) => a.name === "Cash drawer")).toBe(false);
+  });
+
+  test("an account opened by link closes to the list, and the list opens the next one", async ({ page }) => {
+    await enterPocket(page);
+    const id = (await store(page)).accounts.find((a) => a.name === "Ziraat TRY")!.id;
+    // a production build once ignored a router call to the same page with
+    // another query after loading with one (lib/ui/shallowUrl.ts)
+    await page.goto(`/accounts?account=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Ziraat TRY" })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page).toHaveURL(/\/accounts$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Portfolio" })).toBeVisible();
+    await openAccount(page, "Wise USD");
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page).toHaveURL(/\/accounts$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Portfolio" })).toBeVisible();
   });
 
   test("an account that isn't there falls back to the list", async ({ page }) => {

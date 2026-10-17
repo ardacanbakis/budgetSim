@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { SavingsChart } from "@/components/savingsChart";
 import { SavingsCompliancePanel } from "@/components/savingsCompliance";
 import { NumberControl, SavingsSchedule, StepRatePicker } from "@/components/savingsControls";
@@ -26,6 +26,7 @@ import {
   maxContractValue,
 } from "@/lib/domain/savingsFinanceSolvers";
 import { useI18n } from "@/lib/i18n";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 
 type Mode = "priceToBudget" | "budgetToPrice" | "targetDate";
 
@@ -46,7 +47,6 @@ const MODES: Mode[] = ["priceToBudget", "budgetToPrice", "targetDate"];
 export default function SavingsPage() {
   const { t, locale } = useI18n();
   const repo = useRepo();
-  const router = useRouter();
   const params = useSearchParams();
   const saved = useSavingsPlans();
 
@@ -143,7 +143,7 @@ export default function SavingsPage() {
     setPresetId(body.presetId);
     setName(record.name);
     setOpenId(record.id);
-    router.replace(`/savings?plan=${record.id}`);
+    replaceQuery(`/savings?plan=${record.id}`);
   };
 
   const save = async () => {
@@ -154,7 +154,7 @@ export default function SavingsPage() {
       const created = (await createPlan.mutateAsync({ name: label, input, presetId })) as PlanRecord;
       setOpenId(created.id);
       setName(label);
-      router.replace(`/savings?plan=${created.id}`);
+      replaceQuery(`/savings?plan=${created.id}`);
     }
   };
 
@@ -199,7 +199,7 @@ export default function SavingsPage() {
                 onClick={() => {
                   setOpenId(null);
                   setName("");
-                  router.replace("/savings");
+                  replaceQuery("/savings");
                 }}
               >
                 {t("savings.newPlan")}
@@ -211,7 +211,7 @@ export default function SavingsPage() {
                   await removePlan.mutateAsync(openId);
                   setOpenId(null);
                   setName("");
-                  router.replace("/savings");
+                  replaceQuery("/savings");
                 }}
               >
                 {t("common.delete")}

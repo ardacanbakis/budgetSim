@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Fragment, ReactNode, Suspense, useEffect, useId, useMemo, useState } from "react";
 import { AccountModal } from "@/app/(app)/accounts/page";
 import { PurchaseModal } from "@/app/(app)/cards/page";
@@ -22,6 +22,7 @@ import { daysBetween } from "@/lib/ui/pocket/dates";
 import { dayDate } from "@/lib/ui/pocket/dayGroups";
 import { formatSigned } from "@/lib/ui/pocket/format";
 import { showSnack } from "@/lib/ui/pocket/snackbar";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { useDueLabel } from "./dayList";
 import { Icon } from "./icons";
 import { Approx, FitFigure, Money, PocketPage } from "./kit";
@@ -176,7 +177,6 @@ function TileSkeleton() {
 
 function CardsScreen() {
   const { t } = useI18n();
-  const router = useRouter();
   const params = useSearchParams();
   const repo = useRepo();
   const { displayCurrency } = useApp();
@@ -205,8 +205,9 @@ function CardsScreen() {
     setSeenAdd(false);
   }
   useEffect(() => {
-    if (addParam) router.replace("/cards", { scroll: false });
-  }, [addParam, router]);
+    // the same page: the URL changes in place (lib/ui/shallowUrl.ts)
+    if (addParam) replaceQuery("/cards");
+  }, [addParam]);
 
   const updateAccount = useAppMutation(
     (v: { id: string; patch: Parameters<typeof repo.updateAccount>[1] }) => repo.updateAccount(v.id, v.patch),

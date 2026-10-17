@@ -1,4 +1,10 @@
 import { expect, Locator, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * Pocket's + sheet: amount first on a keypad, chips for the rest, and a

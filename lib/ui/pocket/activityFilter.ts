@@ -33,6 +33,8 @@ import { groupMonthsDays, GroupOptions, isTransferLanding } from "./dayGroups";
  *   account's with an accountId.
  * - filtersFromParams({ filter, account, q }): a deep link's filters
  *   (?filter=overdue|planned, ?account=id, ?q=text).
+ * - monthsAhead(months, filters, today): how many months a newest-first
+ *   search folds away at the top, so the list opens at this month.
  */
 
 export type ActivitySort = "newest" | "oldest";
@@ -186,6 +188,26 @@ export function needsAction(
   overdue.sort(compareRows);
   coming.sort(compareRows);
   return { overdue, coming, later };
+}
+
+/**
+ * How many of `months` (newest first) a search folds away at the top: those
+ * after this month. A search lists planned rows too, and the year of them
+ * the recurring items keep ahead would otherwise open the list, with what
+ * was found a dozen months down; they wait behind "Show later months".
+ * Nothing folds when Planned or Overdue is on, when the list is oldest
+ * first, or when every month is ahead (there'd be nothing else to show).
+ */
+export function monthsAhead(
+  months: readonly { month: string }[],
+  filters: Pick<ActivityFilters, "planned" | "overdue" | "search" | "sort">,
+  today: string
+): number {
+  if (filters.sort !== "newest" || historyStatus(filters) !== "all") return 0;
+  const thisMonth = today.slice(0, 7);
+  let ahead = 0;
+  while (ahead < months.length && months[ahead].month > thisMonth) ahead += 1;
+  return ahead === months.length ? 0 : ahead;
 }
 
 /** What rows add up to, by the month headers' rule (null-safe on missing rates: those rows are left out). */

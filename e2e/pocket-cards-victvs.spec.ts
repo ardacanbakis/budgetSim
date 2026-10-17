@@ -1,4 +1,10 @@
 import { expect, Locator, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * Pocket's Cards (/cards) and VICTVS (/victvs): a tile per card with this
@@ -289,6 +295,20 @@ test.describe("Pocket cards", () => {
     await expect(sheet(page)).toHaveCount(0);
   });
 
+  test("?add=purchase opened cold opens the form once, and the link is cleared", async ({ page }) => {
+    // a production build once ignored a router call to the same page with
+    // another query after loading with one (lib/ui/shallowUrl.ts)
+    await enterDemo(page);
+    await page.goto("/cards?add=purchase");
+    await expect(sheet(page).getByRole("heading", { name: "New purchase" })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/cards$/);
+    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toBeHidden();
+    await page.reload();
+    await expect(page.locator("[data-card-tile]").first()).toBeVisible({ timeout: 15_000 });
+    await expect(sheet(page)).toHaveCount(0);
+  });
+
   test("Turkish: the tile reads naturally", async ({ page }) => {
     await openCards(page, { locale: "tr" });
     const card = tile(page, "Bonus Card");
@@ -448,6 +468,18 @@ test.describe("Pocket VICTVS", () => {
     await sheet(page).getByRole("button", { name: "Save" }).click();
     await expect(sheet(page)).toBeHidden();
     await expect(sessionRow(page, "55501")).toBeVisible();
+  });
+
+  test("?add=session opened cold opens the form once, and the link is cleared", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/victvs?add=session");
+    await expect(sheet(page).getByRole("heading", { name: "Add session" })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/victvs$/);
+    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toBeHidden();
+    await page.reload();
+    await expect(page.locator("[data-pocket-shell]")).toBeVisible({ timeout: 15_000 });
+    await expect(sheet(page)).toHaveCount(0);
   });
 
   test("Turkish: counts and the summary", async ({ page }) => {

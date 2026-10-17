@@ -1,4 +1,10 @@
 import { expect, Locator, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * The desk pages inside Pocket: Debt, Reports, Planner and Evim sistemi keep
@@ -166,7 +172,8 @@ test.describe("Pocket desk pages", () => {
       expect(sizes).toHaveLength(8);
       for (const size of sizes) expect(size).toBeGreaterThan(0);
       // stacked one per line this was ~280px; two to a line it's about half
-      expect((await row.boundingBox())!.height).toBeLessThan(180);
+      // (with room for fonts that render a little taller on another machine)
+      expect((await row.boundingBox())!.height).toBeLessThan(210);
     }
     const tops = await rows.first().locator("td").evaluateAll((tds) => tds.map((td) => Math.round(td.getBoundingClientRect().top)));
     expect(tops[1]).toBe(tops[2]); // date and instalment side by side

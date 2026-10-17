@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AddModal, MarkPaidModal, PasteModal, typeBadgeTone } from "@/app/(app)/victvs/page";
 import { EmptyState, Skeleton } from "@/components/ui";
@@ -24,6 +24,7 @@ import { dayDate } from "@/lib/ui/pocket/dayGroups";
 import { formatSigned } from "@/lib/ui/pocket/format";
 import { POCKET_KEYS, usePocketFlag } from "@/lib/ui/pocket/prefs";
 import { showSnack } from "@/lib/ui/pocket/snackbar";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import {
   halfMonthRanges,
   lastDayOfMonth,
@@ -162,7 +163,6 @@ function ListSkeleton() {
 
 function VictvsScreen() {
   const { t, locale } = useI18n();
-  const router = useRouter();
   const params = useSearchParams();
   const repo = useRepo();
   const sessions = useVictvsSessions();
@@ -193,8 +193,9 @@ function VictvsScreen() {
     setSeenAdd(false);
   }
   useEffect(() => {
-    if (addParam) router.replace("/victvs", { scroll: false });
-  }, [addParam, router]);
+    // the same page: the URL changes in place (lib/ui/shallowUrl.ts)
+    if (addParam) replaceQuery("/victvs");
+  }, [addParam]);
 
   const createSessions = useAppMutation((inputs: NewVictvsSession[]) => repo.createVictvsSessions(inputs), [KEYS.victvsSessions]);
   const deleteSession = useAppMutation((id: string) => repo.deleteVictvsSession(id), [KEYS.victvsSessions]);

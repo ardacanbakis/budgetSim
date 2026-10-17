@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { KeyboardEvent, ReactNode, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AccountModal } from "@/app/(app)/accounts/page";
 import { Skeleton } from "@/components/ui";
@@ -118,7 +118,6 @@ function ListSkeleton() {
 
 function PortfolioList() {
   const { t, locale } = useI18n();
-  const router = useRouter();
   const repo = useRepo();
   const base = usePortfolioBase();
   const loans = useLoans();
@@ -187,8 +186,6 @@ function PortfolioList() {
     [t]
   );
 
-  const open = (id: string) => openAccount(router, id);
-
   const modal = (
     <AccountModal
       open={creating}
@@ -233,7 +230,7 @@ function PortfolioList() {
     <ul className="divide-y divide-[var(--edge-soft)]">
       {lines.map((l) => (
         <li key={l.account.id} data-account-row={l.account.name}>
-          <AccountRow line={l} base={base} archived={archived} onOpen={open} />
+          <AccountRow line={l} base={base} archived={archived} onOpen={openAccount} />
         </li>
       ))}
     </ul>

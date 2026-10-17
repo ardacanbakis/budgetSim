@@ -31,6 +31,7 @@ import {
 import { relativeDue } from "@/lib/ui/pocket/dates";
 import { dayDate } from "@/lib/ui/pocket/dayGroups";
 import { showSnack } from "@/lib/ui/pocket/snackbar";
+import { pushQuery } from "@/lib/ui/shallowUrl";
 import { RowsSkeleton } from "./activityFilters";
 import { CompleteCheck, useDueLabel } from "./dayList";
 import { Icon } from "./icons";
@@ -353,7 +354,8 @@ export function PocketRecurring({
         }}
         onItems={(tpl) => {
           setOpened(null);
-          router.push(`/transactions?q=${encodeURIComponent(tpl.name)}`);
+          // the same page, so the URL changes in place (lib/ui/shallowUrl.ts)
+          pushQuery(`/transactions?q=${encodeURIComponent(tpl.name)}`);
         }}
       />
 

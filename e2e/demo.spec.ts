@@ -1,4 +1,10 @@
 import { expect, Page, test } from "@playwright/test";
+import { pinRates } from "./support/rates";
+
+// the same rates in every run, offline or in CI (see support/rates.ts)
+test.beforeEach(async ({ page }) => {
+  await pinRates(page);
+});
 
 /**
  * Demo-mode smoke: enter without credentials, exercise the core flows, and
@@ -73,6 +79,16 @@ test("recurring: a tab of Transactions, and the old address still lands there", 
   await page.goto("/recurring");
   await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
   await expect(page.getByRole("button", { name: /new recurring item|yeni düzenli/i })).toBeVisible();
+
+  // and from there the tabs still switch (a production build once ignored a
+  // router call to the same page after loading with a query: lib/ui/shallowUrl.ts)
+  const ledgerTab = page.getByRole("tab", { name: /^transactions$|^işlemler$/i });
+  await ledgerTab.click();
+  await expect(page).toHaveURL(/\/transactions$/);
+  await expect(ledgerTab).toHaveAttribute("aria-selected", "true");
+  await recurringTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
 });
 
 test("recurring: a template started in the past backfills its earlier items", async ({ page }) => {
@@ -1824,6 +1840,11 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.goto(url);
   await page.waitForTimeout(1500);
   await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
+
+  // New scenario lets go of the link, though the page was opened by it
+  await page.getByRole("button", { name: "New scenario" }).click();
+  await expect(page).toHaveURL(/\/savings$/);
+  await expect(page.getByLabel("Scenario name")).toHaveValue("");
 
   // the planner can lay it over the projection without writing anything
   await page.goto("/planner");

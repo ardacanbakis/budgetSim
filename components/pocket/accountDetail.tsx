@@ -32,6 +32,7 @@ import {
   PORTFOLIO_SCROLL_KEY,
 } from "@/lib/ui/pocket/portfolioSections";
 import { showSnack } from "@/lib/ui/pocket/snackbar";
+import { pushQuery, replaceQuery } from "@/lib/ui/shallowUrl";
 import { usePocketChrome } from "./chrome";
 import { PocketDayList, PocketTxRow, useTxLookup } from "./dayList";
 import { Icon, IconName } from "./icons";
@@ -56,15 +57,18 @@ import { usePocketTxSheet } from "./txActions";
 /** Opened from the list in this tab: Back can simply go back. */
 let openedFromList = false;
 
-/** Open an account's page, remembering where the list was scrolled. */
-export function openAccount(router: ReturnType<typeof useRouter>, id: string): void {
+/**
+ * Open an account's page, remembering where the list was scrolled. The list
+ * and the page are one route, so the URL changes in place (lib/ui/shallowUrl.ts).
+ */
+export function openAccount(id: string): void {
   try {
     window.sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(window.scrollY));
   } catch {
     // no storage: the list just opens at the top
   }
   openedFromList = true;
-  router.push(`/accounts?account=${encodeURIComponent(id)}`, { scroll: false });
+  pushQuery(`/accounts?account=${encodeURIComponent(id)}`);
 }
 
 /** Close it: back to the list it came from, or to the list when it was opened by link. */
@@ -73,7 +77,7 @@ export function closeAccount(router: ReturnType<typeof useRouter>): void {
     openedFromList = false;
     router.back();
   } else {
-    router.replace("/accounts", { scroll: false });
+    replaceQuery("/accounts");
   }
 }
 
@@ -279,7 +283,7 @@ export function AccountDetail({ account }: { account: Account }) {
   );
   const deleteAccount = useAppMutation((id: string) => repo.deleteAccount(id), [KEYS.accounts, KEYS.transactions]);
 
-  // the list was pushed with scroll: false; the page itself starts at its top
+  // the URL changed in place, scroll and all; the page itself starts at its top
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
   }, [account.id]);
