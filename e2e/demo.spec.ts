@@ -778,7 +778,7 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
   await enterDemo(page);
 
   const netWorthTile = page.locator("text=Net worth").locator("..");
-  const before = await netWorthTile.textContent();
+  const before = (await netWorthTile.textContent())!;
 
   await page.goto("/settings");
   await page.getByRole("button", { name: /Data$|Veri$/ }).click();
@@ -796,9 +796,7 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
 
   // dashboard net worth unchanged
   await page.goto("/");
-  await page.waitForTimeout(800);
-  const after = await netWorthTile.textContent();
-  expect(after).toBe(before);
+  await expect(netWorthTile).toHaveText(before);
 });
 
 test("legacy imports stay out of reports, stats and the flow chart", async ({ page }) => {
@@ -838,7 +836,7 @@ test("complete as legacy: planned item completes without moving net worth", asyn
   await enterDemo(page);
 
   const netWorthTile = page.locator("text=Net worth").locator("..");
-  const before = await netWorthTile.textContent();
+  const before = (await netWorthTile.textContent())!;
 
   // complete a planned item with the legacy checkbox ticked
   await page.goto("/transactions");
@@ -852,8 +850,7 @@ test("complete as legacy: planned item completes without moving net worth", asyn
 
   // dashboard net worth unchanged
   await page.goto("/");
-  await page.waitForTimeout(800);
-  expect(await netWorthTile.textContent()).toBe(before);
+  await expect(netWorthTile).toHaveText(before);
 });
 
 test("themes: mocha applies tinted surfaces", async ({ page }) => {
@@ -871,7 +868,7 @@ test("part2: bulk paste imports a card statement as legacy expenses", async ({ p
   await enterDemo(page);
 
   const netWorthTile = page.locator("text=Net worth").locator("..");
-  const before = await netWorthTile.textContent();
+  const before = (await netWorthTile.textContent())!;
 
   await page.goto("/settings");
   await page.getByRole("button", { name: /Data$|Veri$/ }).click();
@@ -900,8 +897,7 @@ test("part2: bulk paste imports a card statement as legacy expenses", async ({ p
   await page.getByRole("button", { name: /^▸ 2025/ }).click();
   await expect(page.getByText("Migros", { exact: true })).toBeVisible();
   await page.goto("/");
-  await page.waitForTimeout(800);
-  expect(await netWorthTile.textContent()).toBe(before);
+  await expect(netWorthTile).toHaveText(before);
 });
 
 test("part2: column switch spreads transaction months side by side", async ({ page }) => {
@@ -1439,10 +1435,13 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
 
-  // what the paying account holds, on the portfolio
+  // what the paying account holds, on the portfolio, once the rates are in:
+  // the row gains its ≈ line when they arrive, so reading it earlier compares
+  // a row without one to a row with one
   const ziraat = () => page.getByRole("button", { name: /Ziraat TRY/ }).first();
   await page.goto("/accounts");
-  const before = await ziraat().textContent();
+  await expect(ziraat()).toContainText("≈");
+  const before = (await ziraat().textContent())!;
 
   await page.goto("/cards");
   await page.getByRole("button", { name: /^Record payment$/ }).first().click();
@@ -1457,7 +1456,7 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
 
   // the money hasn't moved yet
   await page.goto("/accounts");
-  expect(await ziraat().textContent()).toBe(before);
+  await expect(ziraat()).toHaveText(before);
 
   // and it's waiting in the ledger as planned
   await page.goto("/transactions");
