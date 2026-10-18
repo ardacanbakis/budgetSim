@@ -41,8 +41,9 @@ export function DateInput({
     onChange?.({ target: { value: next }, currentTarget: { value: next } } as unknown as ChangeEvent<HTMLInputElement>);
   };
 
-  const base = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : todayISO();
-  const parsed = typed == null ? null : parseTypedDate(typed, base);
+  const today = todayISO();
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : today;
+  const parsed = typed == null ? null : parseTypedDate(typed, base, today);
   const minIso = typeof min === "string" ? min : undefined;
   const maxIso = typeof max === "string" ? max : undefined;
   const outOfRange = parsed != null && ((minIso != null && parsed < minIso) || (maxIso != null && parsed > maxIso));
@@ -80,7 +81,7 @@ export function DateInput({
             emit("");
             return;
           }
-          const next = parseTypedDate(text, base);
+          const next = parseTypedDate(text, base, today);
           const inRange = next != null && !((minIso != null && next < minIso) || (maxIso != null && next > maxIso));
           if (next && inRange && next !== iso) emit(next);
         }}

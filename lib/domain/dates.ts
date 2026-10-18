@@ -123,14 +123,17 @@ const fullYear = (n: number, digits: number) => (digits <= 2 ? 2000 + n : n);
 
 /**
  * A yyyy-mm-dd date from typed text, or null when it can't be read. `base`
- * (yyyy-mm-dd) fills in what wasn't typed and anchors today/yesterday.
+ * (yyyy-mm-dd, the date already in the field) fills in what wasn't typed;
+ * today/yesterday/tomorrow count from `today` (yyyy-mm-dd), whatever the
+ * field held: "dün" on an entry dated in September still means yesterday.
  */
-export function parseTypedDate(text: string, base: string): string | null {
+export function parseTypedDate(text: string, base: string, today: string): string | null {
   const s = fold(text.trim());
   if (!s) return null;
-  const [by, bm, bd] = base.split("-").map(Number);
+  const [by, bm] = base.split("-").map(Number);
   if (s in RELATIVE) {
-    const dt = new Date(Date.UTC(by, bm - 1, bd + RELATIVE[s]));
+    const [ty, tm, td] = today.split("-").map(Number);
+    const dt = new Date(Date.UTC(ty, tm - 1, td + RELATIVE[s]));
     return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
   }
   const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);

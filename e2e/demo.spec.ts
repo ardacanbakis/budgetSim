@@ -2148,7 +2148,10 @@ test("dates: a date field takes typed days and month names, and still has a cale
   await form.getByLabel(/^amount|^tutar/i).click();
   await expect(date).toHaveValue(shown(year, 9, 17));
 
-  // words work too
+  // words work too, counted from today whatever the field held
+  await date.fill("3 jan 2020");
+  await form.getByLabel(/^amount|^tutar/i).click();
+  await expect(date).toHaveValue("3 Jan 2020");
   await date.fill("yesterday");
   await form.getByLabel(/^amount|^tutar/i).click();
   const y = new Date();

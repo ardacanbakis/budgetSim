@@ -34,27 +34,37 @@ describe("parseTypedDate", () => {
     ["2026-1-7", "2026-01-07"],
     ["  17   oct  ", "2026-10-17"],
   ])("reads %j", (text, expected) => {
-    expect(parseTypedDate(text, BASE)).toBe(expected);
+    expect(parseTypedDate(text, BASE, BASE)).toBe(expected);
   });
 
   it("reads words for nearby days, in either language", () => {
-    expect(parseTypedDate("today", BASE)).toBe("2026-10-05");
-    expect(parseTypedDate("Bugün", BASE)).toBe("2026-10-05");
-    expect(parseTypedDate("dün", BASE)).toBe("2026-10-04");
-    expect(parseTypedDate("yesterday", "2026-03-01")).toBe("2026-02-28");
-    expect(parseTypedDate("yarın", "2026-12-31")).toBe("2027-01-01");
+    expect(parseTypedDate("today", BASE, BASE)).toBe("2026-10-05");
+    expect(parseTypedDate("Bugün", BASE, BASE)).toBe("2026-10-05");
+    expect(parseTypedDate("dün", BASE, BASE)).toBe("2026-10-04");
+    expect(parseTypedDate("yesterday", BASE, "2026-03-01")).toBe("2026-02-28");
+    expect(parseTypedDate("yarın", BASE, "2026-12-31")).toBe("2027-01-01");
+  });
+
+  it("counts nearby days from today, not from the date already in the field", () => {
+    // an entry dated 17 Oct, edited on the 18th: yesterday is the 17th, today the 18th
+    expect(parseTypedDate("yesterday", "2026-10-17", "2026-10-18")).toBe("2026-10-17");
+    expect(parseTypedDate("dün", "2026-10-17", "2026-10-18")).toBe("2026-10-17");
+    expect(parseTypedDate("today", "2025-09-03", "2026-10-18")).toBe("2026-10-18");
+    expect(parseTypedDate("yarın", "2025-09-03", "2026-10-18")).toBe("2026-10-19");
+    // what isn't typed still comes from the field
+    expect(parseTypedDate("3", "2025-09-20", "2026-10-18")).toBe("2025-09-03");
   });
 
   it.each(["", "abc", "32", "31 feb", "30 şubat", "17 ma", "13/13", "2026", "17 oct 2026 extra", "1/2/3/4", "17 o"])(
     "refuses %j",
     (text) => {
-      expect(parseTypedDate(text, BASE)).toBeNull();
+      expect(parseTypedDate(text, BASE, BASE)).toBeNull();
     }
   );
 
   it("fills a typed day from the field's own month and year", () => {
-    expect(parseTypedDate("3", "2025-06-20")).toBe("2025-06-03");
-    expect(parseTypedDate("3 jan", "2025-06-20")).toBe("2025-01-03");
+    expect(parseTypedDate("3", "2025-06-20", BASE)).toBe("2025-06-03");
+    expect(parseTypedDate("3 jan", "2025-06-20", BASE)).toBe("2025-01-03");
   });
 });
 
@@ -66,7 +76,7 @@ describe("formatForField", () => {
 
   it("reads back what it shows", () => {
     for (const iso of ["2026-01-09", "2026-05-31", "2027-12-01"]) {
-      for (const locale of ["en", "tr"]) expect(parseTypedDate(formatForField(iso, locale), "2000-01-01")).toBe(iso);
+      for (const locale of ["en", "tr"]) expect(parseTypedDate(formatForField(iso, locale), "2000-01-01", BASE)).toBe(iso);
     }
   });
 
