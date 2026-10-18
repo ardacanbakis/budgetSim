@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { useApp } from "@/lib/data/provider";
+import { useAppOptional } from "@/lib/data/provider";
 import { PHONE_QUERY } from "./phone";
 
 function subscribe(onChange: () => void): () => void {
@@ -25,7 +25,7 @@ export function useIsPhone(): boolean {
  * off it is always false, so the default design renders exactly as before.
  */
 export function usePocket(): boolean {
-  const { phoneLayout } = useApp();
+  const phoneLayout = useAppOptional()?.phoneLayout;
   const phone = useIsPhone();
   return phoneLayout === "pocket" && phone;
 }

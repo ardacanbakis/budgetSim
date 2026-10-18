@@ -19,6 +19,15 @@ export const DEFAULT_PHONE_LAYOUT: PhoneLayout = "standard";
 
 export const PHONE_LAYOUT_KEY = "renovator-phone-layout";
 
+/**
+ * Settings' Phone layout card, on its Preferences tab, which Pocket's More
+ * sheet links to. From another page the link opens Settings there (the tab
+ * is stored first); on Settings itself a link to the page changes nothing,
+ * so the sheet sends this event and the page switches tab and scrolls.
+ */
+export const PHONE_LAYOUT_ANCHOR = "phone-layout";
+export const SHOW_PHONE_LAYOUT_EVENT = "renovator-show-phone-layout";
+
 /** Tailwind's md breakpoint is 48rem; Pocket applies strictly below it. */
 export const PHONE_QUERY = "(max-width: 767.98px)";
 

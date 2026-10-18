@@ -90,7 +90,7 @@ export function ScenarioBar({
       <Button onClick={() => open("rename")} disabled={!current}>
         {t("common.edit")}
       </Button>
-      <Button onClick={onExport} disabled={!current} title={t("planner.exportHint")}>
+      <Button className="pocket:hidden" onClick={onExport} disabled={!current} title={t("planner.exportHint")}>
         {t("planner.export")}
       </Button>
       <Button

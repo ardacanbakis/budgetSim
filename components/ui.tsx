@@ -10,6 +10,9 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { DateInput } from "@/components/dateInput";
+import { PocketSheet } from "@/components/pocket/sheet";
+import { usePocket } from "@/lib/ui/usePocket";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -126,28 +129,19 @@ export function Button({
 const PICKER_TYPES = new Set(["date", "month", "week", "time", "datetime-local"]);
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  // Date fields open their calendar from anywhere in the box, not just the
-  // small icon, and never get narrow enough to hide the year.
+  // A date is typed ("17 oct", "17.10", "dün") or picked from the calendar
+  // button: see DateInput. Opening the picker on any click, as this used to,
+  // took the keyboard away from the field.
+  if (props.type === "date") return <DateInput {...props} />;
+  // the other picker fields never get narrow enough to hide what they hold
   const picker = props.type != null && PICKER_TYPES.has(props.type);
   return (
     <input
       {...props}
-      onClick={
-        picker
-          ? (e) => {
-              props.onClick?.(e);
-              try {
-                e.currentTarget.showPicker?.();
-              } catch {
-                // read-only, disabled, or a browser that refuses: the field still types
-              }
-            }
-          : props.onClick
-      }
       className={cx(
         "w-full rounded-lg border border-[var(--edge)] bg-[var(--field)] px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 dark:text-zinc-100",
         props.type === "number" && "tnum",
-        picker && "min-w-[9.5rem] cursor-pointer tabular-nums",
+        picker && "min-w-[9.5rem] tabular-nums",
         props.className
       )}
     />
@@ -271,30 +265,41 @@ export function Modal({
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
 }) {
   const body = useRef<HTMLDivElement>(null);
+  // On a Pocket phone the form opens in Pocket's sheet instead, which brings
+  // its own Escape, focus and keyboard handling; off Pocket this is false and
+  // nothing below changes.
+  const pocket = usePocket();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || pocket) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, pocket]);
 
   // Land the caret in the first field rather than making you reach for it —
   // but only where there's a real pointer. On a phone this would throw the
   // keyboard up over the dialog before you've read it.
   useEffect(() => {
-    if (!open) return;
+    if (!open || pocket) return;
     if (!window.matchMedia("(pointer: fine)").matches) return;
     const first = body.current?.querySelector<HTMLElement>(
       "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
     );
     first?.focus();
-  }, [open]);
+  }, [open, pocket]);
 
   if (!open) return null;
   const content = onSubmit ? <form onSubmit={onSubmit}>{children}</form> : children;
+  if (pocket) {
+    return (
+      <PocketSheet open onClose={onClose} title={title} size={wide ? "full" : "auto"}>
+        <div data-pocket-legacy-form>{content}</div>
+      </PocketSheet>
+    );
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div

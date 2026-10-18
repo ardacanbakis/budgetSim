@@ -47,7 +47,7 @@ export function ColumnsToggle({
   const { t } = useI18n();
   const options: ColumnCount[] = max === 3 ? [1, 2, 3] : [1, 2];
   return (
-    <div className="no-print hidden gap-1 rounded-lg bg-[var(--edge-soft)] p-1 lg:flex" role="group" aria-label={t("common.columns")}>
+    <div className="no-print hidden gap-1 rounded-lg bg-[var(--edge-soft)] p-1 lg:flex pocket:hidden" role="group" aria-label={t("common.columns")}>
       {options.map((n) => (
         <button
           key={n}

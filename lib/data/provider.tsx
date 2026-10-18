@@ -327,6 +327,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
+/** The app context, or null outside AppProvider — for shared primitives (Modal) that must never throw. */
+export function useAppOptional(): AppContextValue | null {
+  return useContext(AppContext);
+}
+
 export function useApp(): AppContextValue {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error("useApp outside AppProvider");

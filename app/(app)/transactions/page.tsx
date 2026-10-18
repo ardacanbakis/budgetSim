@@ -1,7 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ReactNode, Suspense, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -17,12 +18,21 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { RecurringTab } from "@/components/recurringTab";
+import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
+
+const PocketTransactions = dynamic(() => import("@/components/pocket/transactions").then((m) => m.PocketTransactions), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
+
+export default pocketable(TransactionsPage, PocketTransactions);
 
 const TABS = ["ledger", "recurring"] as const;
 type Tab = (typeof TABS)[number];
 
-export default function TransactionsPage() {
+function TransactionsPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
   return (
     <Suspense fallback={<Spinner />}>
@@ -38,7 +48,6 @@ export default function TransactionsPage() {
  */
 function TransactionsScreen() {
   const { t } = useI18n();
-  const router = useRouter();
   const params = useSearchParams();
   const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
 
@@ -50,7 +59,7 @@ function TransactionsScreen() {
           role="tab"
           type="button"
           aria-selected={tab === id}
-          onClick={() => router.replace(id === "ledger" ? "/transactions" : `/transactions?tab=${id}`, { scroll: false })}
+          onClick={() => replaceQuery(id === "ledger" ? "/transactions" : `/transactions?tab=${id}`)}
           className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
             tab === id
               ? "border-teal-600 text-teal-700 dark:text-teal-300"

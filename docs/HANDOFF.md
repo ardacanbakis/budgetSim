@@ -1,19 +1,85 @@
-# BudgetSim: where things stand (2026-10-05)
+# BudgetSim: where things stand (2026-10-17)
 
 A handoff for continuing in a local Claude Code session. It covers how the app
 works, what this branch changed, what you need to configure (keys, env vars,
 dashboard settings), what the audit found, and how to improve the process.
 
-- Branch: `claude/budget-simulator-multicurrency-7dBR2` → **PR #30**
-- Base: `main` @ `33d07af` (PR #29, "Loans: five repayment shapes…")
-- Checks on this branch: `pnpm typecheck` ✓ · `pnpm lint` ✓ · `pnpm test` 291/291 ✓ ·
-  Playwright functional suite ✓ (the 5-viewport screenshot loop was not run)
+- Branch: `claude/budget-simulator-multicurrency-7dBR2` → **PR #35** (PRs #30, #33
+  and #34 are merged)
+- Base: `main` @ `3dc152b` (PR #34, balance adjustments)
+- Checks on this branch: `pnpm typecheck` ✓ · `pnpm lint` ✓ · `pnpm test` 663/663 ✓ ·
+  Playwright functional suite 159/159 ✓ against a production build (the
+  5-viewport screenshot loop was not run)
+
+Sections 1–6 were written for PR #30 (2026-10-05); the next section is what
+came after.
+
+---
+
+## Since PR #30: PRs #33–#35
+
+**Balance adjustments (PR #34, migration 0016).** An account's balance can be
+set to what the bank shows, with an optional reason ("EFT fee"). The
+difference is booked as a completed transaction flagged `adjustment`, so it
+lands in the history and every total (`lib/domain/adjustments.ts`,
+`components/adjustBalanceModal.tsx`). Run `0016_balance_adjustments.sql` before
+using it with Supabase.
+
+**Pocket, the opt-in phone layout (PR #35).** Settings → Phone layout →
+Pocket. It applies only below 768px (`PHONE_QUERY`), and only on the device
+where it was chosen; Standard stays the default and is untouched.
+
+- Gate: `usePocket()` (`lib/ui/usePocket.ts`) is the layout setting AND the
+  phone width. `html[data-phone="pocket"]` carries the CSS, which all sits in
+  one `/* POCKET:BEGIN */ … /* POCKET:END */` block in `app/globals.css`
+  (guarded by `lib/ui/__tests__/phoneCss.test.ts`), plus Tailwind's
+  `pocket:` variant.
+- Pages swap whole screens: `export default pocketable(Classic, Pocket)`, the
+  Pocket screen loaded with `next/dynamic` (`ssr: false`). Shared `Modal`s
+  render as bottom sheets in Pocket (`components/pocket/sheet.tsx`).
+- Screens (`components/pocket/*`): the shell (tab bar with + and More, the
+  add sheet with a keypad), Home, Activity + Recurring (`/transactions`),
+  Portfolio + an account's page (`/accounts?account=`), Cards, VICTVS, and the
+  desk pages (Debt, Reports, Planner, Evim) adapted rather than redesigned.
+- Pure logic with unit tests in `lib/ui/pocket/*` (day groups, filters,
+  keypad, pace, commitments…). Strings: `lib/i18n/pocket/*.ts`, one fragment
+  per screen. Device-only prefs (fourth tab, Home's hero, hide amounts, the
+  7/30-day range): `lib/ui/pocket/prefs.ts`.
+- e2e: `e2e/pocket-*.spec.ts`, at 390px with 402/440 checks.
+
+**Typed dates.** Date fields take typing again ("17", "17 oct", "17 eki",
+"dün") with the calendar a button away (`components/dateInput.tsx`,
+`parseTypedDate` in `lib/domain/dates.ts`).
+
+**Next 16.3.8 (from 16.2.10).** 16.2's client route cache brought a page's
+first query back: after loading `/transactions?tab=recurring` (or the
+`/recurring` redirect), the sidebar's Transactions, the tab bar, and router
+calls to that page all landed on `?tab=recurring` again for five minutes.
+Fixed upstream in 16.3.0. The regression tests load a page with a query and
+then leave it.
+
+**Conventions this added**
+
+- Changing only the query of the page that's open (a tab, a search, an
+  account over the list): `replaceQuery` / `pushQuery` from
+  `lib/ui/shallowUrl.ts` (the browser's history API, which Next documents and
+  keeps `useSearchParams` in step with), not `router.replace`.
+- Every e2e spec pins `/api/rates` with `pinRates(page)` in `beforeEach`
+  (`e2e/support/rates.ts`), so live rates can't race auto-complete in CI.
+- Regenerate `pnpm-lock.yaml` with pnpm 10.34 or newer (what CI installs):
+  pnpm 10.28 drops the lockfile's `libc` tags.
+- `next dev` maintains the block in `AGENTS.md`; commit it if it changes.
+
+**Pocket, deferred to a later round:** multi-select and bulk actions in
+Activity; a "customise Home" sheet; pull-to-refresh and swipe gestures;
+per-currency quotes in the shell's currency sheet; an `initialKind` prop on
+`AccountModal`; folding the `.pocket-rows` / `.pocket-table` CSS together.
 
 ---
 
 ## 1. How the app works
 
-**Stack.** Next.js 16 (App Router, Turbopack) + TypeScript + Tailwind 4,
+**Stack.** Next.js 16.3 (App Router, Turbopack) + TypeScript + Tailwind 4,
 Supabase (Postgres + RLS + email/password auth), TanStack Query as a read cache
 only, Recharts, Vitest, Playwright. `AGENTS.md` warns that this Next version has
 breaking changes: read `node_modules/next/dist/docs/` before touching
@@ -274,7 +340,7 @@ the labels more accurate without changing them.
 ## 5. Process improvements
 
 - **README:**
-  - Migrations 0001 → 0014.
+  - ~~Migrations 0001 → 0014.~~ Done: the README lists 0001 → 0016.
   - Point to `.env.example`.
   - Add the Supabase settings from §3.
   - Add the e2e instructions (below).
@@ -284,11 +350,9 @@ the labels more accurate without changing them.
   - Add a `schema_version` check that shows a banner when the database is
     behind. Today a missing migration only shows up as a silently failing
     write.
-- **CI:** there is no `.github/` today. Add a workflow on every PR:
-  - `pnpm typecheck`
-  - `pnpm lint`
-  - `pnpm test`
-  - the Playwright demo suite (`--grep-invert "renders at"` keeps it fast)
+- ~~**CI:** add a workflow on every PR.~~ Done: `.github/workflows/ci.yml` runs
+  typecheck, lint, unit tests and the Playwright demo suite against a
+  production build (`--grep-invert "renders at"`).
 - **Repo contract tests:** one Vitest suite run against `DemoRepo`. It works
   under Node, and auditors did exactly that with scratch tests. Later, run it
   against `SupabaseRepo` on `supabase start` in CI. Cover:
@@ -338,8 +402,9 @@ Key files:
 | Area | Files |
 |---|---|
 | Data layer | `lib/data/{repo,supabaseRepo,demoRepo,queries,provider}.ts(x)` |
-| Recurring | `app/(app)/recurring/page.tsx`, `lib/domain/{recurrence,materialize,templateStatus}.ts` |
+| Recurring | `components/recurringTab.tsx` (a tab of `app/(app)/transactions/page.tsx`; `/recurring` redirects there), `lib/domain/{recurrence,materialize,templateStatus}.ts` |
 | Bootstrap on open | `components/shell.tsx` (`Bootstrapper`) |
 | Rates | `app/api/rates/route.ts`, `lib/rates/*`, `lib/data/queries.ts` (`useRates`) |
-| Schema | `supabase/migrations/0001…0014` |
+| Schema | `supabase/migrations/0001…0016` |
+| Pocket (phone layout) | `components/pocket/*`, `lib/ui/pocket/*`, `lib/ui/{phone,usePocket,shallowUrl}.ts`, `lib/i18n/pocket/*` |
 | Strings | `lib/i18n/dictionaries.ts` (`en` + `tr`; `tr` is type-checked against `en`) |

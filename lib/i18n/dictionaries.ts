@@ -1,5 +1,18 @@
+import * as pocketCore from "./pocket/core";
+import * as pocketAdd from "./pocket/add";
+import * as pocketLists from "./pocket/lists";
+import * as pocketHome from "./pocket/home";
+import * as pocketActivity from "./pocket/activity";
+import * as pocketPortfolio from "./pocket/portfolio";
+import * as pocketCards from "./pocket/cards";
+import * as pocketDesk from "./pocket/desk";
+
 export const en = {
   common: {
+    openCalendar: "Open calendar",
+    notADate: "Not a date this field can read. Try 17 Oct, 17.10 or 2026-10-17.",
+    dateOutOfRange: "That date is outside what this field allows.",
+    datePlaceholder: "e.g. 17 Oct",
     columns: "Columns",
     columnsN: "{count} columns",
     save: "Save",
@@ -337,6 +350,16 @@ export const en = {
     save: "Record adjustment",
     badge: "Adjustment",
     defaultDescription: "Balance adjustment",
+  },
+  pocket: {
+    ...pocketCore.en,
+    add: pocketAdd.en,
+    lists: pocketLists.en,
+    home: pocketHome.en,
+    activity: pocketActivity.en,
+    portfolio: pocketPortfolio.en,
+    cards: pocketCards.en,
+    desk: pocketDesk.en,
   },
   phone: {
     title: "Phone layout",
@@ -981,6 +1004,10 @@ export type Dictionary = typeof en;
 
 export const tr: Dictionary = {
   common: {
+    openCalendar: "Takvimi aç",
+    notADate: "Bu tarih okunamadı. 17 Eki, 17.10 ya da 2026-10-17 gibi yazabilirsin.",
+    dateOutOfRange: "Bu tarih bu alan için izin verilen aralığın dışında.",
+    datePlaceholder: "örn. 17 Eki",
     columns: "Sütun",
     columnsN: "{count} sütun",
     save: "Kaydet",
@@ -1318,6 +1345,16 @@ export const tr: Dictionary = {
     save: "Düzeltmeyi kaydet",
     badge: "Düzeltme",
     defaultDescription: "Bakiye düzeltmesi",
+  },
+  pocket: {
+    ...pocketCore.tr,
+    add: pocketAdd.tr,
+    lists: pocketLists.tr,
+    home: pocketHome.tr,
+    activity: pocketActivity.tr,
+    portfolio: pocketPortfolio.tr,
+    cards: pocketCards.tr,
+    desk: pocketDesk.tr,
   },
   phone: {
     title: "Telefon yerleşimi",

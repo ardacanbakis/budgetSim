@@ -141,7 +141,7 @@ export function SavingsSchedule({ plan }: { plan: SavingsPlan }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="stack-sm sticky-head w-full text-sm tabular-nums">
+      <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold">
         <thead>
           <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
             <th className="px-3 py-2 font-medium">{t("savings.colPeriod")}</th>

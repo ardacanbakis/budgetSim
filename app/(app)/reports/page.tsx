@@ -244,7 +244,7 @@ export default function ReportsPage() {
               {t("reports.includeLegacy")}
             </label>
           ) : null}
-          <Button variant="ghost" className="no-print" onClick={() => window.print()}>
+          <Button variant="ghost" className="no-print pocket:hidden" onClick={() => window.print()}>
             🖶 {t("exports.printReport")}
           </Button>
           <span>
@@ -258,7 +258,7 @@ export default function ReportsPage() {
       </div>
 
       {/* category filter chips — pick tags separately or combine them */}
-      <div className="no-print flex flex-wrap items-center gap-1.5">
+      <div className="pocket-scroll-x no-print flex flex-wrap items-center gap-1.5 pocket:[&>*]:shrink-0">
         <button
           onClick={() => setSelectedCats(new Set())}
           className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
@@ -329,7 +329,7 @@ export default function ReportsPage() {
         {/* allocation donut */}
         <Card>
           <CardHeader title={`${t("reports.allocation")} (${displayCurrency})`} />
-          <div className="flex h-64 flex-wrap items-center justify-center gap-4 p-3">
+          <div className="pocket-auto-h flex h-64 flex-wrap items-center justify-center gap-4 p-3">
             <div className="h-52 w-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -354,7 +354,7 @@ export default function ReportsPage() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="w-44 space-y-1.5">
+            <div className="w-44 space-y-1.5 pocket:w-full">
               {allocation.map((entry) => (
                 <div key={entry.currency} className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5">
@@ -458,7 +458,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="stack-sm sticky-head w-full text-sm tabular-nums">
+              <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold pocket:max-sm:[&_td:nth-child(2)]:col-span-2">
                 <thead>
                   <tr className="text-left text-xs text-zinc-400">
                     <th className="px-2 py-1 font-medium">{t("common.date")}</th>
@@ -493,7 +493,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
         <div className="overflow-x-auto p-2">
-          <table className="stack-sm sticky-head w-full text-sm tabular-nums">
+          <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:table! pocket:max-sm:[&_thead]:table-header-group! pocket:max-sm:[&_tbody]:table-row-group! pocket:max-sm:[&_tr]:table-row! pocket:max-sm:[&_tr]:border-0! pocket:max-sm:[&_tbody_tr]:border-t! pocket:max-sm:[&_td]:table-cell! pocket:max-sm:[&_td]:w-auto! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:p-1.5! pocket:max-sm:[&_td]:whitespace-nowrap pocket:max-sm:[&_td:first-child]:text-left! pocket:max-sm:[&_td::before]:hidden pocket:max-sm:[&_th]:px-1.5">
             <thead>
               <tr className="text-left text-xs text-zinc-400">
                 <th className="px-2 py-1 font-medium">{t("projections.month")}</th>

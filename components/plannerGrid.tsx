@@ -175,7 +175,7 @@ export function PlannerGrid({
 
       <div
         ref={canvas}
-        className="relative grid gap-4"
+        className="pocket-canvas relative grid gap-4"
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
           gridAutoRows: `${ROW_PX}px`,
