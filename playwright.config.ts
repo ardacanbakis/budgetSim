@@ -11,10 +11,14 @@ export default defineConfig({
       ? { executablePath: process.env.PW_CHROMIUM_PATH }
       : {},
   },
-  webServer: {
-    command: "pnpm start",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  // with BASE_URL set, the server is already running elsewhere (another port,
+  // another checkout); otherwise start this checkout's build on :3000
+  webServer: process.env.BASE_URL
+    ? undefined
+    : {
+        command: "pnpm start",
+        url: "http://localhost:3000",
+        reuseExistingServer: true,
+        timeout: 60_000,
+      },
 });
