@@ -253,4 +253,12 @@ export interface UserSettings {
   showQuickAdd: boolean | null;
   /** show the scrolling market-rate ticker in the header; null = hidden */
   showRateTicker: boolean | null;
+  /** the VICTVS forecast's figures you set yourself (migration 0017); null = none */
+  victvsForecast: VictvsForecastSettings | null;
+}
+
+/** user_settings.victvs_forecast: read through cleanVictvsOverrides (lib/domain/victvsForecast.ts) */
+export interface VictvsForecastSettings {
+  /** USD a month's work should earn, by yyyy-MM */
+  overrides: Record<string, number>;
 }

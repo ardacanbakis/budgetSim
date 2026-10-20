@@ -22,7 +22,9 @@ export function Toaster() {
         >
           <div className="min-w-0 flex-1">
             <p className="font-semibold">{t(toast.action === "save" ? "errors.saveFailed" : "errors.loadFailed")}</p>
-            <p className="mt-0.5">{t(`errors.${toast.kind}`)}</p>
+            <p className="mt-0.5">
+              {toast.migration ? t("errors.needsMigrationFile", { file: toast.migration }) : t(`errors.${toast.kind}`)}
+            </p>
             {/* the raw reason only where the plain one can't be specific */}
             {toast.kind === "unknown" || toast.kind === "rejected" ? (
               <p className="mt-1 break-words text-xs opacity-75">{toast.detail}</p>

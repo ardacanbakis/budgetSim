@@ -25,6 +25,14 @@ lands in the history and every total (`lib/domain/adjustments.ts`,
 `components/adjustBalanceModal.tsx`). Run `0016_balance_adjustments.sql` before
 using it with Supabase.
 
+**VICTVS forecast edits (migration 0017).** A month of the VICTVS forecast
+can take your own figure and go back to the computed one
+(`user_settings.victvs_forecast`, `{ overrides: { "yyyy-MM": usd } }`; see
+`lib/domain/victvsForecast.ts`). Run `0017_victvs_forecast.sql` before
+editing the forecast with Supabase: until then the forecast reads as
+unedited and a save says to run that file. Like every setting, the figures
+aren't in the backup file, and a restore to Supabase clears them.
+
 **Pocket, the opt-in phone layout (PR #35).** Settings → Phone layout →
 Pocket. It applies only below 768px (`PHONE_QUERY`), and only on the device
 where it was chosen; Standard stays the default and is untouched.
@@ -340,7 +348,7 @@ the labels more accurate without changing them.
 ## 5. Process improvements
 
 - **README:**
-  - ~~Migrations 0001 → 0014.~~ Done: the README lists 0001 → 0016.
+  - ~~Migrations 0001 → 0014.~~ Done: the README lists 0001 → 0017.
   - Point to `.env.example`.
   - Add the Supabase settings from §3.
   - Add the e2e instructions (below).
@@ -405,6 +413,6 @@ Key files:
 | Recurring | `components/recurringTab.tsx` (a tab of `app/(app)/transactions/page.tsx`; `/recurring` redirects there), `lib/domain/{recurrence,materialize,templateStatus}.ts` |
 | Bootstrap on open | `components/shell.tsx` (`Bootstrapper`) |
 | Rates | `app/api/rates/route.ts`, `lib/rates/*`, `lib/data/queries.ts` (`useRates`) |
-| Schema | `supabase/migrations/0001…0016` |
+| Schema | `supabase/migrations/0001…0017` |
 | Pocket (phone layout) | `components/pocket/*`, `lib/ui/pocket/*`, `lib/ui/{phone,usePocket,shallowUrl}.ts`, `lib/i18n/pocket/*` |
 | Strings | `lib/i18n/dictionaries.ts` (`en` + `tr`; `tr` is type-checked against `en`) |
