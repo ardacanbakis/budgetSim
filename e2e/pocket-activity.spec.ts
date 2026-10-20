@@ -588,12 +588,14 @@ test.describe("Pocket recurring", () => {
     await expect(form).toBeHidden();
   });
 
-  test("a loan's template points to Debt; See its items searches the ledger", async ({ page }) => {
+  test("a loan's template opens its loan; See its items searches the ledger", async ({ page }) => {
     await enterPocket(page, { path: "/transactions?tab=recurring" });
     await recurringRows(page).filter({ hasText: "Car loan installment" }).getByRole("button").click();
     await expect(sheet(page).getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
-    await sheet(page).getByRole("button", { name: "Managed by its loan — edit on Debt" }).click();
-    await expect(page).toHaveURL(/\/loans$/);
+    await sheet(page).getByRole("button", { name: "Managed by its loan — open the loan" }).click();
+    await expect(page).toHaveURL(/\/accounts\?view=debts&loan=[^&]+$/);
+    await expect(page.locator("[data-loan-detail]")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Car loan — Garanti" })).toBeVisible();
 
     await page.goto("/transactions?tab=recurring");
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });

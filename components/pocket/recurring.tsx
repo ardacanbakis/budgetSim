@@ -31,6 +31,7 @@ import {
 import { relativeDue } from "@/lib/ui/pocket/dates";
 import { dayDate } from "@/lib/ui/pocket/dayGroups";
 import { showSnack } from "@/lib/ui/pocket/snackbar";
+import { loanHref } from "@/lib/ui/portfolioUrl";
 import { pushQuery } from "@/lib/ui/shallowUrl";
 import { RowsSkeleton } from "./activityFilters";
 import { CompleteCheck, useDueLabel } from "./dayList";
@@ -348,9 +349,10 @@ export function PocketRecurring({
           setOpened(null);
           setEditing(tpl);
         }}
-        onLoans={() => {
+        onLoans={(tpl) => {
           setOpened(null);
-          router.push("/loans");
+          // the loan's own page in the Portfolio's Debts view
+          router.push(loanHref(tpl.loanId));
         }}
         onItems={(tpl) => {
           setOpened(null);
@@ -600,7 +602,7 @@ function TemplateSheet({
   onComplete: (tx: Transaction) => void;
   onPaidDifferent: (tx: Transaction) => void;
   onEdit: (tpl: RecurringTemplate) => void;
-  onLoans: () => void;
+  onLoans: (tpl: RecurringTemplate) => void;
   onItems: (tpl: RecurringTemplate) => void;
 }) {
   const { t, locale } = useI18n();
@@ -614,7 +616,7 @@ function TemplateSheet({
       ? {
           label: <span className="text-zinc-500 dark:text-zinc-400">{t("pocket.activity.managedByLoan")}</span>,
           icon: "bank",
-          onSelect: onLoans,
+          onSelect: () => onLoans(tpl),
         }
       : { label: t("common.edit"), icon: "edit", tone: due.length ? undefined : "primary", onSelect: () => onEdit(tpl) },
     { label: t("pocket.activity.seeItems"), icon: "activity", onSelect: () => onItems(tpl) },

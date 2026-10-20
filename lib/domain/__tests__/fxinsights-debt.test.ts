@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeFxInsights } from "../fxInsights";
-import { computeDebtOverview } from "../debt";
+import { computeDebtOverview, loanProgress } from "../debt";
 import { amortizationSchedule } from "../loan";
 import { Account, Loan, Transaction } from "@/lib/data/types";
 import { UsdPerMap } from "../fx";
@@ -115,6 +115,24 @@ describe("computeDebtOverview", () => {
     expect(overview.totalInDisplay).toBeCloseTo(schedule.rows[1].remaining + 34000, 2);
     expect(overview.debtFreeDate).toBe(schedule.rows[35].date); // loan outlives the card plan
     expect(overview.avalancheTarget?.id).toBe("l1");
+  });
+
+  it("gives one loan's standing as the overview counts it", () => {
+    const schedule = amortizationSchedule(800000, 2.79, 36, "2026-03-01", "TRY");
+    const paidTwo = [
+      tx({ accountId: "try", direction: "expense", amount: 1, loanId: "l1" }),
+      tx({ accountId: "try", direction: "expense", amount: 1, loanId: "l1" }),
+      // planned and another loan's rows don't count
+      tx({ accountId: "try", direction: "expense", amount: 1, loanId: "l1", status: "planned" }),
+      tx({ accountId: "try", direction: "expense", amount: 1, loanId: "other" }),
+    ];
+    const p = loanProgress(loan, paidTwo);
+    expect(p).toMatchObject({ paid: 2, term: 36, pct: 6, endDate: schedule.rows[35].date });
+    expect(p.remaining).toBe(schedule.rows[1].remaining);
+    expect(loanProgress(loan, []).remaining).toBe(800000);
+    // more completed rows than the schedule has: paid off, never past the end
+    const tooMany = Array.from({ length: 40 }, () => tx({ accountId: "try", direction: "expense", amount: 1, loanId: "l1" }));
+    expect(loanProgress(loan, tooMany)).toMatchObject({ paid: 36, pct: 100 });
   });
 
   it("skips settled cards and finished loans", () => {

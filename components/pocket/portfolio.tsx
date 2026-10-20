@@ -31,6 +31,8 @@ import {
   SEGMENT_SECTIONS,
 } from "@/lib/ui/pocket/portfolioSections";
 import { usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
+import { portfolioHref, readPortfolioQuery } from "@/lib/ui/portfolioUrl";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import {
   AccountDetail,
   ApproxLine,
@@ -43,6 +45,7 @@ import {
   usePortfolioBase,
 } from "./accountDetail";
 import { Icon } from "./icons";
+import { LoanDetail, openLoan } from "./loanDetail";
 import { FitFigure, Money, PocketPage, Row, Section, SegmentRadios, SwitchTrack } from "./kit";
 
 /**
@@ -51,14 +54,16 @@ import { FitFigure, Money, PocketPage, Row, Section, SegmentRadios, SwitchTrack 
  * - The hero is the figure for the chosen segment — All is the Dashboard's
  *   net worth, Assets the cash and crypto & gold subtotals, Debts every loan
  *   and card (computeDebtOverview) — with the All | Assets | Debts radios
- *   under it, kept on the device.
+ *   under it, kept on the device. A view in the URL (?view=debts, as
+ *   /loans redirects) wins over the device's choice while it's there.
  * - Then a card per section, its subtotal in the display currency: Cash &
  *   bank, Crypto & gold, Credit cards (what each is owed), Debt (tracked
  *   loans). Rows show the native figure first and the ≈ under it.
  * - Footer: "Show empty accounts (n)" (the Classic page's own setting) and
  *   the archived accounts, folded away.
- * - ?account={id} opens that account full-screen (accountDetail.tsx); an id
- *   that isn't there falls back to this list.
+ * - ?account={id} opens that account full-screen (accountDetail.tsx), and
+ *   ?loan={id} a tracked loan (loanDetail.tsx); an id that isn't there falls
+ *   back to this list.
  *
  * The arithmetic is lib/ui/pocket/portfolioSections.ts.
  */
@@ -74,11 +79,14 @@ export function PocketPortfolio() {
 function PortfolioRoute() {
   const params = useSearchParams();
   const accounts = useAccounts();
-  const id = params.get("account");
-  const account = id ? accounts.data?.find((a) => a.id === id) : undefined;
-  if (id && accounts.isLoading) return <ListSkeleton />;
+  const loans = useLoans();
+  const query = readPortfolioQuery(params);
+  const account = query.account ? accounts.data?.find((a) => a.id === query.account) : undefined;
+  const loan = query.loan ? loans.data?.find((l) => l.id === query.loan) : undefined;
+  if ((query.account && accounts.isLoading) || (query.loan && loans.isLoading)) return <ListSkeleton />;
   if (account) return <AccountDetail key={account.id} account={account} />;
-  return <PortfolioList />;
+  if (loan) return <LoanDetail key={loan.id} loan={loan} view={query.view} />;
+  return <PortfolioList urlView={query.view} />;
 }
 
 const headStyle = {
@@ -116,14 +124,19 @@ function ListSkeleton() {
   );
 }
 
-function PortfolioList() {
+function PortfolioList({ urlView }: { urlView: PortfolioSegment | null }) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const base = usePortfolioBase();
   const loans = useLoans();
   const hideEmpty = useLocalToggle(HIDE_EMPTY_KEY, false);
-  const [segRaw, setSeg] = usePocketPref(PORTFOLIO_SEG_KEY, "all", isPortfolioSegment);
-  const seg = segRaw as PortfolioSegment;
+  const [segRaw, setSegPref] = usePocketPref(PORTFOLIO_SEG_KEY, "all", isPortfolioSegment);
+  const seg = urlView ?? (segRaw as PortfolioSegment);
+  // a choice made here is the device's; a view in the URL follows it rather than overrule it
+  const setSeg = (v: PortfolioSegment) => {
+    setSegPref(v);
+    if (urlView) replaceQuery(portfolioHref({ view: v }));
+  };
   const [archivedOpen, setArchivedOpen] = usePocketFlag(ARCHIVED_OPEN_KEY);
   const [creating, setCreating] = useState(false);
   const archivedId = useId();
@@ -268,7 +281,7 @@ function PortfolioList() {
                 <ul className="divide-y divide-[var(--edge-soft)]">
                   {(section.rows as LoanLine[]).map((l) => (
                     <li key={l.item.id}>
-                      <LoanRow line={l} base={base} />
+                      <LoanRow line={l} base={base} onOpen={(id) => openLoan(id, urlView)} />
                     </li>
                   ))}
                 </ul>
@@ -405,12 +418,12 @@ function AccountRow({
   );
 }
 
-function LoanRow({ line, base }: { line: LoanLine; base: PortfolioBase }) {
+function LoanRow({ line, base, onOpen }: { line: LoanLine; base: PortfolioBase; onOpen: (id: string) => void }) {
   const { t, locale } = useI18n();
   const { item, amount } = line;
   return (
     <Row
-      href="/loans"
+      onClick={() => onOpen(item.id)}
       leading={<LoanAvatar />}
       title={item.name}
       meta={item.endDate ? t("pocket.portfolio.debtFree", { date: monthLabel(item.endDate.slice(0, 7), locale) }) : item.currency}

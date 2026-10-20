@@ -3,6 +3,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays, addMonthsClamped } from "@/lib/domain/recurrence";
 import { AccountSeries, balanceAt, compareEvents, lowestAhead, LowPoint, TimelineEvent, TimelineMilestone } from "@/lib/domain/timeline";
+import { loanHref } from "./portfolioUrl";
 
 /**
  * The timeline (lib/domain/timeline.ts) as the screens list it: filtered,
@@ -295,7 +296,7 @@ export function lowestRows(series: ReadonlyMap<string, AccountSeries>, today: st
 }
 
 export function milestoneHref(milestone: TimelineMilestone): string {
-  if (milestone.what === "loan") return "/loans";
+  if (milestone.what === "loan") return loanHref(milestone.id);
   if (milestone.what === "purchase") return "/cards";
   return "/transactions?tab=recurring";
 }

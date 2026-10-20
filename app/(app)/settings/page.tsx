@@ -9,7 +9,7 @@ import { KEYS, useAccounts, useAppMutation, useBudgets, useCategories, useRates,
 import { isBackupFile } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, TxDirection, UserSettings, VICTVS_TYPES, victvsTypeList } from "@/lib/data/types";
 import { NAV } from "@/components/shell";
-import { encodeNav, NavEntry, navEntries } from "@/components/shell.nav";
+import { encodeNav, NavEntry, navEntries, navHost } from "@/components/shell.nav";
 import { LegacyImportModal } from "@/components/legacyImportModal";
 import { COLLAPSE_HISTORY_KEY, SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
@@ -532,6 +532,8 @@ function PhoneLayoutCard() {
   const [hideAmounts, setHideAmounts] = usePocketFlag(POCKET_KEYS.hideAmounts);
   const [range, setRange] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const choices = fourthTabChoices(settings.data?.navOrder);
+  // a choice of a page that moved into another reads as its host, as the bar has it
+  const fourthHost = navHost(fourth);
   return (
     <Card>
       <span id={PHONE_LAYOUT_ANCHOR} className="block scroll-mt-20" />
@@ -572,7 +574,7 @@ function PhoneLayoutCard() {
           <div className="space-y-3 border-t border-[var(--edge-soft)] pt-3">
             {choices.length > 0 ? (
               <Field label={t("pocket.fourthTab")} hint={t("pocket.fourthTabHint")}>
-                <Select value={choices.some((c) => c.href === fourth) ? fourth : choices[0].href} onChange={(e) => setFourth(e.target.value)}>
+                <Select value={choices.some((c) => c.href === fourthHost) ? fourthHost : choices[0].href} onChange={(e) => setFourth(e.target.value)}>
                   {choices.map((c) => (
                     <option key={c.href} value={c.href}>
                       {t(c.key)}

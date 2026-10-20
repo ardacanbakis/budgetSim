@@ -2,13 +2,16 @@
  * A failed database request, with the Postgres or PostgREST code kept.
  * `new Error(error.message)` dropped it, and the code is what tells a
  * foreign-key restrict apart from a missing migration or an expired session.
+ * `migration` names the file that would fix it, where the repo knows which
+ * (a save that needs a newer column).
  */
 export class DbError extends Error {
   constructor(
     message: string,
     readonly code: string | null,
     readonly details: string | null = null,
-    readonly hint: string | null = null
+    readonly hint: string | null = null,
+    readonly migration: string | null = null
   ) {
     super(message);
     this.name = "DbError";
@@ -49,6 +52,8 @@ export interface ErrorDescription {
   kind: ErrorKind;
   /** shown under the plain message: the constraint name, or the raw message when nothing better is known */
   detail: string;
+  /** needsMigration only: the file in supabase/migrations to run, when known */
+  migration?: string;
 }
 
 const MIGRATION_CODES = new Set(["42703", "42P01", "42883", "PGRST202", "PGRST204", "PGRST205"]);
@@ -62,7 +67,10 @@ export function describeError(err: unknown): ErrorDescription {
   if (err instanceof IncompleteReadError) return { kind: "incompleteRead", detail: message };
   if ((code && SESSION_CODES.has(code)) || /jwt expired/i.test(message)) return { kind: "sessionExpired", detail: message };
   if (/failed to fetch|networkerror|network request failed|load failed/i.test(message)) return { kind: "offline", detail: message };
-  if (code && MIGRATION_CODES.has(code)) return { kind: "needsMigration", detail: message };
+  if (code && MIGRATION_CODES.has(code)) {
+    const migration = err instanceof DbError ? err.migration : null;
+    return migration ? { kind: "needsMigration", detail: message, migration } : { kind: "needsMigration", detail: message };
+  }
   if (code === "23503") {
     return { kind: /^update or delete/i.test(message) ? "inUse" : "missingLink", detail: message };
   }

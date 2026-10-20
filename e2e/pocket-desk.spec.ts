@@ -7,13 +7,20 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * The desk pages inside Pocket: Debt, Reports, Planner and Evim sistemi keep
+ * The desk pages inside Pocket: Reports, Plan, and Plan's Evim sistemi and loan simulator tabs keep
  * their Classic markup, and marker classes fix what breaks on a phone. Runs in
  * the demo at 390×844 with the Pocket phone layout switched on, then checks
  * that the same classes do nothing with Pocket off.
  */
 
 const DESK = ["loans", "reports", "planner", "savings"] as const;
+/** where each desk page lives: Evim sistemi is a tab of Plan */
+const PATH: Record<(typeof DESK)[number], string> = {
+  loans: "/planner?tab=loan",
+  reports: "/reports",
+  planner: "/planner",
+  savings: "/planner?tab=evim",
+};
 
 async function enterDemo(page: Page, width = 390, height = 844) {
   await page.setViewportSize({ width, height });
@@ -34,7 +41,7 @@ async function enterPocket(page: Page, width = 390, height = 844) {
 }
 
 async function open(page: Page, route: (typeof DESK)[number]) {
-  await page.goto(`/${route}`);
+  await page.goto(PATH[route]);
   await expect(page.locator("main h1").first()).toBeVisible({ timeout: 15_000 });
 }
 
@@ -76,14 +83,15 @@ async function expectSheetWithPinnedButtons(page: Page, title: RegExp, primary: 
 }
 
 test.describe("Pocket desk pages", () => {
-  test("Debt: tracked loans first, simulator figures apart, schedule without an inner scroll", async ({ page }) => {
+  test("Loan simulator: figures apart, schedule without an inner scroll, tracked loans after it", async ({ page }) => {
     await enterPocket(page);
     await open(page, "loans");
 
+    // the tab is about simulating; what's tracked follows it, each a link to the Portfolio
     const tracked = page.getByText("Tracked loans", { exact: true });
     const simulator = page.getByText("Simulator", { exact: true });
     await expect(tracked).toBeVisible();
-    expect((await tracked.boundingBox())!.y).toBeLessThan((await simulator.boundingBox())!.y);
+    expect((await tracked.boundingBox())!.y).toBeGreaterThan((await simulator.boundingBox())!.y);
 
     // each result's figure stays inside its own column and clear of its neighbours
     const results = page.locator("main .pocket-cols-2");
@@ -189,7 +197,12 @@ test.describe("Pocket desk pages", () => {
     await expect(page.getByRole("button", { name: "Export JSON" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
 
-    const scroller = page.locator("main .pocket-unscroll");
+    // the projections card keeps the rest of the months behind Show all
+    // rather than in a scroll of its own; opened, it reads in the page's scroll
+    const card = page.locator('main [data-plan-card="projections"]');
+    const scroller = card.locator("[data-plan-card-body]");
+    expect((await scrollState(scroller)).overflowY).toBe("clip");
+    await card.getByRole("button", { name: "Show all of Projections" }).click();
     expect(await scrollState(scroller)).toEqual({ maxHeight: "none", overflowY: "visible", trapped: false });
     const month = scroller.locator("tbody tr").first();
     await expect(month.locator("td")).toHaveCount(5);
@@ -260,7 +273,7 @@ test.describe("Pocket desk pages", () => {
       ],
       planner: [
         { part: "budgets", find: (p) => p.getByText("Monthly budgets", { exact: true }) },
-        { part: "projections", find: (p) => p.locator("main .pocket-unscroll") },
+        { part: "projections", find: (p) => p.locator('main [data-plan-card="projections"]') },
       ],
       savings: [{ part: "schedule", find: (p) => p.locator("main table", { has: p.locator("td[data-label='Cash out']") }) }],
     };
@@ -311,5 +324,6 @@ test("Pocket off: the desk markers change nothing", async ({ page }) => {
 
   await open(page, "planner");
   await expect(page.getByRole("button", { name: "Export JSON" })).toBeVisible();
-  expect(await page.locator("main .pocket-unscroll").evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
+  // the projections scroll inside their card, at its preset height
+  expect(await page.locator('main [data-plan-card="projections"] [data-plan-card-body]').evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { toDbError } from "@/lib/data/errors";
+import { DbError, toDbError } from "@/lib/data/errors";
 import { currentToasts, dismissToast, showErrorToast, TOAST_MS } from "../toasts";
 
 const pg = (code: string, message: string) => toDbError({ code, message });
@@ -38,6 +38,15 @@ describe("error toasts", () => {
     showErrorToast("load", pg("42703", "column accounts.credit_limit does not exist"));
     showErrorToast("save", pg("PGRST204", "Could not find the 'legacy' column"));
     expect(currentToasts()).toHaveLength(1);
+  });
+
+  it("names the migration a save needs, once, beside the general one", () => {
+    const needs0017 = () =>
+      new DbError("Could not find the 'victvs_forecast' column", "PGRST204", null, null, "0017_victvs_forecast.sql");
+    showErrorToast("load", pg("42703", "column transactions.legacy does not exist"));
+    showErrorToast("save", needs0017());
+    showErrorToast("save", needs0017());
+    expect(currentToasts().map((t) => t.migration)).toEqual([undefined, "0017_victvs_forecast.sql"]);
   });
 
   it("doesn't repeat the same failure, but shows different ones", () => {

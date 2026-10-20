@@ -40,7 +40,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
 import { readHoldings } from "@/lib/domain/gold";
-import { toDbError } from "./errors";
+import { DbError, describeError, toDbError } from "./errors";
 import { selectAll } from "./paginate";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -802,7 +802,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
     if (!data) {
-      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null, showRateTicker: null };
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null, showRateTicker: null, victvsForecast: null };
     }
     return {
       dashboardLayout: data.dashboard_layout,
@@ -814,6 +814,8 @@ export class SupabaseRepo implements Repo {
       dateFormat: data.date_format ?? null,
       showQuickAdd: data.show_quick_add ?? null,
       showRateTicker: data.show_rate_ticker ?? null,
+      // absent before migration 0017: no figures of your own
+      victvsForecast: data.victvs_forecast ?? null,
     };
   }
 
@@ -828,7 +830,13 @@ export class SupabaseRepo implements Repo {
     if (patch.dateFormat !== undefined) row.date_format = patch.dateFormat;
     if (patch.showQuickAdd !== undefined) row.show_quick_add = patch.showQuickAdd;
     if (patch.showRateTicker !== undefined) row.show_rate_ticker = patch.showRateTicker;
+    // sent only when it changes, so every other setting keeps saving on a
+    // database without 0017; a forecast edit there says which file to run
+    if (patch.victvsForecast !== undefined) row.victvs_forecast = patch.victvsForecast;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
+    if (error && patch.victvsForecast !== undefined && describeError(toDbError(error)).kind === "needsMigration") {
+      throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0017_victvs_forecast.sql");
+    }
     throwIf(error);
   }
 

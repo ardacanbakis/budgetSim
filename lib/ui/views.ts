@@ -22,7 +22,7 @@ export function isDensity(v: string): v is Density {
 }
 
 /** Every list-shaped screen that offers a choice of shape. */
-export const SURFACES = ["accounts", "transactions", "cards", "victvs", "recurring", "loans"] as const;
+export const SURFACES = ["accounts", "transactions", "cards", "victvs", "recurring"] as const;
 export type SurfaceId = (typeof SURFACES)[number];
 
 export const SHAPES = ["rows", "grid", "table"] as const;
@@ -47,7 +47,6 @@ export const SURFACE_SPECS: Record<SurfaceId, SurfaceSpec> = {
   cards: { id: "cards", shapes: ["rows", "grid", "table"], columns: true },
   victvs: { id: "victvs", shapes: ["table", "rows"], columns: false },
   recurring: { id: "recurring", shapes: ["rows", "table"], columns: false },
-  loans: { id: "loans", shapes: ["rows", "grid"], columns: true },
 };
 
 export function defaultShape(id: SurfaceId): Shape {

@@ -13,6 +13,8 @@ export interface ErrorToast {
   action: "save" | "load";
   kind: ErrorKind;
   detail: string;
+  /** the migration file to run, when the failed save knows it */
+  migration?: string;
 }
 
 export const TOAST_MS = 10_000;
@@ -26,12 +28,15 @@ const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
 
 export function showErrorToast(action: ErrorToast["action"], err: unknown): void {
-  const { kind, detail } = describeError(err);
+  const { kind, detail, migration } = describeError(err);
   // One cause often fails several requests at once: an expired session or a
-  // missing migration breaks every list on the page. Say it once.
-  const repeat = toasts.some((t) => t.kind === kind && (STICKY.has(kind) || (t.action === action && t.detail === detail)));
+  // missing migration breaks every list on the page. Say it once (once per
+  // file, when the save knows which migration it needs).
+  const repeat = toasts.some(
+    (t) => t.kind === kind && ((STICKY.has(kind) && t.migration === migration) || (t.action === action && t.detail === detail))
+  );
   if (repeat) return;
-  const toast: ErrorToast = { id: nextId++, action, kind, detail };
+  const toast: ErrorToast = { id: nextId++, action, kind, detail, ...(migration ? { migration } : {}) };
   toasts = [...toasts, toast].slice(-MAX_SHOWN);
   emit();
   if (!STICKY.has(kind)) setTimeout(() => dismissToast(toast.id), TOAST_MS);

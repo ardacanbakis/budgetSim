@@ -10,6 +10,9 @@ import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
+import * as pages from "./pages";
+import * as planCards from "./planCards";
+import * as victvsForecast from "./victvsForecast";
 
 export const en = {
   common: {
@@ -60,7 +63,7 @@ export const en = {
     victvs: "VICTVS",
     loans: "Debt",
     reports: "Reports",
-    planner: "Planner",
+    planner: "Plan",
     savings: "Evim sistemi",
     settings: "Settings",
     logout: "Log out",
@@ -241,7 +244,7 @@ export const en = {
     balloon: "final",
     delivery: "delivery",
     overlayTitle: "Evim sistemi",
-    overlayOpen: "Open planner",
+    overlayOpen: "Open Evim sistemi",
     overlayEmpty: "No saved scenarios yet. Build one and it can be laid over this projection.",
     overlayNoDelivery: "no delivery",
     overlayLine: "{first} first, {months} instalments",
@@ -508,6 +511,7 @@ export const en = {
     sameCurrencyHint: "Same currency — amounts should normally match.",
   },
   victvs: {
+    ...victvsForecast.en,
     forecastTitle: "Forecast",
     forecastSeasonal: "Each month from the same month in earlier years ({months} months of history).",
     forecastRecent: "Less than a year of history: months without an earlier year use your recent months.",
@@ -738,8 +742,6 @@ export const en = {
     debtFree: "Debt-free",
     avalanche: "Attack first (highest rate)",
     cards: "Credit cards",
-    posted: "in statements to pay",
-    upcoming: "charged or in installments to come",
     perMonth: "per month",
   },
   legacy: {
@@ -933,6 +935,7 @@ export const en = {
     rejected: "The database turned down one of the values, for example an amount of 0.",
     duplicate: "That already exists.",
     needsMigration: "The database is behind this version of the app. Run the newest files from supabase/migrations in the Supabase SQL editor.",
+    needsMigrationFile: "The database is behind this version of the app. Run supabase/migrations/{file} in the Supabase SQL editor.",
     sessionExpired: "Your session has expired. Sign in again.",
     offline: "Couldn't reach the server. Check your connection and try again.",
     incompleteRead: "The data changed while it was loading. Try again.",
@@ -1017,6 +1020,8 @@ export const en = {
     demoData: "Demo data",
   },
   extras: extras.en,
+  pages: pages.en,
+  planCards: planCards.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -1077,7 +1082,7 @@ export const tr: Dictionary = {
     victvs: "VICTVS",
     loans: "Borçlar",
     reports: "Raporlar",
-    planner: "Planlayıcı",
+    planner: "Plan",
     savings: "Evim sistemi",
     settings: "Ayarlar",
     logout: "Çıkış",
@@ -1258,7 +1263,7 @@ export const tr: Dictionary = {
     balloon: "son",
     delivery: "teslim",
     overlayTitle: "Evim sistemi",
-    overlayOpen: "Planlayıcıyı aç",
+    overlayOpen: "Evim sistemini aç",
     overlayEmpty: "Henüz kayıtlı senaryo yok. Bir tane oluştur, bu projeksiyonun üzerine bindirilebilir.",
     overlayNoDelivery: "teslim yok",
     overlayLine: "İlk {first}, {months} taksit",
@@ -1525,6 +1530,7 @@ export const tr: Dictionary = {
     sameCurrencyHint: "Aynı para birimi — tutarlar normalde eşit olmalı.",
   },
   victvs: {
+    ...victvsForecast.tr,
     forecastTitle: "Tahmin",
     forecastSeasonal: "Her ay, önceki yılların aynı ayından ({months} aylık geçmiş).",
     forecastRecent: "Geçmiş bir yıldan kısa: önceki yılı olmayan aylar son aylarınızdan hesaplanır.",
@@ -1755,8 +1761,6 @@ export const tr: Dictionary = {
     debtFree: "Borçsuz tarih",
     avalanche: "Önce buna saldır (en yüksek faiz)",
     cards: "Kredi kartları",
-    posted: "ödenecek ekstrelerde",
-    upcoming: "harcanmış ya da gelecek taksitlerde",
     perMonth: "aylık",
   },
   legacy: {
@@ -1950,6 +1954,7 @@ export const tr: Dictionary = {
     rejected: "Veritabanı değerlerden birini kabul etmedi, örneğin 0 tutarını.",
     duplicate: "Bu zaten var.",
     needsMigration: "Veritabanı uygulamanın bu sürümünün gerisinde. supabase/migrations klasöründeki en yeni dosyaları Supabase SQL editöründe çalıştır.",
+    needsMigrationFile: "Veritabanı uygulamanın bu sürümünün gerisinde. supabase/migrations/{file} dosyasını Supabase SQL editöründe çalıştır.",
     sessionExpired: "Oturumunun süresi doldu. Tekrar giriş yap.",
     offline: "Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.",
     incompleteRead: "Veriler yüklenirken değişti. Tekrar dene.",
@@ -2034,6 +2039,8 @@ export const tr: Dictionary = {
     demoData: "Demo verisi",
   },
   extras: extras.tr,
+  pages: pages.tr,
+  planCards: planCards.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",

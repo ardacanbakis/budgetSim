@@ -63,6 +63,26 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go("/settings?tab=dashboard"),
     });
+    // a tab of Plan now, not a page of its own
+    pages.push({
+      id: "nav:/planner?tab=evim",
+      label: t("nav.savings"),
+      hint: t("palette.page"),
+      run: go("/planner?tab=evim"),
+    });
+    pages.push({
+      id: "nav:/planner?tab=loan",
+      label: t("pages.loanSimulator"),
+      hint: t("palette.page"),
+      run: go("/planner?tab=loan"),
+    });
+    // Debt is a view of the Portfolio now
+    pages.push({
+      id: "nav:/accounts?view=debts",
+      label: t("pocket.portfolio.segDebts"),
+      hint: t("palette.page"),
+      run: go("/accounts?view=debts"),
+    });
     pages.push({
       id: "nav:/transactions?tab=timeline",
       label: t("timeline.tab"),

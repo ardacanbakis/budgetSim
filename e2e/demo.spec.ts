@@ -1,5 +1,6 @@
 import { expect, Page, test } from "@playwright/test";
 import { pinRates } from "./support/rates";
+import { stepHeight } from "../lib/ui/plannerCards";
 
 // the same rates in every run, offline or in CI (see support/rates.ts)
 test.beforeEach(async ({ page }) => {
@@ -40,7 +41,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "cards", "accounts", "loans", "reports", "planner"] as const) {
+    for (const route of ["victvs", "transactions", "cards", "accounts", "reports", "planner"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(700);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
@@ -53,7 +54,7 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/accounts");
   await expect(page.getByText(/Select an account|Geçmişini görmek/)).toBeVisible();
-  // cards have their own page now, so the portfolio lists everything else
+  // cards are paid on their own page: the portfolio lists one as a link there, never a pane of its own
   await expect(page.getByRole("button", { name: /Bonus Card/ })).toHaveCount(0);
   await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
   await expect(page.getByRole("heading", { name: /History|Geçmiş/i })).toBeVisible();
@@ -963,10 +964,10 @@ test("part3: phone bar shows five targets and a More sheet", async ({ page }) =>
 
   await bar.getByRole("button", { name: /more|daha/i }).click();
   const sheet = page.locator(".fixed.inset-0").filter({ hasText: /More|Daha/ });
-  await expect(sheet.getByRole("link", { name: /planner|planlayıcı/i })).toBeVisible();
+  await expect(sheet.getByRole("link", { name: /\bplan$/i })).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/mobile-more-sheet.png" });
 
-  await sheet.getByRole("link", { name: /planner|planlayıcı/i }).click();
+  await sheet.getByRole("link", { name: /\bplan$/i }).click();
   await expect(page).toHaveURL(/\/planner/);
   // the page you're on stays visible in the bar even though it lives in More
   await expect(bar.locator('a[aria-current="page"]')).toHaveCount(1);
@@ -997,7 +998,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/accounts?view=debts", "/reports", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -1009,7 +1010,7 @@ test("scenarios: named plans save, reload and compare", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
   await page.goto("/planner");
-  await expect(page.getByRole("heading", { name: /planner|planlayıcı/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^plan$/i })).toBeVisible();
 
   // the plan that was device-local is now a named scenario
   const picker = page.getByLabel(/^Scenario$/i);
@@ -1121,14 +1122,18 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   const after = (await card.boundingBox())!;
   expect(after.width).toBeLessThan(before.width);
 
+  // heights step through the size presets (lib/ui/plannerCards.ts): from
+  // its L preset, the next step up
+  const h1 = stepHeight(h0, 1);
+  expect(h1).toBeGreaterThan(h0);
   await page.getByRole("button", { name: /^Taller: Projections$/ }).click();
   await page.waitForTimeout(300);
-  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h0 + 1}$`));
+  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h1}$`));
   expect((await card.boundingBox())!.height).toBeGreaterThan(after.height);
 
   // the table inside grows with the card rather than stopping at the 448px
   // cap it used to carry; the horizon slider sits above it in the same card
-  const inner = card.locator(".fill-in-grid");
+  const inner = card.locator("[data-plan-card-body]");
   const tall = (await card.boundingBox())!.height;
   const innerHeight = (await inner.boundingBox())!.height;
   expect(innerHeight).toBeGreaterThan(448);
@@ -1161,7 +1166,7 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await expect(page.getByRole("button", { name: /^Custom$/ })).toHaveClass(/shadow-sm/);
   await expect(page.locator('[data-card="projections"]')).toHaveAttribute(
     "data-box",
-    new RegExp(`,${w0 - 1},${h0 + 1}$`)
+    new RegExp(`,${w0 - 1},${h1}$`)
   );
   await expect(page.locator('[data-card="chart"]')).toHaveAttribute("data-box", chartSize);
   await expect(page.locator('[data-card="lost"]')).toHaveCount(0); // still hidden
@@ -1377,9 +1382,13 @@ test("cards: own page, payment logging, and a per-card schedule", async ({ page 
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
 
-  // credit cards have left the portfolio
-  await page.goto("/accounts");
+  // the portfolio lists a card only as what it owes, a link to this page,
+  // and only where debts are shown
+  await page.goto("/accounts?view=assets");
+  await expect(page.getByRole("button", { name: "Assets", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Credit cards")).toHaveCount(0);
+  await page.goto("/accounts");
+  await expect(page.getByRole("link", { name: /Bonus Card/ })).toHaveAttribute("href", "/cards");
 
   await page.goto("/cards");
   await expect(page.getByRole("heading", { name: /^Cards$/ })).toBeVisible();
@@ -1622,8 +1631,8 @@ test("style: quick jump finds a page and an account by a few letters", async ({ 
   await expect(palette).toBeVisible();
 
   // a subsequence is enough — you don't have to type the name in full
-  await page.keyboard.type("plnr");
-  await expect(palette.getByRole("button", { name: /Planner/ })).toBeVisible();
+  await page.keyboard.type("pln");
+  await expect(palette.getByRole("button", { name: /^Plan/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await page.waitForTimeout(1200);
   await expect(page).toHaveURL(/\/planner/);
@@ -1727,7 +1736,7 @@ test("planner: what-if items group by type by default and split into two cards",
 
 test("savings: three modes, at every screen size", async ({ page }) => {
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   const sizes = [
@@ -1757,7 +1766,7 @@ test("savings: three modes, at every screen size", async ({ page }) => {
 test("savings: the schedule reproduces a real quote to the kuruş", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   // fixture B, with the signing date pinned so the dates are deterministic
@@ -1790,7 +1799,7 @@ test("savings: the schedule reproduces a real quote to the kuruş", async ({ pag
 test("savings: a flat schedule collapses the tier tags", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   const stepper = page.getByRole("group", { name: /step-up/i });
@@ -1810,7 +1819,7 @@ test("savings: a flat schedule collapses the tier tags", async ({ page }) => {
 test("savings: a violation offers a fix that writes back into the form", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1100 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   // ₺100,000 stretches the term and breaks the one-third spread
@@ -1832,7 +1841,7 @@ test("savings: a violation offers a fix that writes back into the form", async (
 test("savings: a saved scenario survives a deep link and overlays the planner", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1100 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   await page.getByLabel("Scenario name").fill("Evim 5M");
@@ -1840,7 +1849,7 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.waitForTimeout(1200);
 
   // saving claims a URL, which is the share link
-  await expect(page).toHaveURL(/\/savings\?plan=/);
+  await expect(page).toHaveURL(/\/planner\?tab=evim&plan=/);
   const url = page.url();
 
   // and that link reopens it from cold
@@ -1850,9 +1859,15 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.waitForTimeout(1500);
   await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
 
+  // so does the address it had before Evim sistemi was a tab of Plan
+  const id = new URL(url).searchParams.get("plan")!;
+  await page.goto(`/savings?plan=${id}`);
+  await expect(page).toHaveURL(new RegExp(`/planner\\?tab=evim&plan=${id}$`));
+  await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
+
   // New scenario lets go of the link, though the page was opened by it
   await page.getByRole("button", { name: "New scenario" }).click();
-  await expect(page).toHaveURL(/\/savings$/);
+  await expect(page).toHaveURL(/\/planner\?tab=evim$/);
   await expect(page.getByLabel("Scenario name")).toHaveValue("");
 
   // the planner can lay it over the projection without writing anything
@@ -2011,7 +2026,7 @@ const tile = (page: Page, caption: string) =>
 test("loans: a custom schedule posts its own payments into future months", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   // an equal-principal loan pays a different amount every month, which is the
@@ -2051,7 +2066,7 @@ test("loans: a custom schedule posts its own payments into future months", async
 test("loans: Turkish levies are on by default and move the installment", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   // consumer credit pays KKDF 15 and BSMV 10, which is why a bank's quote
@@ -2074,7 +2089,7 @@ test("loans: Turkish levies are on by default and move the installment", async (
 test("loans: an interest-free plan charges no interest and no levies", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   await num(page, "Principal").fill("120000");

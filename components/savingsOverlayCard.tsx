@@ -1,13 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
+import { CardSize } from "@/lib/ui/plannerCards";
 import { PlanRecord } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { buildSavingsPlan, normalizeSavingsBody, SavingsPlan } from "@/lib/domain/savingsFinance";
 import { ExtraFlow } from "@/lib/domain/projector";
 import { monthsBetween } from "@/lib/domain/planner";
 import { useI18n } from "@/lib/i18n";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 
 /**
  * Turn a saved savings-finance scenario into hypothetical flows for the
@@ -58,46 +60,60 @@ export function savingsOverlayFlows(plan: SavingsPlan, months: number, firstMont
  * is deliberately not persisted — this is "what would this do to my year",
  * not a commitment.
  */
+/**
+ * Evim sistemi is the next tab on this page, so the link changes the query in
+ * place (lib/ui/shallowUrl.ts); it stays a link for opening in a new tab.
+ */
+function OpenEvim() {
+  const { t } = useI18n();
+  return (
+    <a
+      href="/planner?tab=evim"
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        replaceQuery("/planner?tab=evim");
+        window.scrollTo(0, 0);
+      }}
+      className="text-xs text-teal-600 hover:underline dark:text-teal-400"
+    >
+      {t("savings.overlayOpen")}
+    </a>
+  );
+}
+
 export function SavingsOverlayCard({
   plans,
   enabled,
   onToggle,
   today,
+  size,
 }: {
   plans: PlanRecord[];
   enabled: string[];
   onToggle: (id: string) => void;
   today: string;
+  size?: CardSize;
 }) {
   const { t, locale } = useI18n();
 
   return (
-    <Card>
-      <CardHeader
-        title={t("savings.overlayTitle")}
-        action={
-          <Link href="/savings" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-            {t("savings.overlayOpen")}
-          </Link>
-        }
-      />
+    <PlanCard
+      id="savings"
+      size={size}
+      title={t("savings.overlayTitle")}
+      hint={t("savings.overlayEphemeral")}
+      footer={<OpenEvim />}
+    >
       {plans.length === 0 ? (
-        <div className="p-4">
-          <EmptyState action={
-            <Link href="/savings" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-              {t("savings.overlayOpen")}
-            </Link>
-          }>
-            {t("savings.overlayEmpty")}
-          </EmptyState>
-        </div>
+        <EmptyState>{t("savings.overlayEmpty")}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[var(--edge-soft)]">
+        <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
           {plans.map((record) => {
             const built = buildSavingsPlan(normalizeSavingsBody(record.body, today).input);
             const on = enabled.includes(record.id);
             return (
-              <li key={record.id} className={`flex items-center gap-3 px-4 py-2.5 ${on ? "" : "opacity-60"}`}>
+              <li key={record.id} className={`flex items-center gap-3 py-2.5 ${on ? "" : "opacity-60"}`}>
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-teal-600"
@@ -129,9 +145,6 @@ export function SavingsOverlayCard({
           })}
         </ul>
       )}
-      <p className="border-t border-[var(--edge-soft)] px-4 py-2 text-xs text-zinc-500">
-        {t("savings.overlayEphemeral")}
-      </p>
-    </Card>
+    </PlanCard>
   );
 }

@@ -285,6 +285,7 @@ export function buildDemoSeed(): DemoStore {
       dateFormat: null,
       showQuickAdd: null,
       showRateTicker: true,
+      victvsForecast: null,
     },
     snapshots,
   };

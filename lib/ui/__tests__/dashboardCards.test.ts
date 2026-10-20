@@ -122,7 +122,7 @@ describe("statementRows", () => {
 
 describe("debtHref", () => {
   it("opens the loans page", () => {
-    expect(debtHref("loan-1")).toBe("/loans");
-    expect(debtHref()).toBe("/loans");
+    expect(debtHref("loan-1")).toBe("/accounts?view=debts&loan=loan-1");
+    expect(debtHref()).toBe("/accounts?view=debts");
   });
 });
