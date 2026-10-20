@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Select, Spinner, Textarea } from "@/components/ui";
 import { THEMES, Theme, useApp, useRepo } from "@/lib/data/provider";
@@ -27,11 +27,17 @@ import { DEFAULT_FOURTH, fourthTabChoices } from "@/lib/ui/pocket/bar";
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { RateSourcesCard } from "@/components/settingsRates";
 import { ViewsCard } from "@/components/settingsViews";
+import { DashboardAccountsCard, DashboardCardsCard, PocketHomeCard } from "@/components/settingsDashboard";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 
-const SETTINGS_TABS = ["preferences", "categories", "victvs", "data", "account"] as const;
+const SETTINGS_TABS = ["preferences", "dashboard", "categories", "victvs", "data", "account"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
+const isSettingsTab = (v: string | null): v is SettingsTab => v != null && (SETTINGS_TABS as readonly string[]).includes(v);
+/** the last tab open, for a visit to /settings without ?tab= */
+const TAB_KEY = "renovator-settings-tab";
 const TAB_ICON: Record<SettingsTab, string> = {
   preferences: "⚙",
+  dashboard: "▦",
   categories: "🏷",
   victvs: "✓",
   data: "⇅",
@@ -39,39 +45,74 @@ const TAB_ICON: Record<SettingsTab, string> = {
 };
 
 export default function SettingsPage() {
+  // useSearchParams needs a Suspense boundary on a prerendered page
+  return (
+    <Suspense fallback={<Spinner />}>
+      <SettingsScreen />
+    </Suspense>
+  );
+}
+
+/**
+ * The open tab lives in the URL (?tab=dashboard), so a link can open one;
+ * without it, the page opens on the tab last used here (TAB_KEY), else
+ * Preferences. Switching replaces the query rather than navigating, so Back
+ * leaves Settings rather than stepping through its tabs.
+ */
+function SettingsScreen() {
   const { t } = useI18n();
   const { session, signOut, resetDemo } = useApp();
   const pocket = usePocket();
   const repo = useRepo();
   const categories = useCategories();
   const router = useRouter();
+  const params = useSearchParams();
   const [confirmText, setConfirmText] = useState("");
   const [newCatName, setNewCatName] = useState("");
   const [newCatDirection, setNewCatDirection] = useState<TxDirection>("expense");
-  const [tab, setTab] = useState<SettingsTab>("preferences");
+  const [lastTab, setLastTab] = useState<SettingsTab>("preferences");
+  const fromUrl = params.get("tab");
+  const tab: SettingsTab = isSettingsTab(fromUrl) ? fromUrl : lastTab;
   // how many times Pocket's More sheet asked for the Phone layout card here
   const [showPhone, setShowPhone] = useState(0);
 
+  const switchTab = (v: SettingsTab) => {
+    setLastTab(v);
+    try {
+      window.localStorage.setItem(TAB_KEY, v);
+    } catch {
+      // the URL still says which tab is open
+    }
+    replaceQuery(`/settings?tab=${v}`);
+  };
+
   useEffect(() => {
     queueMicrotask(() => {
-      const saved = window.localStorage.getItem("renovator-settings-tab");
-      if (saved && (SETTINGS_TABS as readonly string[]).includes(saved)) setTab(saved as SettingsTab);
+      const saved = window.localStorage.getItem(TAB_KEY);
+      if (isSettingsTab(saved)) setLastTab(saved);
     });
     const show = () => {
-      setTab("preferences");
+      setLastTab("preferences");
+      // keep the anchor the card scrolls to; drop a ?tab= naming another tab
+      replaceQuery(`/settings${window.location.hash}`);
       setShowPhone((n) => n + 1);
     };
     window.addEventListener(SHOW_PHONE_LAYOUT_EVENT, show);
     return () => window.removeEventListener(SHOW_PHONE_LAYOUT_EVENT, show);
   }, []);
+  // a tab opened by link is the one to come back to
+  useEffect(() => {
+    if (!isSettingsTab(fromUrl)) return;
+    try {
+      window.localStorage.setItem(TAB_KEY, fromUrl);
+    } catch {
+      // nothing to remember it in
+    }
+  }, [fromUrl]);
   // once Preferences is showing, the card is there to scroll to
   useEffect(() => {
     if (showPhone) document.getElementById(PHONE_LAYOUT_ANCHOR)?.scrollIntoView({ block: "start" });
   }, [showPhone]);
-  const switchTab = (v: SettingsTab) => {
-    setTab(v);
-    window.localStorage.setItem("renovator-settings-tab", v);
-  };
 
   const createCategory = useAppMutation(
     (input: { name: string; direction: TxDirection; color: string }) => repo.createCategory(input),
@@ -106,7 +147,7 @@ export default function SettingsPage() {
               }`}
             >
               <span className="text-xs">{TAB_ICON[v]}</span>
-              {t(`settings.tab_${v}`)}
+              {t(v === "dashboard" ? "dashboard.settingsTab" : `settings.tab_${v}`)}
             </button>
           ))}
         </div>
@@ -123,6 +164,15 @@ export default function SettingsPage() {
           <AppearanceCard />
           <RateSourcesCard />
           <SidebarOrderCard />
+        </>
+      ) : null}
+
+      {tab === "dashboard" ? (
+        <>
+          {pocket ? <PocketHomeCard /> : null}
+          <DashboardCardsCard />
+          <DashboardAccountsCard />
+          {pocket ? null : <PocketHomeCard />}
         </>
       ) : null}
 

@@ -219,7 +219,7 @@ test.describe("Pocket home", () => {
     await budgets.getByRole("button", { name: /All budgets \(2\)/ }).click();
     const sheet = page.getByRole("dialog");
     await expect(sheet.getByRole("progressbar")).toHaveCount(2);
-    await expect(sheet.getByRole("link", { name: /Edit limits/ })).toHaveAttribute("href", "/settings");
+    await expect(sheet.getByRole("link", { name: /Edit limits/ })).toHaveAttribute("href", "/settings?tab=categories");
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
 
@@ -251,6 +251,101 @@ test.describe("Pocket home", () => {
     expect((await store(page)).settings.dashboardLayout).toBeNull();
   });
 
+  test("the Customise Home sheet hides and moves sections, on this phone only", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByRole("switch", { name: "Budgets" }).click();
+    await expect(sheet.getByRole("switch", { name: "Budgets" })).toHaveAttribute("aria-checked", "false");
+    await sheet.getByRole("button", { name: "Move Recent activity up" }).click();
+    await sheet.getByRole("button", { name: "Move Recent activity up" }).click();
+    // the first and last rows can't move further
+    await expect(sheet.getByRole("button", { name: "Move Coming up up" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    expect(await headings(page)).toEqual(["Coming up", "Recent activity", "Accounts"]);
+    expect(JSON.parse((await page.evaluate(() => localStorage.getItem("renovator-pocket-home")))!)).toEqual([
+      "comingUp",
+      "recent",
+      "accounts",
+      "!budgets",
+      "!flow",
+      "!goals",
+      "!gold",
+      "!thisMonth",
+      "!statements",
+      "!trend",
+      "!debt",
+      "!commitments",
+      "!victvsOutlook",
+    ]);
+    expect((await store(page)).settings.dashboardLayout).toBeNull();
+
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Reset sections" }).click();
+    await page.keyboard.press("Escape");
+    expect(await headings(page)).toEqual(["Coming up", "Accounts", "Budgets", "Recent activity"]);
+  });
+
+  test("the sheet's account choices are the dashboards' synced ones, and touch nothing else", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByText("Accounts apply on every device")).toBeVisible();
+    await sheet.getByRole("button", { name: "Choose accounts…" }).click();
+    await sheet.getByRole("switch", { name: "Wise USD" }).click();
+    await expect(sheet.getByRole("switch", { name: "Wise USD" })).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+
+    const strip = page.locator("section").filter({ has: page.getByRole("heading", { name: "Accounts" }) });
+    await expect(strip.getByRole("link", { name: /Wise USD/ })).toHaveCount(0);
+    await expect(strip.locator("li").last()).toContainText("+1");
+    await expect
+      .poll(async () => (await store(page)).settings.dashboardLayout as { hidden: string[]; shown: string[]; accounts: { hidden: string[] } } | null)
+      .toMatchObject({ hidden: [], shown: [], accounts: { hidden: [expect.any(String)] } });
+    // Home's own sections stayed on the phone
+    expect(await page.evaluate(() => localStorage.getItem("renovator-pocket-home"))).toBeNull();
+  });
+
+  test("the dashboards' optional cards can join Home as sections", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    for (const name of ["This month", "Card statements", "12-month trend", "Debts", "Fixed costs", "VICTVS outlook"]) {
+      await sheet.getByRole("switch", { name }).click();
+      await expect(sheet.getByRole("switch", { name })).toHaveAttribute("aria-checked", "true");
+    }
+    await page.keyboard.press("Escape");
+    expect(await headings(page)).toEqual([
+      "Coming up",
+      "Accounts",
+      "Budgets",
+      "Recent activity",
+      "This month",
+      "Card statements",
+      "12-month trend",
+      "Debts",
+      "Fixed costs",
+      "VICTVS outlook",
+    ]);
+    await expect(page.locator('[data-statement="Bonus Card"]')).toBeVisible();
+    // their figures blur with the rest
+    await hero(page).getByRole("button", { name: "Hide amounts" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-hide-amounts", "on");
+    for (const id of ["this-month", "card-statements", "debt", "commitments"]) {
+      const figure = page.locator(`[data-optional-card=${id}] [data-amount]`).first();
+      await expect(figure).toHaveCSS("filter", /blur/);
+    }
+    expect((await store(page)).settings.dashboardLayout).toBeNull();
+  });
+
+  test("Settings → Dashboard holds the same editor, labelled for this phone", async ({ page }) => {
+    await enterPocket(page);
+    await page.goto("/settings?tab=dashboard");
+    await expect(page.getByRole("heading", { name: "Pocket Home · this phone" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("[data-home-editor]").getByRole("switch", { name: "Coming up" })).toBeVisible();
+  });
+
   test("keeps its shape under the Contrast skin", async ({ page }) => {
     await enterPocket(page, { style: "contrast" });
     await expect(page.locator("html")).toHaveAttribute("data-skin", "contrast");
@@ -272,7 +367,23 @@ test.describe("Pocket home, dark", () => {
   test.use({ colorScheme: "dark" });
 
   test("screenshots", async ({ page }) => {
-    await enterPocket(page, { home: ["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold"] });
+    await enterPocket(page, {
+      home: [
+        "comingUp",
+        "accounts",
+        "budgets",
+        "recent",
+        "flow",
+        "goals",
+        "gold",
+        "thisMonth",
+        "statements",
+        "trend",
+        "debt",
+        "commitments",
+        "victvsOutlook",
+      ],
+    });
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.screenshot({ path: `${SHOTS}/pocket-home-dark.png` });
     await page.mouse.wheel(0, 700);
@@ -281,6 +392,9 @@ test.describe("Pocket home, dark", () => {
     await page.mouse.wheel(0, 900);
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/pocket-home-optional-dark.png` });
+    await page.mouse.wheel(0, 1800);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/pocket-home-optional-cards-dark.png` });
   });
 
   test("Terminal at compact density keeps rows at least 48px tall", async ({ page }) => {

@@ -210,9 +210,31 @@ export interface NetWorthSnapshot {
   totalUsd: number;
 }
 
+/**
+ * The dashboard's cards and accounts, synced across devices (a jsonb column:
+ * a new field needs no migration). Read it through normalizeLayout in
+ * lib/ui/dashboardLayout.ts, which fills in what an older row lacks.
+ */
 export interface DashboardLayout {
+  /** every card id, in order */
   order: string[];
+  /** cards turned off */
   hidden: string[];
+  /** cards turned on; a card in neither list follows its default for the style */
+  shown?: string[];
+  accounts?: DashboardAccounts;
+  /** how far Upcoming looks ahead, in days */
+  upcomingDays?: 7 | 14 | 30;
+}
+
+/** Which accounts the dashboards list. Hiding one tidies the lists; every total still counts it. */
+export interface DashboardAccounts {
+  /** account ids left off the lists, so an account added later shows up on its own */
+  hidden: string[];
+  /** leave out accounts with nothing in them (and cards that owe nothing) */
+  hideEmpty: boolean;
+  /** rows on Classic's Accounts card before "+N more"; null = all of them */
+  limit: number | null;
 }
 
 export interface UserSettings {

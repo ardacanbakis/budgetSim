@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode } from "react";
+import { KeyboardEvent, ReactNode, useRef } from "react";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { useI18n } from "@/lib/i18n";
@@ -296,6 +296,77 @@ export function NoteCard({ children, onDismiss }: { children: ReactNode; onDismi
       >
         <Icon name="close" size={18} />
       </button>
+    </div>
+  );
+}
+
+/** The 44px switch's track; the whole row is the control. */
+export function SwitchTrack({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+        on ? "bg-teal-600 dark:bg-teal-500" : "bg-[var(--edge)]"
+      }`}
+    >
+      <span
+        className={`absolute h-6 w-6 rounded-full bg-white shadow transition-transform dark:bg-zinc-100 ${
+          on ? "translate-x-[22px]" : "translate-x-0.5"
+        }`}
+      />
+    </span>
+  );
+}
+
+/**
+ * One choice of a few as a radio group: the selected one checked, arrow keys
+ * move and choose, as a segmented control should read to a screen reader.
+ * Drawn like the kit's Segmented.
+ */
+export function SegmentRadios<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (v: T) => void;
+}) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const onKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = (i + step + options.length) % options.length;
+    onChange(options[next].value);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-[var(--pocket-chip-radius,9999px)] bg-[var(--edge-soft)] p-1">
+      {options.map((o, i) => {
+        const on = value === o.value;
+        return (
+          <button
+            key={o.value}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={on ? 0 : -1}
+            onClick={() => onChange(o.value)}
+            onKeyDown={(e) => onKey(e, i)}
+            className={`relative min-h-[36px] flex-1 rounded-[var(--pocket-chip-radius,9999px)] px-3 text-[13px] font-medium transition-colors before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] ${
+              on ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

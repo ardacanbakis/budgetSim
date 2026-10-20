@@ -3,33 +3,40 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
-import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
-import { useApp, useRepo } from "@/lib/data/provider";
-import {
-  KEYS,
-  useAccounts,
-  useAppMutation,
-  useRates,
-  useTransactions,
-  useUserSettings,
-} from "@/lib/data/queries";
+import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
+import { AccountsLeftOut } from "@/components/dashboardParts";
+import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
+import { GoldLensCard } from "@/components/goldLens";
+import { Button, Card, CardHeader, Spinner } from "@/components/ui";
+import { useApp } from "@/lib/data/provider";
+import { useAccounts, useRates, useTransactions } from "@/lib/data/queries";
 import { DashboardV2 } from "@/components/dashboardV2";
 import { pocketable } from "@/components/pocket/pocketable";
-import { DashboardLayout } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
-import { snapshotFromTable } from "@/lib/domain/fx";
-import { todayISO } from "@/lib/domain/recurrence";
+import {
+  CardId,
+  cardsOff,
+  cardSpec,
+  isCardId,
+  isCardVisible,
+  moveCard,
+  NormalizedLayout,
+  setCardVisible,
+  visibleCards,
+} from "@/lib/ui/dashboardLayout";
+import { dashboardAccountRows } from "@/lib/ui/dashboardAccounts";
+import { formatSigned } from "@/lib/ui/pocket/format";
+import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { useDashboardData } from "@/lib/useDashboardData";
-import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 const PocketHome = dynamic(() => import("@/components/pocket/home").then((m) => m.PocketHome), {
@@ -46,97 +53,25 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-const CARD_IDS = [
-  "net-worth",
-  "safe-to-spend",
-  "cc-debt",
-  "victvs",
-  "accounts",
-  "upcoming",
-  "monthly-flow",
-  "budgets",
-  "goals",
-  "avg-spend",
-] as const;
-type CardId = (typeof CARD_IDS)[number];
-
-/**
- * Page each card drills into when clicked (outside edit mode). Goals is
- * omitted — it's a self-contained CRUD widget with its own modal (which would
- * bubble clicks up), and there is no dedicated goals page to open.
- */
-const CARD_ROUTE: Partial<Record<CardId, string>> = {
-  "net-worth": "/reports",
-  "safe-to-spend": "/transactions",
-  "cc-debt": "/cards",
-  victvs: "/victvs",
-  accounts: "/accounts",
-  upcoming: "/transactions",
-  "monthly-flow": "/reports",
-  budgets: "/reports",
-  "avg-spend": "/reports",
-};
-
-/** grid span per card on the xl 4-column dashboard grid */
-const SPAN: Record<CardId, string> = {
-  "net-worth": "sm:col-span-1",
-  "safe-to-spend": "sm:col-span-1",
-  "cc-debt": "sm:col-span-1",
-  victvs: "sm:col-span-1",
-  accounts: "sm:col-span-1",
-  upcoming: "sm:col-span-2",
-  "monthly-flow": "sm:col-span-2",
-  budgets: "sm:col-span-2 xl:col-span-1",
-  goals: "sm:col-span-2 xl:col-span-1",
-  "avg-spend": "sm:col-span-2",
-};
-
-function normalizeLayout(saved: DashboardLayout | null): DashboardLayout {
-  const known = new Set<string>(CARD_IDS);
-  const order = (saved?.order ?? []).filter((id) => known.has(id));
-  for (const id of CARD_IDS) if (!order.includes(id)) order.push(id);
-  const hidden = (saved?.hidden ?? []).filter((id) => known.has(id));
-  return { order, hidden };
-}
-
 function DashboardPage() {
   const { t, locale } = useI18n();
-  const fmtDate = useFormatDate();
-  const repo = useRepo();
   const { displayCurrency, uiVersion } = useApp();
   const accounts = useAccounts();
   const transactions = useTransactions();
   const rates = useRates();
-  const settings = useUserSettings();
 
   const [editMode, setEditMode] = useState(false);
-  const [layout, setLayout] = useState<DashboardLayout | null>(null);
-  const saveLayout = useAppMutation(
-    (next: DashboardLayout) => repo.saveUserSettings({ dashboardLayout: next }),
-    [KEYS.userSettings]
-  );
-
-  useEffect(() => {
-    if (settings.data && layout == null) {
-      // deferred: layout initializes from persisted settings after first paint
-      const saved = settings.data.dashboardLayout;
-      queueMicrotask(() => setLayout((current) => current ?? normalizeLayout(saved)));
-    }
-  }, [settings.data, layout]);
-
-  const completePlanned = useAppMutation(
-    (id: string) => repo.completeTransaction(id, snapshotFromTable(rates.data!)),
-    [KEYS.transactions, KEYS.accounts]
-  );
+  // the cards, their order and which are on: synced, and shared with V2 and
+  // Settings (lib/ui/dashboardLayout.ts)
+  const { layout, navHrefs, update } = useDashboardLayout();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  const today = todayISO();
 
   // both dashboards run on the same derivation; only the arrangement differs
   const derived = useDashboardData(displayCurrency);
 
   const unpaidVictvs = derived?.unpaidVictvs ?? 0;
+  const upcoming = useUpcomingItems(derived, layout, layout ? isCardVisible(layout, "victvs", "classic", navHrefs) : false);
 
   // Classic keeps the card grid below; every v2 skin gets the rebuilt layout.
   // Placed after every hook above so the hook order never changes with style.
@@ -144,37 +79,30 @@ function DashboardPage() {
 
   if (!derived || !layout || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
   const activeAccounts = (accounts.data ?? []).filter((a) => !a.archived);
+  // the accounts the card lists: hiding one tidies the list, never a total
+  const accountRows = dashboardAccountRows(
+    { ...derived, usdPer: rates.data?.usdPer, display: displayCurrency },
+    layout.accounts,
+    layout.accounts.limit
+  );
 
-  const applyLayout = (next: DashboardLayout) => {
-    setLayout(next);
-    saveLayout.mutate(next);
-  };
+  // Each change is worked out again on the layout as saved (useDashboardLayout
+  // re-reads it first), so a move names cards rather than positions on this
+  // screen; the cards that aren't showing keep their places in the order.
+  const shownIn = (l: NormalizedLayout) => visibleCards(l, "classic", navHrefs);
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const visible = layout.order.filter((id) => !layout.hidden.includes(id));
-    const from = visible.indexOf(String(active.id));
-    const to = visible.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    const nextVisible = arrayMove(visible, from, to);
-    // rebuild full order: visible in new order, hidden keep their positions at the end
-    applyLayout({ ...layout, order: [...nextVisible, ...layout.order.filter((id) => layout.hidden.includes(id))] });
+    const id = String(active.id);
+    const target = over ? String(over.id) : null;
+    if (!target || id === target || !isCardId(id) || !isCardId(target)) return;
+    update((l) => moveCard(l, shownIn(l), id, target));
   };
 
-  const move = (id: CardId, delta: -1 | 1) => {
-    const visible = layout.order.filter((x) => !layout.hidden.includes(x));
-    const index = visible.indexOf(id);
-    const target = index + delta;
-    if (index < 0 || target < 0 || target >= visible.length) return;
-    const nextVisible = arrayMove(visible, index, target);
-    applyLayout({ ...layout, order: [...nextVisible, ...layout.order.filter((x) => layout.hidden.includes(x))] });
-  };
-
-  const hide = (id: CardId) => applyLayout({ ...layout, hidden: [...layout.hidden, id] });
-  const unhide = (id: CardId) => applyLayout({ ...layout, hidden: layout.hidden.filter((x) => x !== id) });
+  const move = (id: CardId, delta: -1 | 1) => update((l) => moveCard(l, shownIn(l), id, delta));
+  const hide = (id: CardId) => update((l) => setCardVisible(l, id, false));
+  const unhide = (id: CardId) => update((l) => setCardVisible(l, id, true));
 
   const cardContent: Record<CardId, React.ReactNode> = {
     "net-worth": (
@@ -233,11 +161,11 @@ function DashboardPage() {
       <Card className="h-full p-4">
         <div className="text-xs text-zinc-500">{t("dashboard.accounts")}</div>
         <div className="mt-1 space-y-1">
-          {activeAccounts.slice(0, 5).map((a) => (
-            <div key={a.id} className="flex justify-between text-sm">
-              <span className="truncate text-zinc-600 dark:text-zinc-300">{a.name}</span>
-              <span className="font-medium tabular-nums">
-                {formatAmount(derived.balances.get(a.id) ?? 0, a.currency, locale)}
+          {accountRows.rows.map((line) => (
+            <div key={line.account.id} className="flex justify-between gap-2 text-sm">
+              <span className="truncate text-zinc-600 dark:text-zinc-300">{line.account.name}</span>
+              <span className={`shrink-0 font-medium tabular-nums ${line.card && line.balance < 0 ? "text-red-600" : ""}`}>
+                {formatSigned(line.shown.amount, line.shown.currency, locale)}
               </span>
             </div>
           ))}
@@ -246,58 +174,16 @@ function DashboardPage() {
               {t("accounts.empty")}
             </Link>
           ) : null}
-        </div>
-      </Card>
-    ),
-    upcoming: (
-      <Card className="h-full">
-        <CardHeader
-          title={t("dashboard.upcoming")}
-          action={
-            <Link href="/transactions" className="text-xs text-teal-600 hover:underline">
-              {t("dashboard.seeAll")} →
+          {accountRows.overflow > 0 ? (
+            <Link href="/accounts" className="block text-xs text-teal-600 hover:underline">
+              {t("dashboard.accountsMore", { count: accountRows.overflow })} →
             </Link>
-          }
-        />
-        {derived.upcoming.length === 0 ? (
-          <div className="p-4">
-            <EmptyState>{t("dashboard.noUpcoming")}</EmptyState>
-          </div>
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {derived.upcoming.map((tx) => {
-              const account = accountById.get(tx.accountId);
-              if (!account) return null;
-              const overdue = tx.dueDate < today;
-              return (
-                <li key={tx.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{tx.description || "—"}</div>
-                    <div className="text-xs text-zinc-500">
-                      {account.name} · {fmtDate(tx.dueDate)} {overdue ? <Badge tone="red">!</Badge> : null}
-                    </div>
-                  </div>
-                  <span className={`text-sm font-semibold tabular-nums ${tx.direction === "income" ? "text-emerald-600" : ""}`}>
-                    {tx.direction === "income" ? "+" : "−"}
-                    {formatAmount(tx.amount, account.currency, locale)}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    disabled={!rates.data}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      completePlanned.mutate(tx.id);
-                    }}
-                  >
-                    ✓ {t("dashboard.complete")}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+          ) : null}
+        </div>
+        <AccountsLeftOut hidden={accountRows.hiddenCount} empty={accountRows.emptyHidden} />
       </Card>
     ),
+    upcoming: upcoming ? <UpcomingCard d={derived} items={upcoming} days={layout.upcomingDays} variant="classic" className="h-full" /> : null,
     "monthly-flow": (
       <Card className="h-full">
         <CardHeader title={`${t("dashboard.monthlyFlow")} (${displayCurrency})`} />
@@ -329,9 +215,15 @@ function DashboardPage() {
     budgets: <BudgetsCard className="h-full" />,
     goals: <GoalsCard className="h-full" />,
     "avg-spend": <AvgSpendCard className="h-full" />,
+    "gold-lens": <GoldLensCard className="h-full" />,
+    // off until turned on; each mounts, and computes, only while it's on
+    ...(Object.fromEntries(
+      OPTIONAL_CARDS.map((id) => [id, <OptionalCard key={id} id={id} d={derived} frame="card" className="h-full" />])
+    ) as Record<OptionalCardId, React.ReactNode>),
   };
 
-  const visible = layout.order.filter((id) => !layout.hidden.includes(id)) as CardId[];
+  const visible = shownIn(layout);
+  const off = cardsOff(layout, "classic", navHrefs);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
@@ -351,8 +243,9 @@ function DashboardPage() {
               <SortableCard
                 key={id}
                 id={id}
-                href={CARD_ROUTE[id]}
-                spanClass={SPAN[id]}
+                label={t(cardSpec(id).labelKey)}
+                href={cardSpec(id).route}
+                spanClass={cardSpec(id).span}
                 editMode={editMode}
                 isFirst={index === 0}
                 isLast={index === visible.length - 1}
@@ -367,18 +260,23 @@ function DashboardPage() {
         </SortableContext>
       </DndContext>
 
-      {editMode && layout.hidden.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-zinc-400">{t("layout.hiddenCards")}:</span>
-          {(layout.hidden as CardId[]).map((id) => (
+      {/* every card that's off, by the user or by default, can come back from here */}
+      {editMode ? (
+        <div data-cards-off className="flex flex-wrap items-center gap-2">
+          {off.length > 0 ? <span className="text-xs text-zinc-400">{t("layout.hiddenCards")}:</span> : null}
+          {off.map((id) => (
             <button
               key={id}
               onClick={() => unhide(id)}
+              title={t(cardSpec(id).descKey)}
               className="rounded-full border border-dashed border-zinc-300 px-3 py-1 text-xs text-zinc-500 hover:border-teal-500 hover:text-teal-600 dark:border-zinc-700"
             >
-              + {id}
+              + {t(cardSpec(id).labelKey)}
             </button>
           ))}
+          <Link href="/settings?tab=dashboard" className="text-xs text-teal-600 hover:underline">
+            {t("dashboard.moreOptions")} →
+          </Link>
         </div>
       ) : null}
     </div>
@@ -387,6 +285,7 @@ function DashboardPage() {
 
 function SortableCard({
   id,
+  label,
   href,
   spanClass,
   editMode,
@@ -398,6 +297,7 @@ function SortableCard({
   children,
 }: {
   id: string;
+  label: string;
   href?: string;
   spanClass: string;
   editMode: boolean;
@@ -422,6 +322,7 @@ function SortableCard({
   return (
     <div
       ref={setNodeRef}
+      data-card={id}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`group relative ${spanClass} ${isDragging ? "z-50 opacity-80" : ""} ${
         navigable ? "cursor-pointer transition-transform hover:-translate-y-0.5" : ""
@@ -430,7 +331,8 @@ function SortableCard({
       onKeyDown={
         navigable
           ? (e) => {
-              if (e.key === "Enter") router.push(href!);
+              // Enter on a button inside the card is that button's
+              if (e.key === "Enter" && e.target === e.currentTarget) router.push(href!);
             }
           : undefined
       }
@@ -443,7 +345,7 @@ function SortableCard({
             {...attributes}
             {...listeners}
             className="cursor-grab px-1 text-zinc-400 hover:text-zinc-700 active:cursor-grabbing dark:hover:text-zinc-200"
-            aria-label={id}
+            aria-label={label}
           >
             ⠿
           </button>
