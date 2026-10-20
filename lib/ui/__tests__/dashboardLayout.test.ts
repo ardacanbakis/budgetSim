@@ -112,6 +112,13 @@ describe("visibility", () => {
     expect(cardsOff(fresh, "v2", ALL_PAGES)).not.toContain("gold-lens");
   });
 
+  it("always shows version 2's headline", () => {
+    const off = setCardVisible(fresh, "net-worth", false);
+    expect(isCardVisible(off, "net-worth", "classic", ALL_PAGES)).toBe(false);
+    expect(isCardVisible(off, "net-worth", "v2", ALL_PAGES)).toBe(true);
+    expect(cardsOff(off, "v2", ALL_PAGES)).not.toContain("net-worth");
+  });
+
   it("holds an explicit choice in every style", () => {
     const on = setCardVisible(fresh, "gold-lens", true);
     expect(isCardVisible(on, "gold-lens", "classic", ALL_PAGES)).toBe(true);

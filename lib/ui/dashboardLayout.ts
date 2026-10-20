@@ -13,6 +13,7 @@ import { DashboardAccounts, DashboardLayout } from "@/lib/data/types";
  *   Classic's card grid and the version-2 dashboard;
  * - nav, the page it belongs to: hidden from the menus, the card goes too
  *   (Pocket's rule for its VICTVS row);
+ * - always, a style that shows it whatever the layout says;
  * - route, the page Classic's card opens when clicked; span, its width on
  *   Classic's grid.
  *
@@ -48,6 +49,8 @@ export interface CardSpec {
   descKey: string;
   defaultOn: Readonly<Record<DashboardStyle, boolean>>;
   nav?: string;
+  /** the style that always shows it, whatever the layout says (version 2's headline) */
+  always?: DashboardStyle;
   route?: string;
   span: string;
 }
@@ -59,7 +62,8 @@ function spec<Id extends string>(id: Id, rest: Omit<CardSpec, "id" | "labelKey" 
 const ON = { classic: true, v2: true } as const;
 
 export const CARD_SPECS = [
-  spec("net-worth", { defaultOn: ON, route: "/reports", span: "sm:col-span-1" }),
+  // version 2 is built around it as its headline, so there it can't go
+  spec("net-worth", { defaultOn: ON, always: "v2", route: "/reports", span: "sm:col-span-1" }),
   spec("safe-to-spend", { defaultOn: ON, route: "/transactions", span: "sm:col-span-1" }),
   spec("cc-debt", { defaultOn: ON, route: "/cards", span: "sm:col-span-1" }),
   spec("victvs", { defaultOn: ON, nav: "/victvs", route: "/victvs", span: "sm:col-span-1" }),
@@ -155,7 +159,9 @@ export function isCardVisible(
   style: DashboardStyle,
   visibleHrefs: readonly string[]
 ): boolean {
-  if (!navAllows(id, visibleHrefs) || layout.hidden.includes(id)) return false;
+  if (!navAllows(id, visibleHrefs)) return false;
+  if (cardSpec(id).always === style) return true;
+  if (layout.hidden.includes(id)) return false;
   return layout.shown.includes(id) || cardSpec(id).defaultOn[style];
 }
 

@@ -111,6 +111,7 @@ function CardRow({
   const spec = cardSpec(id);
   const label = t(spec.labelKey);
   const allowed = navAllows(id, navHrefs);
+  const fixed = spec.always === style;
   const on = isCardVisible(layout, id, style, navHrefs);
   return (
     <li data-card-row={id} className="px-4 py-2">
@@ -118,10 +119,10 @@ function CardRow({
         <input
           type="checkbox"
           checked={on}
-          disabled={!allowed}
+          disabled={!allowed || fixed}
           onChange={(e) => onToggle(e.target.checked)}
           aria-label={t("dashboard.cardShow", { card: label })}
-          title={allowed ? undefined : t("dashboard.cardNeedsPage")}
+          title={!allowed ? t("dashboard.cardNeedsPage") : fixed ? t("dashboard.cardAlways") : undefined}
           className="h-4 w-4 shrink-0 accent-teal-600 disabled:opacity-40"
         />
         <span className="min-w-0 flex-1">

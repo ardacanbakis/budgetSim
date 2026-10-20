@@ -289,3 +289,41 @@ test.describe("Settings → Dashboard", () => {
     await expect(page.getByText(/Gizli hesaplar her toplamda sayılmaya devam eder/)).toBeVisible();
   });
 });
+
+test.describe("Version 2 dashboard", () => {
+  test("follows the cards chosen in Settings and keeps its headline", async ({ page }) => {
+    await enterDemo(page);
+    await page.evaluate(() => localStorage.setItem("renovator-ui-style", "calm"));
+    await page.reload();
+    await expect(page.getByText(/Net worth · USD/)).toBeVisible({ timeout: 15_000 });
+    for (const id of ["safe-to-spend", "cc-debt", "victvs", "accounts", "upcoming", "monthly-flow", "gold-lens", "budgets", "goals", "avg-spend"]) {
+      await expect(card(page, id)).toBeVisible();
+    }
+    await expect(page.getByRole("link", { name: /Customise/ })).toHaveAttribute("href", "/settings?tab=dashboard");
+
+    await page.goto("/settings?tab=dashboard");
+    await expect(page.getByText(/This one uses the Calm style/)).toBeVisible();
+    // the headline can't be turned off in this style
+    await expect(page.getByRole("checkbox", { name: "Show Net worth" })).toBeDisabled();
+    await page.getByRole("checkbox", { name: "Show In gold" }).uncheck();
+    await page.getByRole("checkbox", { name: "Show Safe to spend" }).uncheck();
+    await page.getByRole("checkbox", { name: "Show Upcoming" }).uncheck();
+    await page.getByRole("button", { name: "Move up: Avg monthly spending" }).click();
+    await expect.poll(async () => (await storedLayout(page))?.hidden).toEqual(["gold-lens", "safe-to-spend", "upcoming"]);
+
+    await page.goto("/");
+    await expect(page.getByText(/Net worth · USD/)).toBeVisible({ timeout: 15_000 });
+    await expect(card(page, "gold-lens")).toHaveCount(0);
+    await expect(card(page, "safe-to-spend")).toHaveCount(0);
+    await expect(card(page, "upcoming")).toHaveCount(0);
+    await expect(card(page, "cc-debt")).toBeVisible();
+    // the grid follows the layout's order
+    const grid = page.locator("[data-card='budgets'], [data-card='goals'], [data-card='avg-spend']");
+    await expect(grid).toHaveCount(3);
+    expect(await grid.evaluateAll((els) => els.map((el) => el.getAttribute("data-card")))).toEqual(["budgets", "avg-spend", "goals"]);
+    // accounts alone take the full width
+    const width = await card(page, "accounts").evaluate((el) => el.getBoundingClientRect().width);
+    const full = await page.locator("[data-card='monthly-flow']").evaluate((el) => el.getBoundingClientRect().width);
+    expect(Math.abs(width - full)).toBeLessThan(2);
+  });
+});
