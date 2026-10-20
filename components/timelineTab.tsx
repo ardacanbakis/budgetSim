@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Fragment, ReactNode, useMemo, useRef, useState } from "react";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { describeTx, TxLookup, useDueLabel, useTxLookup } from "@/components/pocket/dayList";
-import { FlagGlyph, useMilestoneText } from "@/components/timelineParts";
+import { ClipboardGlyph, expectedParts, FlagGlyph, useMilestoneText } from "@/components/timelineParts";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
 import { CompleteModal, EditModal } from "@/components/txModals";
@@ -83,7 +83,8 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
   const categories = useCategories();
   const rates = useRates();
   const lookup = useTxLookup();
-  const timeline = useTimeline(lookup.book);
+  const [countExpected, setCountExpected] = usePocketFlag(TIMELINE_KEYS.expected);
+  const timeline = useTimeline(lookup.book, countExpected);
   const [milestones, setMilestones] = usePocketFlag(TIMELINE_KEYS.milestones, true);
   const [legacy, setLegacy] = usePocketFlag(TIMELINE_KEYS.legacy);
   const [accountId, setAccountId] = useState<string | null>(accountParam);
@@ -122,8 +123,8 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
   };
 
   const options: BucketOptions = useMemo(
-    () => ({ accountsById, usdPer, display, accountId: account?.id ?? null, series: accountSeries }),
-    [accountsById, usdPer, display, account, accountSeries]
+    () => ({ accountsById, usdPer, display, accountId: account?.id ?? null, series: accountSeries, countExpected }),
+    [accountsById, usdPer, display, account, accountSeries, countExpected]
   );
   const end = milestones ? events.reduce((last, e) => (e.date > last ? e.date : last), horizon) : horizon;
   const span = timelineWindow(today, past, ahead, end);
@@ -139,9 +140,12 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
       earlier: filtered.some((e) => e.status !== "overdue" && e.date < span.from),
       next30: flowBetween(filtered, today, addDays(today, 30), options),
       markers: filtered.filter((e) => e.kind === "milestone" && e.date >= today).slice(0, 4),
-      after: account && accountSeries ? balancesAfter(events, account.id, accountSeries) : null,
+      after:
+        account && accountSeries
+          ? balancesAfter(events, account.id, accountSeries, countExpected ? (e) => e.kind === "expected" : undefined)
+          : null,
     };
-  }, [events, account, accountSeries, milestones, legacy, span.from, span.to, options, today]);
+  }, [events, account, accountSeries, milestones, legacy, span.from, span.to, options, today, countExpected]);
 
   const lows = useMemo(() => lowestRows(series, today, lookahead), [series, today, lookahead]);
 
@@ -150,6 +154,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
   const firstAhead = view.months.flatMap((m) => m.days).find((d) => d.date >= today)?.date ?? null;
   const rowProps = {
     lookup,
+    countExpected,
     accountId: account?.id ?? null,
     after: view.after,
     onComplete: setCompleting,
@@ -214,6 +219,15 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
         <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300">
           <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={legacy} onChange={(e) => setLegacy(e.target.checked)} />
           {t("timeline.history")}
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-teal-600"
+            checked={countExpected}
+            onChange={(e) => setCountExpected(e.target.checked)}
+          />
+          {t("timeline.countExpected")}
         </label>
         <button
           type="button"
@@ -400,6 +414,8 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
 
 interface RowProps {
   lookup: TxLookup;
+  /** expected VICTVS payouts count in balances */
+  countExpected: boolean;
   accountId: string | null;
   /** the picked account's balance after each row */
   after: Map<string, number> | null;
@@ -576,7 +592,31 @@ function EventRow({ event, ...props }: RowProps & { event: TimelineEvent }) {
   if (event.kind === "tx" && event.tx) return <TxEventRow event={event} tx={event.tx} {...props} />;
   if (event.kind === "statement") return <StatementRow event={event} {...props} />;
   if (event.kind === "milestone") return <MilestoneRow event={event} />;
+  if (event.kind === "expected") return <ExpectedRow event={event} {...props} />;
   return null;
+}
+
+/** An expected VICTVS payout: dashed and "~", counted in balances only when switched on. */
+function ExpectedRow({ event, lookup, countExpected, after }: RowProps & { event: TimelineEvent }) {
+  const account = event.accountId ? lookup.accountsById.get(event.accountId) : undefined;
+  const { title, meta } = expectedParts({ event, accountName: account?.name ?? null, counted: countExpected });
+  return (
+    <li data-expected={event.key} className="px-2 py-1.5">
+      <Link
+        href="/victvs"
+        className="flex items-center gap-3 rounded-lg border border-dashed border-sky-400/70 px-2 py-2 hover:bg-[var(--edge-soft)] dark:border-sky-600/70"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-300">
+          <ClipboardGlyph />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-sky-700 dark:text-sky-300">{title}</span>
+          <span className="block truncate text-xs text-zinc-500">{meta}</span>
+        </span>
+        {countExpected ? <AfterFigure value={after?.get(event.key)} currency={account?.currency} /> : null}
+      </Link>
+    </li>
+  );
 }
 
 function AfterFigure({ value, currency }: { value: number | undefined; currency: Currency | undefined }) {

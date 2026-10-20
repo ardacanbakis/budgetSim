@@ -9,6 +9,7 @@ import { fromMinor, roundTo, toMinor } from "./money";
 import { buildInstallmentPlan, lastDueDate } from "./purchases";
 import { addDays } from "./recurrence";
 import { templateProgress } from "./templateStatus";
+import type { VictvsForecast } from "./victvsForecast";
 
 /**
  * The money timeline: what happened and what is planned, as one list of
@@ -36,7 +37,12 @@ import { templateProgress } from "./templateStatus";
  * - debtMilestones: when a loan's last instalment, a taksit or a recurring
  *   item with an end date finishes, and what that frees each month. Markers
  *   only, no legs.
- * - buildTimeline: all three, sorted the way comingUp sorts (date, overdue
+ * - expectedVictvsEvents: the VICTVS forecast's payouts (forecastVictvs
+ *   .cash), one a month, on the day payouts usually land (the median day of
+ *   the month of the payouts on record; the 15th without any), never before
+ *   today, into the VICTVS deposit account. They are "expected": the money
+ *   isn't promised, so the balances count them only when asked (`counts`).
+ * - buildTimeline: all of them, sorted the way comingUp sorts (date, overdue
  *   first, kind, then createdAt and id).
  *
  * Balances, per cash account in its own currency (balanceSeries):
@@ -45,8 +51,8 @@ import { templateProgress } from "./templateStatus";
  * lowestAhead reads the lowest point from today to a horizon.
  */
 
-export type TimelineKind = "tx" | "statement" | "milestone";
-export type TimelineStatus = "completed" | "planned" | "overdue" | "marker";
+export type TimelineKind = "tx" | "statement" | "milestone" | "expected";
+export type TimelineStatus = "completed" | "planned" | "overdue" | "marker" | "expected";
 
 export interface TimelineLeg {
   accountId: string;
@@ -97,9 +103,11 @@ export interface TimelineEvent {
   /** completed with its date still ahead */
   early?: boolean;
   milestone?: TimelineMilestone;
+  /** an expected payout: its range, and how much of it is work already done */
+  expected?: { low: number; high: number; earned: number };
 }
 
-const KIND_RANK: Record<TimelineKind, number> = { tx: 0, statement: 1, milestone: 2 };
+const KIND_RANK: Record<TimelineKind, number> = { tx: 0, statement: 1, expected: 2, milestone: 3 };
 
 export function compareEvents(a: TimelineEvent, b: TimelineEvent): number {
   if (a.date !== b.date) return a.date < b.date ? -1 : 1;
@@ -345,6 +353,57 @@ export function debtMilestones(params: {
   return events;
 }
 
+/** The day of the month VICTVS usually pays on: the median of the payouts', else the 15th. */
+export function typicalPayoutDay(paymentDates: readonly string[]): number {
+  if (paymentDates.length === 0) return 15;
+  const days = paymentDates.map((d) => Number(d.slice(8, 10))).sort((a, b) => a - b);
+  const mid = Math.floor(days.length / 2);
+  return days.length % 2 ? days[mid] : Math.round((days[mid - 1] + days[mid]) / 2);
+}
+
+export function expectedVictvsEvents(params: {
+  forecast: VictvsForecast;
+  /** the payouts on record, for the day they usually land */
+  payoutDates: readonly string[];
+  /** where VICTVS pays (Settings → VICTVS); without one the events move no balance */
+  accountId: string | null;
+  accounts: readonly Account[];
+  today: string;
+  usdPer?: UsdPerMap | null;
+}): TimelineEvent[] {
+  const { forecast, payoutDates, accountId, accounts, today, usdPer } = params;
+  const account = accounts.find((a) => a.id === accountId && !a.archived && a.kind !== "credit_card");
+  const day = typicalPayoutDay(payoutDates);
+  const events: TimelineEvent[] = [];
+  for (const c of forecast.cash) {
+    if (c.expected <= 0.005) continue;
+    const onDay = paymentDateIn(c.month, day)!;
+    const date = onDay < today ? today : onDay;
+    const legs: TimelineLeg[] = [];
+    if (account) {
+      if (account.currency === "USD") legs.push({ accountId: account.id, delta: c.expected });
+      else {
+        const converted = usdPer ? convert(c.expected, "USD", account.currency, usdPer) : null;
+        if (converted != null) legs.push({ accountId: account.id, delta: roundTo(converted, account.currency), approx: true });
+      }
+    }
+    events.push({
+      key: `victvs:${c.month}`,
+      kind: "expected",
+      status: "expected",
+      date,
+      effectiveDate: date,
+      legs,
+      accountId: account?.id ?? null,
+      amount: c.expected,
+      currency: "USD",
+      direction: "income",
+      expected: { low: c.low, high: c.high, earned: c.earned },
+    });
+  }
+  return events;
+}
+
 export interface TimelineInput {
   accounts: Account[];
   transactions: Transaction[];
@@ -355,6 +414,8 @@ export interface TimelineInput {
   book: CardBook;
   /** only for a statement paid from an account in another currency */
   usdPer?: UsdPerMap | null;
+  /** expected VICTVS payouts (expectedVictvsEvents), already built */
+  expected?: TimelineEvent[];
 }
 
 /**
@@ -379,6 +440,7 @@ export function buildTimeline(input: TimelineInput, o: { from?: string; to: stri
       accounts,
       today: o.today,
     }),
+    ...(input.expected ?? []),
   ].filter(inWindow);
   return events.sort(compareEvents);
 }

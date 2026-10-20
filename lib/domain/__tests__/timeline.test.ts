@@ -11,10 +11,12 @@ import {
   balanceSeries,
   buildTimeline,
   debtMilestones,
+  expectedVictvsEvents,
   ledgerEvents,
   lowestAhead,
   statementEvents,
   TimelineEvent,
+  typicalPayoutDay,
 } from "../timeline";
 import { comingUp } from "@/lib/ui/pocket/attention";
 
@@ -441,5 +443,55 @@ describe("buildTimeline", () => {
       date: "2026-10-24",
       amount: card!.kind === "card" ? card!.figure.amount : NaN,
     });
+  });
+});
+
+describe("expectedVictvsEvents", () => {
+  const forecast = {
+    earnings: [],
+    cash: [
+      { month: "2026-10", expected: 157.5, low: 157.5, high: 157.5, earned: 157.5 },
+      { month: "2026-11", expected: 650, low: 520, high: 780, earned: 30 },
+      { month: "2026-12", expected: 0, low: 0, high: 0, earned: 0 },
+    ],
+    lagDays: null,
+    lagMonths: 1,
+    historyMonths: 2,
+    unpaid: 187.5,
+  };
+  const usdPer = { USD: 1, TRY: 1 / 40, EUR: 1.1, BTC: 100000, XAU_G: 80 };
+
+  it("lands mid-month without payouts on record, never before today, and skips empty months", () => {
+    const events = expectedVictvsEvents({ forecast, payoutDates: [], accountId: "wise", accounts, today, usdPer });
+    expect(events.map((e) => [e.key, e.date, e.status, e.amount])).toEqual([
+      // the 15th has passed this month: any day now
+      ["victvs:2026-10", today, "expected", 157.5],
+      ["victvs:2026-11", "2026-11-15", "expected", 650],
+    ]);
+    expect(events[1]).toMatchObject({ direction: "income", currency: "USD", accountId: "wise", expected: { low: 520, high: 780, earned: 30 } });
+    expect(events[1].legs).toEqual([{ accountId: "wise", delta: 650 }]);
+  });
+
+  it("lands on the day payouts usually come, converted into a lira account", () => {
+    expect(typicalPayoutDay(["2026-07-08", "2026-08-12", "2026-09-10"])).toBe(10);
+    expect(typicalPayoutDay(["2026-07-08", "2026-08-12"])).toBe(10);
+    const [, nov] = expectedVictvsEvents({ forecast, payoutDates: ["2026-08-28", "2026-09-30"], accountId: "bank", accounts, today, usdPer });
+    expect(nov.date).toBe("2026-11-29");
+    expect(nov.legs).toEqual([{ accountId: "bank", delta: 26000, approx: true }]);
+    // no deposit account: listed, moving nothing
+    expect(expectedVictvsEvents({ forecast, payoutDates: [], accountId: null, accounts, today }).every((e) => e.legs.length === 0)).toBe(true);
+  });
+
+  it("never moves a balance or the lowest point unless counted", () => {
+    const bill = tx("wise", "2026-11-20", 400);
+    const expected = expectedVictvsEvents({ forecast, payoutDates: [], accountId: "wise", accounts, today });
+    const events = timelineOf([bill], { expected });
+    const plain = balanceSeries({ accounts, transactions: [bill], events, today }).get("wise")!;
+    expect(balanceAt(plain.points, "2026-12-31")).toBe(100);
+    expect(lowestAhead(plain.points, today, "2027-01-19")).toMatchObject({ balance: 100, date: "2026-11-20" });
+    const counted = balanceSeries({ accounts, transactions: [bill], events, today, counts: (e) => e.kind === "expected" }).get("wise")!;
+    expect(balanceAt(counted.points, today)).toBe(657.5);
+    expect(balanceAt(counted.points, "2026-12-31")).toBe(907.5);
+    expect(lowestAhead(counted.points, today, "2027-01-19")).toMatchObject({ balance: 657.5, date: today });
   });
 });

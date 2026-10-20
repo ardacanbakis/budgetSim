@@ -8,6 +8,7 @@ import { groupMonthsDays, listedRows } from "../pocket/dayGroups";
 import {
   balancesAfter,
   bucketTimeline,
+  contributionOf,
   filterTimeline,
   flowBetween,
   monthHighlights,
@@ -169,5 +170,28 @@ describe("parseTab", () => {
     expect(parseTab("timeline", tabs, "ledger")).toBe("timeline");
     expect(parseTab("nope", tabs, "ledger")).toBe("ledger");
     expect(parseTab(null, tabs, "ledger")).toBe("ledger");
+  });
+});
+
+describe("expected VICTVS payouts in the sums", () => {
+  it("count only with countExpected", () => {
+    const bank = account("bank", "USD");
+    const event = {
+      key: "victvs:2026-11",
+      kind: "expected" as const,
+      status: "expected" as const,
+      date: "2026-11-15",
+      effectiveDate: "2026-11-15",
+      legs: [{ accountId: "bank", delta: 650 }],
+      accountId: "bank",
+      amount: 650,
+      currency: "USD" as const,
+      direction: "income" as const,
+    };
+    const options = { accountsById: new Map([["bank", bank]]), usdPer, display: "USD" as const };
+    expect(contributionOf(event, options)).toBeNull();
+    expect(contributionOf(event, { ...options, accountId: "bank" })).toBeNull();
+    expect(contributionOf(event, { ...options, countExpected: true })).toEqual([650, 0]);
+    expect(flowBetween([event], "2026-10-19", "2026-11-30", { ...options, countExpected: true }).income).toBe(650);
   });
 });

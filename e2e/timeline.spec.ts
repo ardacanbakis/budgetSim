@@ -33,7 +33,9 @@ async function enterDemo(page: Page, edit?: (store: Store) => void) {
   await page.getByRole("button", { name: /demo/i }).click();
   await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => {
-    for (const key of ["renovator-timeline-milestones", "renovator-timeline-legacy"]) localStorage.removeItem(key);
+    for (const key of ["renovator-timeline-milestones", "renovator-timeline-legacy", "renovator-timeline-expected"]) {
+      localStorage.removeItem(key);
+    }
   });
   if (edit) {
     const saved = await store(page);
@@ -160,6 +162,21 @@ test.describe("Timeline tab", () => {
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
     await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("expected VICTVS payouts: dashed, and counted only when switched on", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/transactions?tab=timeline");
+    const expected = page.locator("[data-expected]").first();
+    await expect(expected).toContainText(/VICTVS · expected ~\$[\d,]+/);
+    await expect(expected).toContainText("not in balances");
+    const income = page.locator("[data-next30] dd").first();
+    const amount = async () => Number((await income.innerText()).replace(/[^\d.]/g, ""));
+    const before = await amount();
+    await page.getByRole("checkbox", { name: "Count expected VICTVS" }).check();
+    // this month's payout always lands within the next 30 days
+    await expect.poll(amount).toBeGreaterThan(before);
+    await expect(expected).not.toContainText("not in balances");
   });
 
   test("reads naturally in Turkish", async ({ page }) => {

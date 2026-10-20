@@ -60,6 +60,11 @@ export const en = {
   markersAhead: "Milestones ahead",
   noMarkers: "No loan, taksit or recurring item ends ahead.",
   inMonth: "{count} entries",
+  expectedVictvs: "VICTVS · expected ~{amount}",
+  expectedEarned: "{amount} already worked",
+  notCounted: "not in balances",
+  countExpected: "Count expected VICTVS",
+  noVictvsAccount: "no deposit account set",
 };
 
 export const tr: typeof en = {
@@ -115,4 +120,9 @@ export const tr: typeof en = {
   markersAhead: "Yaklaşan dönüm noktaları",
   noMarkers: "Bitecek kredi, taksit ya da düzenli işlem yok.",
   inMonth: "{count} kayıt",
+  expectedVictvs: "VICTVS · beklenen ~{amount}",
+  expectedEarned: "{amount} tamamlanmış iş",
+  notCounted: "bakiyelere dahil değil",
+  countExpected: "Beklenen VICTVS'yi say",
+  noVictvsAccount: "yatacağı hesap seçilmedi",
 };

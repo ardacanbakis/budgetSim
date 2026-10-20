@@ -43,7 +43,12 @@ async function enterPocket(
   await page.evaluate(
     ({ locale, prefs }) => {
       localStorage.setItem("renovator-phone-layout", "pocket");
-      for (const key of ["renovator-pocket-hide-amounts", "renovator-timeline-milestones", "renovator-timeline-legacy"]) {
+      for (const key of [
+        "renovator-pocket-hide-amounts",
+        "renovator-timeline-milestones",
+        "renovator-timeline-legacy",
+        "renovator-timeline-expected",
+      ]) {
         localStorage.removeItem(key);
       }
       for (const [key, value] of Object.entries(prefs)) localStorage.setItem(key, value);
@@ -183,6 +188,34 @@ test.describe("Pocket timeline", () => {
       "aria-pressed",
       "false"
     );
+  });
+});
+
+test.describe("Pocket timeline, expected VICTVS", () => {
+  /** This month's heading figure (its net), as text. */
+  const monthNet = (page: Page) => {
+    const label = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    return page.locator("main h2", { hasText: label }).locator("xpath=following-sibling::*[@data-amount][1]");
+  };
+
+  test("dashed, with its range, and in the balances only when switched on", async ({ page }) => {
+    await enterPocket(page);
+    const wise = (await store(page)).accounts.find((a) => a.name === "Wise USD")!;
+    const expected = page.locator("[data-expected]").first();
+    await expect(expected).toContainText(/^VICTVS · expected ~\$[\d,]+/);
+    await expect(expected).toContainText("Wise USD · not in balances");
+
+    // Wise USD alone: this month's net moves by the payout when it counts
+    await page.goto(`/transactions?tab=timeline&account=${wise.id}`);
+    await expect(page.getByRole("img", { name: "Wise USD: balance over time" })).toBeVisible({ timeout: 15_000 });
+    const before = await monthNet(page).innerText();
+    const chip = page.getByRole("group", { name: "Timeline filters" }).getByRole("button", { name: "Count expected VICTVS" });
+    await expect(chip).toHaveAttribute("aria-pressed", "false");
+    await chip.click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await expect(monthNet(page)).not.toHaveText(before);
+    await expect(page.locator("[data-expected]").first()).not.toContainText("not in balances");
+    expect(await page.evaluate(() => localStorage.getItem("renovator-timeline-expected"))).toBe("on");
   });
 });
 

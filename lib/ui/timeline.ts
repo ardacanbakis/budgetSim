@@ -18,8 +18,8 @@ import { AccountSeries, balanceAt, compareEvents, lowestAhead, LowPoint, Timelin
  *   spending only (a transfer between your own accounts is neither, a card
  *   payment is spending), converted to `display` at the rates captured on
  *   the row, else today's; a card statement is spending at today's rates;
- *   legacy rows and markers aren't counted. With an account, its own legs,
- *   in its currency.
+ *   legacy rows and markers aren't counted, nor expected VICTVS payouts
+ *   unless `countExpected`. With an account, its own legs, in its currency.
  * - bucketTimeline(events, options): months, then days, oldest first. With
  *   an account and its series, each day carries its end-of-day balance.
  * - monthSummaries(events, options): each month's in / out / net, and for a
@@ -47,6 +47,8 @@ export const TIMELINE_KEYS = {
   milestones: "renovator-timeline-milestones",
   /** "on" | "off": imported history (legacy rows); off by default */
   legacy: "renovator-timeline-legacy",
+  /** "on" | "off": expected VICTVS payouts count in balances and sums; off by default */
+  expected: "renovator-timeline-expected",
 } as const;
 
 /** Months the list grows by, either way. */
@@ -68,6 +70,8 @@ export interface BucketOptions {
   accountId?: string | null;
   /** that account's balance series, for end-of-day balances */
   series?: AccountSeries | null;
+  /** expected VICTVS payouts count in the sums (the "Count expected VICTVS" switch) */
+  countExpected?: boolean;
 }
 
 export interface TimelineDay {
@@ -103,6 +107,7 @@ export function filterTimeline(events: readonly TimelineEvent[], filters: Timeli
 
 export function contributionOf(event: TimelineEvent, options: BucketOptions): [number, number] | null {
   if (event.legacy || event.kind === "milestone") return null;
+  if (event.kind === "expected" && !options.countExpected) return null;
   if (options.accountId != null) {
     let delta = 0;
     for (const leg of event.legs) if (leg.accountId === options.accountId) delta += leg.delta;

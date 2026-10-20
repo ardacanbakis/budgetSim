@@ -36,7 +36,7 @@ import { PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
 import { Icon } from "./icons";
 import { Avatar, Chip, ChipRow, Money, Section } from "./kit";
 import { AmountPhrase } from "./paceBar";
-import { FlagGlyph, useMilestoneText } from "@/components/timelineParts";
+import { ClipboardGlyph, expectedParts, FlagGlyph, useMilestoneText } from "@/components/timelineParts";
 import { usePocketTxSheet } from "./txActions";
 
 const TimelineChart = dynamic(() => import("@/components/timelineChart"), {
@@ -71,7 +71,8 @@ const TimelineChart = dynamic(() => import("@/components/timelineChart"), {
 export function PocketTimeline({ accountParam }: { accountParam: string | null }) {
   const { t } = useI18n();
   const lookup = useTxLookup();
-  const timeline = useTimeline(lookup.book);
+  const [countExpected, setCountExpected] = usePocketFlag(TIMELINE_KEYS.expected);
+  const timeline = useTimeline(lookup.book, countExpected);
   const sheet = usePocketTxSheet();
   const [hideAmounts] = usePocketFlag(POCKET_KEYS.hideAmounts);
   const [milestones, setMilestones] = usePocketFlag(TIMELINE_KEYS.milestones, true);
@@ -96,8 +97,8 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
   };
 
   const options: BucketOptions = useMemo(
-    () => ({ accountsById, usdPer, display, accountId: account?.id ?? null, series: accountSeries }),
-    [accountsById, usdPer, display, account, accountSeries]
+    () => ({ accountsById, usdPer, display, accountId: account?.id ?? null, series: accountSeries, countExpected }),
+    [accountsById, usdPer, display, account, accountSeries, countExpected]
   );
   // the list reaches the horizon, or the last milestone when one is further
   const end = milestones ? events.reduce((last, e) => (e.date > last ? e.date : last), horizon) : horizon;
@@ -200,6 +201,9 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
         </Chip>
         <Chip active={legacy} onClick={() => setLegacy(!legacy)}>
           {t("timeline.history")}
+        </Chip>
+        <Chip active={countExpected} onClick={() => setCountExpected(!countExpected)}>
+          {t("timeline.countExpected")}
         </Chip>
       </ChipRow>
 
@@ -541,7 +545,32 @@ function EventRow({
   }
   if (event.kind === "statement") return <StatementRow event={event} lookup={lookup} onPay={onPay} />;
   if (event.kind === "milestone") return <MilestoneRow event={event} />;
+  if (event.kind === "expected") return <ExpectedRow event={event} lookup={lookup} />;
   return null;
+}
+
+/** An expected VICTVS payout: dashed, "~", its range; counted in balances only when switched on. */
+function ExpectedRow({ event, lookup }: { event: TimelineEvent; lookup: TxLookup }) {
+  const [counted] = usePocketFlag(TIMELINE_KEYS.expected);
+  const account = event.accountId ? lookup.accountsById.get(event.accountId) : undefined;
+  const { title, meta } = expectedParts({ event, accountName: account?.name ?? null, counted });
+  return (
+    <li data-expected={event.key} className="p-1">
+      <Link
+        href="/victvs"
+        className="flex min-h-[calc(var(--pocket-row-tx,60px)-8px)] items-center gap-3 rounded-[calc(var(--ui-card-radius)-4px)] border border-dashed border-sky-400/70 py-1.5 pl-3 pr-2 active:bg-[var(--edge-soft)] dark:border-sky-600/70"
+      >
+        <span className="shrink-0">
+          <Avatar color="#0ea5e9" label="V" icon={<ClipboardGlyph />} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium text-sky-700 dark:text-sky-300">{title}</span>
+          <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{meta}</span>
+        </span>
+        <Icon name="chevron" size={18} className="shrink-0 text-zinc-400" />
+      </Link>
+    </li>
+  );
 }
 
 const rowClass = "flex min-h-[var(--pocket-row-tx,60px)] min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left active:bg-[var(--edge-soft)]";
