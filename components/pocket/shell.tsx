@@ -31,6 +31,7 @@ import { AddRequest, HeaderState, PocketChrome, PocketChromeContext } from "./ch
 import { Icon, navIcon } from "./icons";
 import { NoteCard } from "./kit";
 import { PocketActionSheet, PocketSheet } from "./sheet";
+import { PullToRefresh } from "./pull";
 
 /** Pages with work that wants a larger screen; Pocket says so once. */
 const DESK_NOTE = new Set(["/planner", "/savings"]);
@@ -357,6 +358,7 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
         </main>
 
         <Snackbar />
+        <PullToRefresh />
 
         <nav
           aria-label={t("pocket.tabs")}

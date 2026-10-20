@@ -111,3 +111,95 @@ test.describe("Pocket: quotes in the currency sheet", () => {
     await expect(radios.nth(4).locator("[data-quote]")).not.toContainText(/[▲▼]/);
   });
 });
+
+/** A finger on the screen, through the DevTools protocol: real touch events, in order. */
+async function finger(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type: "touchStart" | "touchMove" | "touchEnd", x = 0, y = 0) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  return {
+    /** press at (x, y), then move in steps to (x + dx, y + dy); the finger stays down */
+    async drag(x: number, y: number, dx: number, dy: number, steps = 8) {
+      await send("touchStart", x, y);
+      for (let i = 1; i <= steps; i++) await send("touchMove", x + (dx * i) / steps, y + (dy * i) / steps);
+    },
+    /** the finger, still down, moves to (x, y) */
+    moveTo: (x: number, y: number) => send("touchMove", x, y),
+    lift: () => send("touchEnd"),
+  };
+}
+
+test.describe("Pocket: pull to refresh", () => {
+  test.use({ hasTouch: true });
+
+  const indicator = (page: Page) => page.locator("[data-pull-indicator]");
+  const status = (page: Page) => page.locator("[data-pull-status]");
+
+  test("a pull down from the top fetches everything again", async ({ page }) => {
+    const rateCalls: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/rates")) rateCalls.push(r.url());
+    });
+    await enterPocket(page);
+    await expect.poll(() => rateCalls.length).toBeGreaterThan(0);
+    const before = rateCalls.length;
+
+    const f = await finger(page);
+    await f.drag(195, 200, 0, 40);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "pulling");
+    await f.moveTo(195, 420);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "armed");
+    await expect(status(page)).toHaveText("Release to refresh");
+    await f.lift();
+    await expect(status(page)).toHaveText("Up to date");
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "idle");
+    expect(rateCalls.length).toBeGreaterThan(before);
+  });
+
+  test("a short pull puts it back without refreshing", async ({ page }) => {
+    await enterPocket(page);
+    const f = await finger(page);
+    await f.drag(195, 200, 0, 50);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "pulling");
+    await f.lift();
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "idle");
+    await expect(status(page)).toHaveText("");
+  });
+
+  test("never with a sheet open, below the top, or for a sideways drag", async ({ page }) => {
+    await enterPocket(page, { path: "/transactions" });
+    const f = await finger(page);
+
+    // sideways first: that's a row's swipe or a strip's scroll
+    await f.drag(100, 300, 60, 20);
+    await f.moveTo(160, 520);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "ignored");
+    await f.lift();
+
+    // below the top of the page
+    await page.evaluate(() => window.scrollTo(0, 300));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await f.drag(195, 300, 0, 220);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "ignored");
+    await f.lift();
+    await page.evaluate(() => window.scrollTo(0, 0));
+
+    // a sheet open
+    await page.getByRole("button", { name: /Display currency/ }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await f.drag(195, 60, 0, 220);
+    await expect(indicator(page)).toHaveAttribute("data-pull-indicator", "ignored");
+    await f.lift();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(status(page)).toHaveText("");
+  });
+
+  test("in Turkish", async ({ page }) => {
+    await enterPocket(page, { locale: "tr" });
+    const f = await finger(page);
+    await f.drag(195, 200, 0, 220);
+    await expect(status(page)).toHaveText("Yenilemek için bırak");
+    await f.lift();
+    await expect(status(page)).toHaveText("Güncel");
+  });
+});
