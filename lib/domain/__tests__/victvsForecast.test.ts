@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { VictvsPayout, VictvsSession } from "@/lib/data/types";
-import { forecastVictvs, payoutLagDays, victvsForecastFlows } from "../victvsForecast";
+import { cleanVictvsOverrides, forecastVictvs, payoutLagDays, victvsForecastFlows } from "../victvsForecast";
 
 const TODAY = "2026-10-19";
 
@@ -160,6 +160,82 @@ describe("forecastVictvs: cash, by the month the money lands", () => {
     });
     expect(same.lagMonths).toBe(0);
     expect(same.cash[0].expected).toBe(650);
+  });
+});
+
+describe("forecastVictvs: figures you set yourself", () => {
+  const auto = () => forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4 });
+
+  it("puts your figure in place of the computed one, keeping that alongside", () => {
+    const f = forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides: { "2026-11": 900 } });
+    const nov = f.earnings[1];
+    expect(nov).toMatchObject({ month: "2026-11", expected: 900, low: 900, high: 900, basis: "manual" });
+    expect(nov.auto).toEqual({
+      expected: 50,
+      low: 0,
+      high: 100,
+      basis: "seasonal",
+      samples: [
+        { month: "2024-11", amount: 100 },
+        { month: "2025-11", amount: 0 },
+      ],
+    });
+    // the months around it are untouched, and carry no `auto`
+    expect(f.earnings[0]).toMatchObject({ expected: 650, basis: "seasonal" });
+    expect(f.earnings[0].auto).toBeUndefined();
+  });
+
+  it("moves the cash forecast with it, through the same lag", () => {
+    const f = forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides: { "2026-11": 900 } });
+    // November's work lands in December: your 900 in place of the forecast's 50
+    expect(f.cash[2]).toMatchObject({ month: "2026-12", expected: 900, low: 900, high: 900 });
+    expect(f.cash[1]).toMatchObject({ month: "2026-11", expected: 650, low: 600, high: 700 });
+    expect(victvsForecastFlows(f, "2026-10", { accountId: null, categoryId: "c", label: "VICTVS" })[1].amount).toBe(900);
+  });
+
+  it("counts this month's work so far against your figure for it", () => {
+    const sessions = [...twoYears(), session("2026-10-04", 250, { status: "unpaid" })];
+    const f = forecastVictvs({ sessions, payouts: [], today: TODAY, months: 2, overrides: { "2026-10": 400 } });
+    expect(f.earnings[0]).toMatchObject({ expected: 400, soFar: 250, basis: "manual" });
+    // 150 still to earn, plus the 250 worked and waiting
+    expect(f.cash[1]).toMatchObject({ expected: 400, earned: 250 });
+  });
+
+  it("gives back exactly the computed forecast once the figure is removed", () => {
+    const overrides: Record<string, number> = { "2026-11": 900, "2026-12": 40 };
+    const edited = forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides });
+    delete overrides["2026-11"];
+    delete overrides["2026-12"];
+    const reverted = forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides });
+    expect(reverted).toEqual(auto());
+    expect(reverted.earnings[1]).toMatchObject({ ...edited.earnings[1].auto, month: "2026-11", soFar: 0 });
+    expect(forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides: null })).toEqual(auto());
+  });
+
+  it("ignores figures for months already over, and anything that isn't an amount", () => {
+    const f = forecastVictvs({
+      sessions: twoYears(),
+      payouts: [],
+      today: TODAY,
+      months: 4,
+      overrides: { "2026-09": 5000, "2025-12": 1, "2027-01": -20, "2026-12": Number.NaN },
+    });
+    expect(f).toEqual(auto());
+  });
+
+  it("takes zero: a month you know will be quiet", () => {
+    const f = forecastVictvs({ sessions: twoYears(), payouts: [], today: TODAY, months: 4, overrides: { "2026-10": 0 } });
+    expect(f.earnings[0]).toMatchObject({ expected: 0, low: 0, high: 0, basis: "manual" });
+    expect(f.earnings[0].auto?.expected).toBe(650);
+    expect(f.cash[1]).toMatchObject({ month: "2026-11", expected: 0, low: 0, high: 0 });
+  });
+
+  it("cleans stored overrides: month keys, amounts to the cent, nothing past", () => {
+    expect(
+      cleanVictvsOverrides({ "2026-11": 900.456, "2026-10": 0, "2026-09": 300, "2026-13": 5, nope: 1, "2027-01": "12", "2027-02": -1 }, "2026-10")
+    ).toEqual({ "2026-11": 900.46, "2026-10": 0 });
+    expect(cleanVictvsOverrides(null, "2026-10")).toEqual({});
+    expect(cleanVictvsOverrides([1, 2], "2026-10")).toEqual({});
   });
 });
 
