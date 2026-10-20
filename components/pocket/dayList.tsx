@@ -14,6 +14,7 @@ import { DayGroup, MonthGroup, monthLabel, transferCounterparts } from "@/lib/ui
 import { formatSigned, MoneySign } from "@/lib/ui/pocket/format";
 import { Icon } from "./icons";
 import { Approx, Avatar, Money } from "./kit";
+import { SwipeableRow } from "./rowSwipe";
 
 /**
  * The ledger as a Pocket list: month separators, sticky day headers, and one
@@ -40,7 +41,9 @@ import { Approx, Avatar, Money } from "./kit";
  * - PocketTxRow({ tx, lookup, onTap, onComplete?, accountScoped?, due?, selection? }):
  *   one button for the row and, on a planned row given onComplete, a 44px ✓
  *   beside it. In selection mode the button toggles the row (aria-pressed), a
- *   check circle takes the avatar's place and there's no ✓. Renders nothing
+ *   check circle takes the avatar's place and there's no ✓. Outside selection
+ *   mode the row swipes (components/pocket/rowSwipe.tsx): right marks a
+ *   planned row paid by the ✓'s path, left opens its sheet. Renders nothing
  *   when the row's account is unknown.
  * - CompleteCheck({ name, ready, onClick }): that ✓, for any planned row
  *   (Home's Coming up), disabled with a reason until rates arrive.
@@ -439,7 +442,18 @@ export function PocketTxRow({
   if (tx.legacy) parts.push({ key: "legacy", node: t("legacy.badge") });
 
   return (
-    <li className={`flex items-center ${tx.legacy ? "opacity-60" : ""}`}>
+    <SwipeableRow
+      className={tx.legacy ? "opacity-60" : ""}
+      swipe={
+        selection
+          ? null
+          : {
+              // the ✓'s own path (Undo included); none while it can't be ticked
+              right: showCheck && lookup.ratesReady ? () => onComplete(tx) : undefined,
+              left: () => onTap(tx),
+            }
+      }
+    >
       <button
         type="button"
         onClick={() => (selection ? selection.toggle(tx) : onTap(tx))}
@@ -502,6 +516,6 @@ export function PocketTxRow({
           <CompleteCheck name={d.title} ready={lookup.ratesReady} onClick={() => onComplete(tx)} />
         </span>
       ) : null}
-    </li>
+    </SwipeableRow>
   );
 }
