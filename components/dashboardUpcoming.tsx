@@ -31,8 +31,8 @@ import { useFormatDate } from "@/lib/useFormatDate";
  * Every button stops its click: on Classic the whole card is a link.
  */
 
-/** Where "See all" goes. The Timeline replaces it once it exists. */
-export const UPCOMING_HREF = "/transactions";
+/** Where "See all" goes: the Timeline, where what's coming sits beside what went. */
+export const UPCOMING_HREF = "/transactions?tab=timeline";
 
 export function useUpcomingItems(
   d: DashboardData | null,
