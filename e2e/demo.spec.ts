@@ -1,5 +1,6 @@
 import { expect, Page, test } from "@playwright/test";
 import { pinRates } from "./support/rates";
+import { stepHeight } from "../lib/ui/plannerCards";
 
 // the same rates in every run, offline or in CI (see support/rates.ts)
 test.beforeEach(async ({ page }) => {
@@ -1121,14 +1122,18 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   const after = (await card.boundingBox())!;
   expect(after.width).toBeLessThan(before.width);
 
+  // heights step through the size presets (lib/ui/plannerCards.ts): from
+  // its L preset, the next step up
+  const h1 = stepHeight(h0, 1);
+  expect(h1).toBeGreaterThan(h0);
   await page.getByRole("button", { name: /^Taller: Projections$/ }).click();
   await page.waitForTimeout(300);
-  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h0 + 1}$`));
+  await expect(card).toHaveAttribute("data-box", new RegExp(`,${w0 - 1},${h1}$`));
   expect((await card.boundingBox())!.height).toBeGreaterThan(after.height);
 
   // the table inside grows with the card rather than stopping at the 448px
   // cap it used to carry; the horizon slider sits above it in the same card
-  const inner = card.locator(".fill-in-grid");
+  const inner = card.locator("[data-plan-card-body]");
   const tall = (await card.boundingBox())!.height;
   const innerHeight = (await inner.boundingBox())!.height;
   expect(innerHeight).toBeGreaterThan(448);
@@ -1161,7 +1166,7 @@ test("planner custom view: place, resize, hide, and it becomes the default", asy
   await expect(page.getByRole("button", { name: /^Custom$/ })).toHaveClass(/shadow-sm/);
   await expect(page.locator('[data-card="projections"]')).toHaveAttribute(
     "data-box",
-    new RegExp(`,${w0 - 1},${h0 + 1}$`)
+    new RegExp(`,${w0 - 1},${h1}$`)
   );
   await expect(page.locator('[data-card="chart"]')).toHaveAttribute("data-box", chartSize);
   await expect(page.locator('[data-card="lost"]')).toHaveCount(0); // still hidden

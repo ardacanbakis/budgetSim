@@ -197,7 +197,12 @@ test.describe("Pocket desk pages", () => {
     await expect(page.getByRole("button", { name: "Export JSON" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
 
-    const scroller = page.locator("main .pocket-unscroll");
+    // the projections card keeps the rest of the months behind Show all
+    // rather than in a scroll of its own; opened, it reads in the page's scroll
+    const card = page.locator('main [data-plan-card="projections"]');
+    const scroller = card.locator("[data-plan-card-body]");
+    expect((await scrollState(scroller)).overflowY).toBe("clip");
+    await card.getByRole("button", { name: "Show all of Projections" }).click();
     expect(await scrollState(scroller)).toEqual({ maxHeight: "none", overflowY: "visible", trapped: false });
     const month = scroller.locator("tbody tr").first();
     await expect(month.locator("td")).toHaveCount(5);
@@ -268,7 +273,7 @@ test.describe("Pocket desk pages", () => {
       ],
       planner: [
         { part: "budgets", find: (p) => p.getByText("Monthly budgets", { exact: true }) },
-        { part: "projections", find: (p) => p.locator("main .pocket-unscroll") },
+        { part: "projections", find: (p) => p.locator('main [data-plan-card="projections"]') },
       ],
       savings: [{ part: "schedule", find: (p) => p.locator("main table", { has: p.locator("td[data-label='Cash out']") }) }],
     };
@@ -319,5 +324,6 @@ test("Pocket off: the desk markers change nothing", async ({ page }) => {
 
   await open(page, "planner");
   await expect(page.getByRole("button", { name: "Export JSON" })).toBeVisible();
-  expect(await page.locator("main .pocket-unscroll").evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
+  // the projections scroll inside their card, at its preset height
+  expect(await page.locator('main [data-plan-card="projections"] [data-plan-card-body]').evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
 });

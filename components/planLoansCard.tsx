@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Input, Modal, Select } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
+import { CardSize } from "@/lib/ui/plannerCards";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { addMonthKey, monthsBetween, PlanLoan, planLoanSummary } from "@/lib/domain/planner";
 import { LoanRatePicker } from "@/components/loanRatePicker";
@@ -33,7 +35,9 @@ export function PlanLoansCard({
   displayCurrency,
   firstMonth,
   onChange,
+  size,
 }: {
+  size?: CardSize;
   loans: PlanLoan[];
   accounts: { id: string; name: string; currency: Currency }[];
   displayCurrency: Currency;
@@ -52,27 +56,26 @@ export function PlanLoansCard({
 
   return (
     <>
-      <Card>
-        <CardHeader
-          title={t("planner.loansTitle")}
-          action={
-            <Button variant="primary" onClick={() => setAdding(true)}>
-              + {t("planner.addLoan")}
-            </Button>
-          }
-        />
+      <PlanCard
+        id="debt"
+        size={size}
+        title={t("planner.loansTitle")}
+        actions={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            + {t("planner.addLoan")}
+          </Button>
+        }
+      >
         {loans.length === 0 ? (
-          <div className="p-4">
-            <EmptyState>{t("planner.loansEmpty")}</EmptyState>
-          </div>
+          <EmptyState>{t("planner.loansEmpty")}</EmptyState>
         ) : (
-          <ul className="divide-y divide-[var(--edge-soft)]">
+          <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
             {loans.map((loan) => {
               const s = planLoanSummary(loan);
               // a loan drawn before the horizon is one you already carry
               const alreadyDrawn = monthsBetween(firstMonth, loan.receivedMonth) < 0;
               return (
-                <li key={loan.id} className={`px-4 py-3 ${loan.enabled ? "" : "opacity-50"}`}>
+                <li key={loan.id} className={`py-3 ${loan.enabled ? "" : "opacity-50"}`}>
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -143,7 +146,7 @@ export function PlanLoansCard({
             })}
           </ul>
         )}
-      </Card>
+      </PlanCard>
 
       <PlanLoanModal
         open={adding || editing != null}

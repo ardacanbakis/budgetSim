@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, ReactNode, Suspense, useEffect, useState } from "react";
+import { CSSProperties, Fragment, ReactNode, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { HorizonSlider, horizonLabel } from "@/components/horizonSlider";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
@@ -44,6 +44,8 @@ import { SavingsOverlayCard, savingsOverlayFlows } from "@/components/savingsOve
 import { buildSavingsPlan, normalizeSavingsBody } from "@/lib/domain/savingsFinance";
 import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
+import { PlanCard } from "@/components/plannerCard";
+import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
 import { goldRatiosOf } from "@/lib/domain/gold";
@@ -78,6 +80,31 @@ const DEFAULT_TILES: TileId[] = ["start", "end", "delta", "sold"];
 
 type PlannerView = "single" | "two" | "custom";
 const LAYOUT_KEY = "renovator-plan-layout";
+
+/**
+ * Every Forecast card's size preset (lib/ui/plannerCards.ts), in reading
+ * order: the picture first, then the levers that change it. The two-column
+ * layout pairs cards of the same height from this order, and a fresh custom
+ * canvas packs it.
+ */
+const CARD_ORDER: Array<[string, CardSize]> = [
+  ["tiles", "strip"],
+  ["chart", "L"],
+  ["projections", "L"],
+  ["milestones", "S"],
+  ["dev", "S"],
+  ["lost", "S"],
+  ["savings", "S"],
+  ["victvs", "M"],
+  ["funding", "M"],
+  ["items", "M"],
+  ["itemsIncome", "M"],
+  ["itemsExpense", "M"],
+  ["debt", "M"],
+  ["sales", "L"],
+  ["budgets", "L"],
+];
+const SIZE = Object.fromEntries(CARD_ORDER) as Record<string, CardSize>;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -510,54 +537,57 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
         : only === "expense"
           ? t("planner.itemsExpenseTitle")
           : t("planner.itemsTitle");
+    const id = only === "all" ? "items" : only === "income" ? "itemsIncome" : "itemsExpense";
     return (
-      <Card>
-        <CardHeader
-          title={title}
-          action={
-            <div className="flex items-center gap-2">
-              {only === "all" ? (
-                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-teal-600"
-                    checked={groupItems.value}
-                    onChange={(e) => groupItems.setValue(e.target.checked)}
-                  />
-                  {t("planner.groupByType")}
-                </label>
-              ) : null}
-              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+      <PlanCard
+        id={id}
+        size={SIZE[id]}
+        title={title}
+        actions={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            + {t("planner.addItem")}
+          </Button>
+        }
+        // how the list is arranged is a setting, not the card's action
+        footer={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {only === "all" ? (
+              <label className="flex items-center gap-1.5">
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-teal-600"
-                  checked={splitItems.value}
-                  onChange={(e) => splitItems.setValue(e.target.checked)}
+                  checked={groupItems.value}
+                  onChange={(e) => groupItems.setValue(e.target.checked)}
                 />
-                {t("planner.splitItems")}
+                {t("planner.groupByType")}
               </label>
-              <Button variant="primary" onClick={() => setAdding(true)}>
-                + {t("planner.addItem")}
-              </Button>
-            </div>
-          }
-        />
-        {count === 0 ? (
-          <div className="p-4">
-            <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
+            ) : null}
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-teal-600"
+                checked={splitItems.value}
+                onChange={(e) => splitItems.setValue(e.target.checked)}
+              />
+              {t("planner.splitItems")}
+            </label>
           </div>
+        }
+      >
+        {count === 0 ? (
+          <EmptyState>{t("planner.itemsEmpty")}</EmptyState>
         ) : (
-          <ul className="divide-y divide-[var(--edge-soft)]">
+          <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
             {groups.map(({ direction, items }) => (
               <Fragment key={direction}>
                 {/* the heading is noise on a card that only holds one kind */}
                 {groupItems.value && only === "all" && direction !== "all" ? (
-                  <li className="bg-[var(--edge-soft)]/60 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  <li className="bg-[var(--edge-soft)]/60 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                     {direction === "income" ? t("tx.income") : t("tx.expense")}
                   </li>
                 ) : null}
                 {items.map((item) => (
-                  <li key={item.id} className={`flex items-center gap-3 px-4 py-3 ${item.enabled ? "" : "opacity-50"}`}>
+                  <li key={item.id} className={`flex items-center gap-3 py-3 ${item.enabled ? "" : "opacity-50"}`}>
                     <input
                       type="checkbox"
                       className="h-4 w-4 accent-teal-600"
@@ -623,7 +653,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
             ))}
           </ul>
         )}
-      </Card>
+      </PlanCard>
     );
   };
 
@@ -633,7 +663,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     {
       id: "tiles",
       title: t("planner.blockHeadline"),
-      defaultSize: { w: 4, h: 1 },
+      size: SIZE.tiles,
       node: (
         <>
       {/* headline: pick which numbers matter to you; the four-across grid
@@ -669,14 +699,20 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
             ))}
           </div>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* every tile the same size: rows of equal height, the label and the
+            hint each held to one line */}
+        <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {shownTiles.map((id) => {
             const tile = tileFor(id);
             return (
-              <Card key={id} className="p-4">
-                <div className="text-xs text-zinc-500">{tile.label}</div>
-                <div className={`mt-1 text-2xl font-bold ${tile.tone ?? ""}`}>{tile.value}</div>
-                {tile.hint ? <div className="mt-0.5 text-xs text-zinc-400">{tile.hint}</div> : null}
+              <Card key={id} className="min-w-0 px-4 py-3">
+                <div data-plan-tile={id} className="flex h-full flex-col">
+                  <div className="truncate text-xs text-zinc-500" title={tile.label}>{tile.label}</div>
+                  <div className={`mt-1 truncate text-2xl font-bold tabular-nums ${tile.tone ?? ""}`}>{tile.value}</div>
+                  {tile.hint ? (
+                    <div className="mt-0.5 truncate text-xs text-zinc-400" title={tile.hint}>{tile.hint}</div>
+                  ) : null}
+                </div>
               </Card>
             );
           })}
@@ -688,13 +724,12 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     {
       id: "chart",
       title: t("planner.chartTitle"),
-      defaultSize: { w: 2, h: 4 },
+      size: SIZE.chart,
       node: (
         <>
-        {/* the picture */}
-        <Card className="flex flex-col">
-          <CardHeader title={`${t("planner.chartTitle")} (${displayCurrency})`} />
-          <div className="fill-in-grid h-80 p-3">
+        {/* the picture: it fills its card rather than scrolling in it */}
+        <PlanCard id="chart" size={SIZE.chart} fill title={`${t("planner.chartTitle")} (${displayCurrency})`}>
+          <div className="h-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
                 <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
@@ -750,23 +785,25 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "projections",
       title: t("projections.title"),
-      defaultSize: { w: 2, h: 5 },
+      size: SIZE.projections,
       node: (
         <>
-        {/* the same numbers, readable — with the control that shapes them */}
-        <Card className="flex flex-col">
-          <CardHeader title={t("projections.title")} />
-          <div className="border-b border-[var(--edge-soft)] p-3">
-            <HorizonSlider months={months} onChange={setHorizon} />
-          </div>
-          <div className="pocket-unscroll fill-in-grid max-h-[28rem] overflow-auto p-2">
+        {/* the same numbers, readable — with the control that shapes them,
+            which stays put while the months scroll under it */}
+        <PlanCard
+          id="projections"
+          size={SIZE.projections}
+          title={t("projections.title")}
+          toolbar={<HorizonSlider months={months} onChange={setHorizon} />}
+        >
+          <div className="-mx-2 -my-3">
             <table className="stack-sm w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-left text-xs text-zinc-400">
@@ -788,7 +825,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                       >
                         <td className="px-2 py-1.5">
                           <button
-                            className="flex items-center gap-1.5 text-left"
+                            className="flex items-center gap-1.5 whitespace-nowrap text-left"
                             aria-expanded={open}
                             aria-label={monthLabelOf(m.month, locale)}
                           >
@@ -937,21 +974,20 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               </tbody>
             </table>
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "sales",
       title: t("planner.salesTitle"),
-      defaultSize: { w: 2, h: 7 },
+      size: SIZE.sales,
       node: (
         <>
         {/* everything sold, month by month — its own card so it can be given
             the room it needs, or hidden entirely */}
-        <Card className="flex flex-col">
-          <CardHeader title={t("planner.salesTitle")} />
-          <div className="fill-in-grid p-3">
+        <PlanCard id="sales" size={SIZE.sales} title={t("planner.salesTitle")}>
+          <div>
             {salesByMonth.length === 0 ? (
               <EmptyState>{t("planner.salesEmpty")}</EmptyState>
             ) : (
@@ -986,20 +1022,19 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               </div>
             )}
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "dev",
       title: t("planner.devaluationTitle"),
-      defaultSize: { w: 1, h: 2 },
+      size: SIZE.dev,
       node: (
         <>
         {/* the assumption that dominates a 10-year view from Turkey */}
-        <Card>
-          <CardHeader title={t("planner.devalTitle")} />
-          <div className="space-y-3 p-4">
+        <PlanCard id="dev" size={SIZE.dev} title={t("planner.devalTitle")}>
+          <div className="space-y-3">
             <label className="flex items-start gap-2">
               <input
                 type="checkbox"
@@ -1040,20 +1075,19 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               </>
             ) : null}
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "lost",
       title: t("planner.lostIncomeTitle"),
-      defaultSize: { w: 1, h: 2 },
+      size: SIZE.lost,
       node: (
         <>
         {/* what if an income source stops */}
-        <Card>
-          <CardHeader title={t("planner.lostIncomeTitle")} />
-          <div className="space-y-2 p-4">
+        <PlanCard id="lost" size={SIZE.lost} title={t("planner.lostIncomeTitle")}>
+          <div className="space-y-2">
             <p className="text-xs text-zinc-500">{t("planner.lostIncomeHint")}</p>
             <div className="flex flex-wrap gap-1.5">
               {incomeCategories.map((c) => {
@@ -1080,20 +1114,19 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               })}
             </div>
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "victvs",
       title: t("victvs.forecastInPlanner"),
-      defaultSize: { w: 2, h: 3 },
+      size: SIZE.victvs,
       node: (
         <>
         {/* VICTVS income from the same months in earlier years */}
-        <Card>
-          <CardHeader title={`VICTVS · ${t("victvs.forecastTitle")}`} />
-          <div className="space-y-3 p-4">
+        <PlanCard id="victvs" size={SIZE.victvs} title={`VICTVS · ${t("victvs.forecastTitle")}`}>
+          <div className="space-y-3">
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -1108,35 +1141,36 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
             </label>
             {victvsForecast ? <VictvsForecastView forecast={victvsForecast} rows={plan.victvsForecast ? 12 : 6} /> : null}
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "funding",
       title: t("planner.fundingTitle"),
-      defaultSize: { w: 2, h: 4 },
+      size: SIZE.funding,
       node: (
         <>
         {/* which assets pay for a month that doesn't pay for itself */}
-        <Card className="flex flex-col">
-          <CardHeader
-            title={t("planner.fundingTitle")}
-            action={
-              <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-teal-600"
-                  checked={plan.funding?.enabled ?? true}
-                  onChange={(e) =>
-                    persist({ ...plan, funding: { ...plan.funding, enabled: e.target.checked } })
-                  }
-                />
-                {t("planner.fundingEnabled")}
-              </label>
-            }
-          />
-          <div className="fill-in-grid space-y-2 p-4">
+        <PlanCard
+          id="funding"
+          size={SIZE.funding}
+          title={t("planner.fundingTitle")}
+          actions={
+            <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-teal-600"
+                checked={plan.funding?.enabled ?? true}
+                onChange={(e) =>
+                  persist({ ...plan, funding: { ...plan.funding, enabled: e.target.checked } })
+                }
+              />
+              {t("planner.fundingEnabled")}
+            </label>
+          }
+        >
+          <div className="space-y-2">
             <p className="text-xs text-zinc-500">{t("planner.fundingHint")}</p>
             {drawable.length === 0 ? (
               <EmptyState>{t("planner.fundingEmpty")}</EmptyState>
@@ -1164,7 +1198,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
             )}
 
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
@@ -1175,13 +1209,13 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
           {
             id: "itemsIncome",
             title: t("planner.itemsIncomeTitle"),
-            defaultSize: { w: 2, h: 3 },
+            size: SIZE.itemsIncome,
             node: itemsCard("income"),
           },
           {
             id: "itemsExpense",
             title: t("planner.itemsExpenseTitle"),
-            defaultSize: { w: 2, h: 3 },
+            size: SIZE.itemsExpense,
             node: itemsCard("expense"),
           },
         ] as GridBlock[])
@@ -1189,16 +1223,17 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
           {
             id: "items",
             title: t("planner.itemsTitle"),
-            defaultSize: { w: 2, h: 3 },
+            size: SIZE.items,
             node: itemsCard("all"),
           },
         ] as GridBlock[])),
     {
       id: "savings",
       title: t("savings.overlayTitle"),
-      defaultSize: { w: 2, h: 3 },
+      size: SIZE.savings,
       node: (
         <SavingsOverlayCard
+          size={SIZE.savings}
           plans={savingsPlans.data ?? []}
           enabled={overlaidSavings}
           today={todayISO()}
@@ -1211,9 +1246,10 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     {
       id: "debt",
       title: t("planner.loansTitle"),
-      defaultSize: { w: 2, h: 3 },
+      size: SIZE.debt,
       node: (
         <PlanLoansCard
+          size={SIZE.debt}
           loans={plan.loans ?? []}
           accounts={drawable}
           displayCurrency={displayCurrency}
@@ -1225,59 +1261,63 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     {
       id: "budgets",
       title: t("planner.budgetsTitle"),
-      defaultSize: { w: 2, h: 4 },
+      size: SIZE.budgets,
       node: (
         <>
         {/* monthly budgets for everyday spending */}
-        <Card>
-          <CardHeader title={t("planner.budgetsTitle")} />
-          <div className="space-y-3 p-4">
+        <PlanCard id="budgets" size={SIZE.budgets} title={t("planner.budgetsTitle")}>
+          <div className="space-y-3">
             <p className="text-xs text-zinc-500">{t("planner.budgetsHint")}</p>
             <div className="space-y-2">
               {expenseCategories.map((c) => {
                 const budget = budgetByCategory.get(c.id);
                 const average = averageByCategory.get(c.id) ?? 0;
                 return (
+                  // the category (with its 3-month average under it) on the
+                  // left, the amount on the right, so a row holds together in
+                  // a narrow card
                   <div key={c.id} className="flex flex-wrap items-center gap-2">
-                    <label className="flex min-w-40 flex-1 items-center gap-2 text-sm pocket:basis-full">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-teal-600"
-                        checked={budget?.enabled ?? false}
-                        onChange={(e) =>
-                          setBudget(c.id, {
-                            enabled: e.target.checked,
-                            // first tick seeds from the real 3-month average
-                            monthlyAmount: budget?.monthlyAmount || Math.round(average),
-                          })
-                        }
-                      />
-                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
-                      <span className="truncate">{c.name}</span>
-                    </label>
-                    {average > 0 ? (
-                      <button
-                        onClick={() =>
-                          // the average is computed in the display currency, so
-                          // adopt that currency along with the number
-                          setBudget(c.id, {
-                            enabled: true,
-                            monthlyAmount: Math.round(average),
-                            currency: displayCurrency,
-                          })
-                        }
-                        className="text-[11px] text-teal-600 hover:underline"
-                        title={t("planner.useAverageHint")}
-                      >
-                        {t("planner.useAverage", { amount: fmt(average) })}
-                      </button>
-                    ) : null}
+                    <div className="min-w-0 flex-1 basis-36 pocket:basis-full">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-teal-600"
+                          checked={budget?.enabled ?? false}
+                          onChange={(e) =>
+                            setBudget(c.id, {
+                              enabled: e.target.checked,
+                              // first tick seeds from the real 3-month average
+                              monthlyAmount: budget?.monthlyAmount || Math.round(average),
+                            })
+                          }
+                        />
+                        <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
+                        <span className="truncate">{c.name}</span>
+                      </label>
+                      {average > 0 ? (
+                        <button
+                          onClick={() =>
+                            // the average is computed in the display currency, so
+                            // adopt that currency along with the number
+                            setBudget(c.id, {
+                              enabled: true,
+                              monthlyAmount: Math.round(average),
+                              currency: displayCurrency,
+                            })
+                          }
+                          className="ml-6 text-[11px] text-teal-600 hover:underline"
+                          title={t("planner.useAverageHint")}
+                        >
+                          {t("planner.useAverage", { amount: fmt(average) })}
+                        </button>
+                      ) : null}
+                    </div>
                     <Input
                       type="number"
                       step="any"
                       min="0"
                       inputMode="decimal"
-                      className="!w-32 text-right pocket:w-auto! pocket:min-w-0 pocket:flex-1"
+                      className="!w-28 text-right pocket:w-auto! pocket:min-w-0 pocket:flex-1"
                       placeholder="0"
                       value={budget ? String(budget.monthlyAmount) : ""}
                       onChange={(e) => setBudget(c.id, { monthlyAmount: Number(e.target.value) || 0, enabled: true })}
@@ -1299,44 +1339,49 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               })}
             </div>
           </div>
-        </Card>
+        </PlanCard>
         </>
       ),
     },
     {
       id: "milestones",
       title: t("planner.milestones"),
-      defaultSize: { w: 2, h: 2 },
+      size: SIZE.milestones,
       node: (
         <>
-
-          <Card>
-            <CardHeader title={t("planner.milestones")} />
-            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
+          {/* a short list, a year to a line, so it reads at any card width */}
+          <PlanCard id="milestones" size={SIZE.milestones} title={t("planner.milestones")}>
+            <ul className="-my-1.5 divide-y divide-[var(--edge-soft)]">
               {milestones.map((m) => {
                 const baseline = baseMilestones.get(m.months);
                 const diff = baseline != null ? m.netWorth - baseline : null;
                 return (
-                  <div key={m.months} className="rounded-lg bg-[var(--edge-soft)] p-3">
-                    <div className="text-xs font-medium text-zinc-500">{m.label}</div>
-                    <div className="mt-0.5 font-bold tabular-nums">{fmt(m.netWorth)}</div>
-                    {diff != null && hasPlan && Math.abs(diff) > 0.5 ? (
-                      <div className={`text-[11px] tabular-nums ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {diff >= 0 ? "+" : "−"}
-                        {fmt(Math.abs(diff))}
-                      </div>
-                    ) : null}
-                  </div>
+                  <li key={m.months} className="flex items-baseline justify-between gap-3 py-1.5">
+                    <span className="text-xs font-medium text-zinc-500">{m.label}</span>
+                    <span className="text-right">
+                      <span className="block font-bold tabular-nums">{fmt(m.netWorth)}</span>
+                      {diff != null && hasPlan && Math.abs(diff) > 0.5 ? (
+                        <span className={`block text-[11px] tabular-nums ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {diff >= 0 ? "+" : "−"}
+                          {fmt(Math.abs(diff))}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
                 );
               })}
-            </div>
-          </Card>
+            </ul>
+          </PlanCard>
         </>
       ),
     },
   ];
+  // in reading order (CARD_ORDER), which is also how a fresh canvas packs
+  blocks.sort((a, b) => CARD_ORDER.findIndex(([id]) => id === a.id) - CARD_ORDER.findIndex(([id]) => id === b.id));
   const blockById = new Map(blocks.map((b) => [b.id, b.node] as const));
   const block = (id: string) => blockById.get(id);
+  // the reading layouts leave out milestones until there's a year to show
+  const reading = blocks.filter((b) => b.id !== "milestones" || milestones.length > 0);
 
 
   return (
@@ -1441,32 +1486,22 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
           onChange={grid.save}
         />
       ) : (
-        <>
-          {block("tiles")}
-
-          {/* inputs on the left, the picture on the right — editing an
-              assumption redraws the chart beside it without scrolling */}
-          <div className={view === "two" ? "grid items-start gap-4 xl:grid-cols-2" : "space-y-4"}>
-            <div className="space-y-4">
-              {block("dev")}
-              {block("lost")}
-              {block("victvs")}
-              {block("funding")}
-              {block("sales")}
-              {block("items")}
-              {block("itemsIncome")}
-              {block("itemsExpense")}
-              {block("debt")}
-              {block("savings")}
-              {block("budgets")}
+        // rows of cards: two to a row of the same height (from xl up), or one
+        // to a row; a card's size comes from its preset either way
+        <div data-plan-rows>
+          {(view === "two" ? readingRows(reading) : reading.map((b) => [b.id])).map((ids) => (
+            <div
+              key={ids.join(" ")}
+              data-plan-row
+              data-cols={view === "two" && SIZE[ids[0]] !== "strip" ? "2" : "1"}
+              style={{ "--row-h": `${rowHeightPx(ids.map((id) => SIZE[id]))}px` } as CSSProperties}
+            >
+              {ids.map((id) => (
+                <Fragment key={id}>{block(id)}</Fragment>
+              ))}
             </div>
-            <div className={view === "two" ? "space-y-4 xl:sticky xl:top-20" : "space-y-4"}>
-              {block("chart")}
-              {milestones.length > 0 ? block("milestones") : null}
-              {block("projections")}
-            </div>
-          </div>
-        </>
+          ))}
+        </div>
       )}
 
       <PlanItemModal

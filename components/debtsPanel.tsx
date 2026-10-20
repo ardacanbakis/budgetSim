@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
 import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAppMutation, useLoans, useRates, useTransactions } from "@/lib/data/queries";
 import { Loan } from "@/lib/data/types";
@@ -205,29 +206,28 @@ export function TrackedLoansCard() {
   const usdPer = rates.data?.usdPer;
 
   return (
-    <Card>
-      <CardHeader
-        title={t("loans.tracked")}
-        action={
-          <Link href={loanHref()} className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-            {t("pages.seeInPortfolio")} →
-          </Link>
-        }
-      />
+    // the Plan page's frame: it sits beside the simulator on Plan's loan tab
+    <PlanCard
+      id="loan-tracked"
+      title={t("loans.tracked")}
+      actions={
+        <Link href={loanHref()} className="text-xs text-teal-600 hover:underline dark:text-teal-400">
+          {t("pages.seeInPortfolio")} →
+        </Link>
+      }
+    >
       {loans.isLoading || transactions.isLoading ? (
         <Spinner />
       ) : (loans.data ?? []).length === 0 ? (
-        <div className="p-4">
-          <EmptyState>{t("loans.empty")}</EmptyState>
-        </div>
+        <EmptyState>{t("loans.empty")}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[var(--edge-soft)]">
+        <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
           {(loans.data ?? []).map((loan) => {
             const { remaining, paid, term, pct } = loanProgress(loan, transactions.data ?? []);
             const converted = usdPer && loan.currency !== displayCurrency ? convert(remaining, loan.currency, displayCurrency, usdPer) : null;
             return (
               <li key={loan.id}>
-                <Link href={loanHref(loan.id)} className="block px-4 py-3 hover:bg-[var(--edge-soft)]">
+                <Link href={loanHref(loan.id)} className="-mx-2 block rounded-lg px-2 py-3 hover:bg-[var(--edge-soft)]">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-sm font-medium">
                       {loanIcon(loan)} {loan.name}
@@ -249,6 +249,6 @@ export function TrackedLoansCard() {
           })}
         </ul>
       )}
-    </Card>
+    </PlanCard>
   );
 }

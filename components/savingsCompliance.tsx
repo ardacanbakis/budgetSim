@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, Card, CardHeader } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
 import { formatAmount } from "@/lib/domain/currencies";
 import { SavingsFinanceInput, SavingsPlan, StepRatePct } from "@/lib/domain/savingsFinance";
 import {
@@ -70,16 +71,14 @@ export function SavingsCompliancePanel({
   ] as const;
 
   return (
-    <Card>
-      <CardHeader
-        title={t("savings.complianceTitle")}
-        action={
-          <Badge tone={c.ok ? "green" : "red"}>{c.ok ? t("savings.compliant") : t("savings.nonCompliant")}</Badge>
-        }
-      />
-      <ul className="divide-y divide-[var(--edge-soft)]">
+    <PlanCard
+      id="evim-compliance"
+      title={t("savings.complianceTitle")}
+      actions={<Badge tone={c.ok ? "green" : "red"}>{c.ok ? t("savings.compliant") : t("savings.nonCompliant")}</Badge>}
+    >
+      <ul className="-mt-3 divide-y divide-[var(--edge-soft)]">
         {rules.map(({ key, rule, detail }) => (
-          <li key={key} className="flex items-start gap-3 px-4 py-2.5">
+          <li key={key} className="flex items-start gap-3 py-2.5">
             <span aria-hidden className={rule.ok ? "text-emerald-600" : "text-red-600"}>
               {rule.ok ? "✓" : "✕"}
             </span>
@@ -92,13 +91,13 @@ export function SavingsCompliancePanel({
       </ul>
 
       {c.highValue ? (
-        <p className="border-t border-[var(--edge-soft)] px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+        <p className="border-t border-[var(--edge-soft)] py-2 text-xs text-amber-700 dark:text-amber-400">
           {t("savings.highValue")}
         </p>
       ) : null}
 
       {fixes ? (
-        <div className="space-y-2 border-t border-[var(--edge-soft)] p-4">
+        <div className="space-y-2 border-t border-[var(--edge-soft)] pt-3">
           <p className="text-xs text-zinc-500">{t("savings.fixesHint")}</p>
           <div className="flex flex-wrap gap-2">
             {fixes.instalment != null && fixes.instalment !== plan.input.firstInstalment ? (
@@ -122,6 +121,6 @@ export function SavingsCompliancePanel({
           ) : null}
         </div>
       ) : null}
-    </Card>
+    </PlanCard>
   );
 }

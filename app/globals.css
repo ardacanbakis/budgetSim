@@ -518,28 +518,97 @@ html[data-ui="v2"] table.sticky-head thead th {
 }
 
 /*
- * A card placed on the Planner canvas fills the cells it was given. Content
- * that carries its own height for the reading layouts (a 20rem chart, a
- * capped table) hands that height back here and grows into the cell instead,
- * so making a card taller actually shows more of it.
+ * The Plan page's cards (components/plannerCard.tsx). A card with a size is
+ * exactly as tall as its preset (--card-h, set on the card): its body takes
+ * what the header, toolbar and footer leave and scrolls the rest. The body
+ * is given no height of its own (flex-basis 0, height 0) so that what it
+ * holds never makes the card, or the row it sits in, any taller. Show all
+ * (data-expanded) hands the card its content's height back.
  */
-/* only cards that carry something worth stretching fill their cell; the rest
-   sit at their natural height rather than becoming tall empty boxes */
-[data-grid-card]:has(.fill-in-grid) > * {
+[data-plan-card] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+[data-plan-card][data-size] {
+  height: var(--card-h);
+}
+[data-plan-card][data-size] > [data-plan-card-region] {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
+}
+[data-plan-card][data-size] > [data-plan-card-region] > [data-plan-card-body] {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* the chart draws into whatever the card leaves it */
+[data-plan-card] [data-plan-card-body][data-fill] {
+  overflow: hidden;
+}
+[data-plan-card][data-size][data-expanded="true"] {
+  height: auto;
+  min-height: var(--card-h);
+}
+[data-plan-card][data-size][data-expanded="true"] > [data-plan-card-region] {
+  flex: 1 0 auto;
+  height: auto;
+}
+[data-plan-card][data-size][data-expanded="true"] > [data-plan-card-region] > [data-plan-card-body] {
+  height: auto;
+  overflow: visible;
+}
+/* the sticky table head has to sit above the rows it scrolls under */
+[data-plan-card-body] thead {
+  z-index: 1;
+}
+
+/*
+ * The reading layouts: rows of cards. Two to a row from xl up, and the row
+ * has one height (--row-h) that both cards stretch to, so they line up; a
+ * card opened with Show all makes its row as tall as it needs, and its
+ * partner stretches with it.
+ */
+[data-plan-rows] {
+  display: grid;
+  gap: 1rem;
+}
+[data-plan-row] {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 80rem) {
+  [data-plan-row][data-cols="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: var(--row-h);
+  }
+  [data-plan-row][data-cols="2"] > [data-plan-card] {
+    height: auto;
+  }
+  [data-plan-row][data-cols="2"]:has(> [data-expanded="true"]) {
+    grid-auto-rows: minmax(var(--row-h), auto);
+  }
+}
+
+/*
+ * The custom canvas: a card fills the cells it was given. Opened with Show
+ * all it grows past them, over the cards below, until it's closed again.
+ */
+[data-grid-card] > [data-plan-card] {
   height: 100%;
 }
-
-[data-grid-card] .fill-in-grid {
-  flex: 1 1 auto;
-  min-height: 0;
+[data-grid-card] > [data-plan-card][data-expanded="true"] {
   height: auto;
-  max-height: none;
-  overflow: auto;
+  min-height: 100%;
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.25);
 }
-
-/* the sticky table head has to sit above the rows it scrolls under */
-[data-grid-card] thead {
-  z-index: 1;
+[data-grid-card]:has(> [data-plan-card][data-expanded="true"]) {
+  overflow: visible;
+}
+[data-card]:has(> [data-grid-card] > [data-plan-card][data-expanded="true"]) {
+  z-index: 20;
 }
 
 /* POCKET:BEGIN
@@ -677,6 +746,31 @@ html[data-ui="v2"] table.sticky-head thead th {
   html[data-phone="pocket"] .pocket-canvas > * {
     grid-area: auto !important;
     height: auto !important;
+  }
+
+  /* Plan's cards (components/plannerCard.tsx): full width at their content's
+     height, nothing scrolling inside one. A long card shows its first part
+     and keeps the rest behind Show all; the chart keeps its proportions. */
+  html[data-phone="pocket"] [data-plan-card][data-size] {
+    height: auto !important;
+    min-height: 0;
+  }
+  html[data-phone="pocket"] [data-plan-card][data-size] > [data-plan-card-region] {
+    flex: none;
+    height: auto;
+  }
+  html[data-phone="pocket"] [data-plan-card][data-size] > [data-plan-card-region] > [data-plan-card-body] {
+    height: auto;
+    max-height: calc(var(--card-h) - 3.5rem);
+    overflow: clip;
+  }
+  html[data-phone="pocket"] [data-plan-card][data-expanded="true"] > [data-plan-card-region] > [data-plan-card-body] {
+    max-height: none;
+    overflow: visible;
+  }
+  html[data-phone="pocket"] [data-plan-card][data-size] > [data-plan-card-region] > [data-plan-card-body][data-fill] {
+    aspect-ratio: 4 / 3;
+    max-height: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

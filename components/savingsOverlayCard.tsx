@@ -1,6 +1,8 @@
 "use client";
 
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
+import { CardSize } from "@/lib/ui/plannerCards";
 import { PlanRecord } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { buildSavingsPlan, normalizeSavingsBody, SavingsPlan } from "@/lib/domain/savingsFinance";
@@ -85,37 +87,33 @@ export function SavingsOverlayCard({
   enabled,
   onToggle,
   today,
+  size,
 }: {
   plans: PlanRecord[];
   enabled: string[];
   onToggle: (id: string) => void;
   today: string;
+  size?: CardSize;
 }) {
   const { t, locale } = useI18n();
 
   return (
-    <Card>
-      <CardHeader
-        title={t("savings.overlayTitle")}
-        action={
-          <OpenEvim />
-        }
-      />
+    <PlanCard
+      id="savings"
+      size={size}
+      title={t("savings.overlayTitle")}
+      hint={t("savings.overlayEphemeral")}
+      footer={<OpenEvim />}
+    >
       {plans.length === 0 ? (
-        <div className="p-4">
-          <EmptyState action={
-            <OpenEvim />
-          }>
-            {t("savings.overlayEmpty")}
-          </EmptyState>
-        </div>
+        <EmptyState>{t("savings.overlayEmpty")}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[var(--edge-soft)]">
+        <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
           {plans.map((record) => {
             const built = buildSavingsPlan(normalizeSavingsBody(record.body, today).input);
             const on = enabled.includes(record.id);
             return (
-              <li key={record.id} className={`flex items-center gap-3 px-4 py-2.5 ${on ? "" : "opacity-60"}`}>
+              <li key={record.id} className={`flex items-center gap-3 py-2.5 ${on ? "" : "opacity-60"}`}>
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-teal-600"
@@ -147,9 +145,6 @@ export function SavingsOverlayCard({
           })}
         </ul>
       )}
-      <p className="border-t border-[var(--edge-soft)] px-4 py-2 text-xs text-zinc-500">
-        {t("savings.overlayEphemeral")}
-      </p>
-    </Card>
+    </PlanCard>
   );
 }

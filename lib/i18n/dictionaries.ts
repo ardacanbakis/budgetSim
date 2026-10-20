@@ -11,6 +11,7 @@ import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
 import * as pages from "./pages";
+import * as planCards from "./planCards";
 
 export const en = {
   common: {
@@ -1017,6 +1018,7 @@ export const en = {
   },
   extras: extras.en,
   pages: pages.en,
+  planCards: planCards.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -2033,6 +2035,7 @@ export const tr: Dictionary = {
   },
   extras: extras.tr,
   pages: pages.tr,
+  planCards: planCards.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",

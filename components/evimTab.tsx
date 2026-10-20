@@ -5,7 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { SavingsChart } from "@/components/savingsChart";
 import { SavingsCompliancePanel } from "@/components/savingsCompliance";
 import { NumberControl, SavingsSchedule, StepRatePicker } from "@/components/savingsControls";
-import { Badge, Button, Card, CardHeader, Field, Figure, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Field, Figure, Input, Select, Spinner } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
 import { useRepo } from "@/lib/data/provider";
 import { PlanRecord } from "@/lib/data/types";
 import { KEYS, useAppMutation, useSavingsPlans } from "@/lib/data/queries";
@@ -248,9 +249,8 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* inputs */}
         <div className="min-w-0 space-y-4">
-          <Card>
-            <CardHeader title={t("savings.inputsTitle")} />
-            <div className="space-y-4 p-4">
+          <PlanCard id="evim-inputs" title={t("savings.inputsTitle")}>
+            <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label={t("savings.provider")}>
                   <Select
@@ -455,7 +455,7 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
                 </div>
               </details>
             </div>
-          </Card>
+          </PlanCard>
 
           <SavingsCompliancePanel plan={plan} onApply={patch} />
         </div>
@@ -463,9 +463,8 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
         {/* results */}
         <div className="min-w-0 space-y-4">
           {mode === "budgetToPrice" ? (
-            <Card>
-              <CardHeader title={t("savings.affordTitle")} />
-              <div className="p-4">
+            <PlanCard id="evim-afford" title={t("savings.affordTitle")}>
+              <div>
                 {affordable ? (
                   <>
                     <Figure size="lg">{money(affordable.contractValue)}</Figure>
@@ -492,13 +491,12 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
                   <p className="text-sm text-zinc-500">{t("savings.affordNone")}</p>
                 )}
               </div>
-            </Card>
+            </PlanCard>
           ) : null}
 
           {mode === "targetDate" ? (
-            <Card>
-              <CardHeader title={t("savings.targetTitle")} />
-              <div className="p-4">
+            <PlanCard id="evim-target" title={t("savings.targetTitle")}>
+              <div>
                 {!targetDate ? (
                   <p className="text-sm text-zinc-500">{t("savings.targetPrompt")}</p>
                 ) : targeted && "error" in targeted ? (
@@ -520,12 +518,11 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
                   </>
                 ) : null}
               </div>
-            </Card>
+            </PlanCard>
           ) : null}
 
-          <Card>
-            <CardHeader title={t("savings.summaryTitle")} />
-            <div className="grid grid-cols-2 gap-px bg-[var(--edge-soft)] sm:grid-cols-4">
+          <PlanCard id="evim-summary" title={t("savings.summaryTitle")}>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--edge-soft)] bg-[var(--edge-soft)] sm:grid-cols-4">
               <Stat label={t("savings.statDelivery")} value={plan.deliveryDate ?? "—"} />
               <Stat
                 label={t("savings.statDeliveryRatio")}
@@ -541,36 +538,36 @@ export function EvimTab({ tabs }: { tabs: ReactNode }) {
               <Stat label={t("savings.statOrgFee")} value={money(plan.orgFee)} />
               <Stat label={t("savings.statTotalCost")} value={money(plan.totalCost)} />
             </div>
-          </Card>
+          </PlanCard>
 
-          <Card>
-            <CardHeader title={t("savings.chartTitle")} />
-            <div className="p-2 sm:p-4">
-              <SavingsChart plan={plan} />
-            </div>
-          </Card>
+          <PlanCard id="evim-chart" title={t("savings.chartTitle")}>
+            <SavingsChart plan={plan} />
+          </PlanCard>
 
-          <Card>
-            <CardHeader title={t("savings.delayTitle")} />
-            <ul className="divide-y divide-[var(--edge-soft)]">
+          <PlanCard id="evim-delay" title={t("savings.delayTitle")} footer={t("savings.delayHint")}>
+            <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
               {delays.map(({ months, startDate, plan: delayed }) => (
-                <li key={months} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-sm">
+                <li key={months} className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm">
                   <span className="text-zinc-500">{t("savings.delayMonths", { count: months })}</span>
                   <span className="tnum">{startDate}</span>
                   <span className="tnum">{delayed.deliveryDate ?? "—"}</span>
                 </li>
               ))}
             </ul>
-            <p className="px-4 pb-3 text-xs text-zinc-500">{t("savings.delayHint")}</p>
-          </Card>
+          </PlanCard>
 
-          <Card>
-            <CardHeader
-              title={t("savings.scheduleTitle")}
-              action={<span className="text-xs text-zinc-500">{t("savings.rowCount", { count: plan.termMonths })}</span>}
-            />
-            <SavingsSchedule plan={plan} />
-          </Card>
+          {/* every month of the term: the long one, so it keeps to a size and
+              the rest waits behind Show all */}
+          <PlanCard
+            id="evim-schedule"
+            size="L"
+            title={t("savings.scheduleTitle")}
+            actions={<span className="text-xs text-zinc-500">{t("savings.rowCount", { count: plan.termMonths })}</span>}
+          >
+            <div className="-mx-3 -my-3">
+              <SavingsSchedule plan={plan} />
+            </div>
+          </PlanCard>
         </div>
       </div>
     </div>

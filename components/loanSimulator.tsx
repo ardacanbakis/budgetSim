@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { ReactNode, useMemo, useState } from "react";
-import { Button, Card, CardHeader, Field, Input, Modal, Select, Textarea } from "@/components/ui";
+import { Button, Field, Input, Modal, Select, Textarea } from "@/components/ui";
+import { PlanCard } from "@/components/plannerCard";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories } from "@/lib/data/queries";
 import { NewLoan } from "@/lib/data/repo";
@@ -107,9 +108,8 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* simulator */}
-        <Card>
-          <CardHeader title={t("loans.simulator")} />
-          <div className="space-y-3 p-4">
+        <PlanCard id="loan-simulator" title={t("loans.simulator")}>
+          <div className="space-y-3">
             <p className="text-xs text-zinc-500">{t("loans.compareHint")}</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Field label={t("loans.principal")}>
@@ -259,7 +259,7 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
             ) : null}
             <p className="text-xs text-zinc-400">{t("loans.offersMissing")}</p>
           </div>
-        </Card>
+        </PlanCard>
 
         {/* what's tracked already: each opens in the Portfolio's Debts view */}
         <div className="space-y-4">
