@@ -87,7 +87,10 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
 
   const legsByGroup = new Map<string, Transaction[]>();
   for (const t of transactions) {
-    if (t.transferGroupId) legsByGroup.set(t.transferGroupId, [...(legsByGroup.get(t.transferGroupId) ?? []), t]);
+    if (!t.transferGroupId) continue;
+    const legs = legsByGroup.get(t.transferGroupId);
+    if (legs) legs.push(t);
+    else legsByGroup.set(t.transferGroupId, [t]);
   }
 
   // a group pays a card when money leaves a non-card account and lands on a card
@@ -109,13 +112,19 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
   }
 
   const paymentsOf = new Map<string, CardPayment[]>();
-  for (const p of paymentByGroup.values()) paymentsOf.set(p.cardId, [...(paymentsOf.get(p.cardId) ?? []), p]);
+  for (const p of paymentByGroup.values()) {
+    const list = paymentsOf.get(p.cardId);
+    if (list) list.push(p);
+    else paymentsOf.set(p.cardId, [p]);
+  }
   for (const list of paymentsOf.values()) list.sort((a, b) => a.date.localeCompare(b.date));
 
   const chargesOf = new Map<string, Transaction[]>();
   for (const t of transactions) {
     if (!cards.has(t.accountId) || t.transferGroupId || t.legacy) continue;
-    chargesOf.set(t.accountId, [...(chargesOf.get(t.accountId) ?? []), t]);
+    const list = chargesOf.get(t.accountId);
+    if (list) list.push(t);
+    else chargesOf.set(t.accountId, [t]);
   }
   for (const list of chargesOf.values()) list.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
@@ -155,6 +164,17 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
     },
     paidInMonth: (charge) => coverOf(charge)?.date.slice(0, 7) ?? nextMonth(charge.dueDate.slice(0, 7)),
   };
+}
+
+/**
+ * A card's payment day in a month (yyyy-mm), clamped to the month's length:
+ * the 31st is the 30th in November. Null when the card has no payment day.
+ */
+export function paymentDateIn(month: string, day: number | null): string | null {
+  if (day == null) return null;
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${month}-${String(Math.min(Math.max(1, day), last)).padStart(2, "0")}`;
 }
 
 /** What every open card is owed today, in the display currency. */

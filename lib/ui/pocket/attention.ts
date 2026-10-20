@@ -1,7 +1,7 @@
 import { Account, Transaction } from "@/lib/data/types";
-import { CardBook, cardSchedule } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, paymentDateIn } from "@/lib/domain/cards";
 import { CardStanding, cardsDueSoon, DueCardPayment } from "@/lib/domain/purchases";
-import { addDays, addMonthsClamped, parseISODate, toISODate } from "@/lib/domain/recurrence";
+import { addDays, addMonthsClamped } from "@/lib/domain/recurrence";
 import { isTransferLanding } from "./dayGroups";
 
 /**
@@ -104,13 +104,6 @@ export interface ComingUpParams {
   unpaidVictvsCount: number;
 }
 
-/** This month's payment day for a card (clamped to the month's length). */
-function paymentDateThisMonth(day: number, today: string): string {
-  const { y, m } = parseISODate(today);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return toISODate(y, m, Math.min(day, last));
-}
-
 export function comingUp(params: ComingUpParams): ComingUpItem[] {
   const { transactions, accounts, book, today, days, duePayments, standings, unpaidVictvsUsd, unpaidVictvsCount } = params;
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
@@ -139,7 +132,7 @@ export function comingUp(params: ComingUpParams): ComingUpItem[] {
       cards.set(id, { date: today, overdue: false, standing });
       continue;
     }
-    const date = paymentDateThisMonth(payDay, today);
+    const date = paymentDateIn(today.slice(0, 7), payDay)!;
     // still ahead and further than `days`: it isn't coming up yet
     if (date < today) cards.set(id, { date, overdue: true, standing });
   }
