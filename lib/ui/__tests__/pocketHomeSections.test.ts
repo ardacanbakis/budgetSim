@@ -228,6 +228,22 @@ describe("accountTiles", () => {
       ["card", "TRY", null],
     ]);
   });
+
+  it("leaves out the accounts the dashboards hide, and the empty ones when asked", () => {
+    const bank = account("bank", "fiat", { name: "Bank" });
+    const zero = account("zero", "fiat", { name: "Zero" });
+    const idle = account("idle", "credit_card", { name: "Idle card" });
+    const accounts = [bank, zero, idle];
+    const book = buildCardBook(accounts, []);
+    const balances = new Map([
+      ["bank", 20000],
+      ["zero", 0],
+    ]);
+    const base = { accounts, balances, book, today, usdPer, display: "USD" as const };
+    expect(accountTiles(base).map((t) => t.account.id)).toEqual(["bank", "zero", "idle"]);
+    expect(accountTiles({ ...base, hideEmpty: true }).map((t) => t.account.id)).toEqual(["bank"]);
+    expect(accountTiles({ ...base, hiddenIds: ["bank"] }).map((t) => t.account.id)).toEqual(["zero", "idle"]);
+  });
 });
 
 describe("topBudgets", () => {

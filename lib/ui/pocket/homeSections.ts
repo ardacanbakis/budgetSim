@@ -4,6 +4,7 @@ import { CardBook, isIncome, isSpending } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays } from "@/lib/domain/recurrence";
+import { dashboardAccountRows } from "../dashboardAccounts";
 import { ComingUpItem } from "./attention";
 import { isTransferLanding } from "./dayGroups";
 import { POCKET_KEYS } from "./prefs";
@@ -37,7 +38,9 @@ import { POCKET_KEYS } from "./prefs";
  *   VICTVS row count for nothing. Null without rates.
  * - accountTiles(…): open accounts by the size of their display value, cards
  *   last showing what they're owed (as a negative). A gold account holding a
- *   mix of coins reads in lira (the Portfolio page's figure() rule).
+ *   mix of coins reads in lira (the Portfolio page's figure() rule). The
+ *   dashboards' rows (lib/ui/dashboardAccounts.ts), so the synced choices in
+ *   dashboardLayout.accounts (hiddenIds, hideEmpty) apply here too.
  * - topBudgets(statuses, n): the n most used budgets, by percent spent.
  *
  * splitAtSlot(text): a sentence translated with AMOUNT_SLOT in place of its
@@ -192,30 +195,18 @@ export function accountTiles(params: {
   today: string;
   usdPer: UsdPerMap | null | undefined;
   display: Currency;
+  /** dashboardLayout.accounts: the accounts left off the dashboards */
+  hiddenIds?: readonly string[];
+  hideEmpty?: boolean;
 }): AccountTile[] {
-  const { accounts, balances, book, today, usdPer, display } = params;
-  const tiles: AccountTile[] = [];
-  for (const account of accounts) {
-    if (account.archived) continue;
-    const card = account.kind === "credit_card";
-    const balance = card ? -book.owed(account.id, today) : (balances.get(account.id) ?? 0);
-    const inDisplay = usdPer ? convert(balance, account.currency, display, usdPer) : null;
-    const mixed = account.kind === "gold" && (account.holdings?.length ?? 0) > 0;
-    const inTry = mixed && usdPer ? convert(balance, account.currency, "TRY", usdPer) : null;
-    tiles.push({
-      account,
-      amount: inTry ?? balance,
-      currency: inTry != null ? "TRY" : account.currency,
-      display: inDisplay,
-      card,
-    });
-  }
-  const size = (t: AccountTile) => (t.display == null ? -1 : Math.abs(t.display));
-  return tiles.sort((a, b) => {
-    if (a.card !== b.card) return a.card ? 1 : -1;
-    if (size(a) !== size(b)) return size(b) - size(a);
-    return a.account.name.localeCompare(b.account.name);
-  });
+  const { hiddenIds = [], hideEmpty = false, ...input } = params;
+  return dashboardAccountRows(input, { hidden: [...hiddenIds], hideEmpty }).rows.map((line) => ({
+    account: line.account,
+    amount: line.shown.amount,
+    currency: line.shown.currency,
+    display: line.converted,
+    card: line.account.kind === "credit_card",
+  }));
 }
 
 export function topBudgets(statuses: readonly BudgetStatus[], n = 3): BudgetStatus[] {

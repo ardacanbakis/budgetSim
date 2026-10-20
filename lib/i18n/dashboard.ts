@@ -35,6 +35,9 @@ export const en = {
   "card_gold-lens": "In gold",
   "cardDesc_gold-lens": "What everything you hold is worth in gram gold",
   moreOptions: "More options",
+  accountsMore: "+{count} more",
+  accountsHidden: "{count} hidden",
+  accountsEmpty: "{count} empty",
 };
 
 export const tr: typeof en = {
@@ -61,4 +64,7 @@ export const tr: typeof en = {
   "card_gold-lens": "Altın cinsinden",
   "cardDesc_gold-lens": "Elindeki her şeyin gram altın karşılığı",
   moreOptions: "Diğer seçenekler",
+  accountsMore: "+{count} hesap daha",
+  accountsHidden: "{count} gizli",
+  accountsEmpty: "{count} boş",
 };

@@ -39,6 +39,7 @@ import {
   topBudgets,
 } from "@/lib/ui/pocket/homeSections";
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
+import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { PocketDayList, PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
 import { Icon } from "./icons";
 import { Approx, Avatar, FitFigure, Money, PocketPage, Section } from "./kit";
@@ -610,16 +611,24 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
   const { t } = useI18n();
   const { displayCurrency } = useApp();
   const headId = useId();
-  const tiles = derived
-    ? accountTiles({
-        accounts: derived.accounts,
-        balances: derived.balances,
-        book: derived.book,
-        today: derived.today,
-        usdPer,
-        display: displayCurrency,
-      })
-    : null;
+  // which accounts the dashboards list is synced (dashboardLayout.accounts);
+  // Home only reads it here
+  const { layout } = useDashboardLayout();
+  const tiles =
+    derived && layout
+      ? accountTiles({
+          accounts: derived.accounts,
+          balances: derived.balances,
+          book: derived.book,
+          today: derived.today,
+          usdPer,
+          display: displayCurrency,
+          hiddenIds: layout.accounts.hidden,
+          hideEmpty: layout.accounts.hideEmpty,
+        })
+      : null;
+  // what the strip leaves out, for the end tile
+  const leftOut = tiles && derived ? derived.accounts.filter((a) => !a.archived).length - tiles.length : 0;
 
   return (
     <section aria-labelledby={headId}>
@@ -643,7 +652,7 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
             </div>
           ))}
         </div>
-      ) : tiles.length === 0 ? (
+      ) : tiles.length === 0 && leftOut === 0 ? (
         <Link
           href="/accounts"
           className="flex min-h-[56px] items-center gap-3 rounded-[var(--ui-card-radius)] border border-dashed border-[var(--edge)] px-4 py-3 text-sm text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
@@ -675,6 +684,7 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
               className="flex min-h-[5.5rem] w-[9.5rem] items-center justify-center gap-1 rounded-[var(--ui-card-radius)] border border-dashed border-[var(--edge)] p-3 text-sm font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
             >
               {t("pocket.home.allAccounts")}
+              {leftOut > 0 ? <span data-left-out>{t("pocket.home.moreAccounts", { count: leftOut })}</span> : null}
               <span aria-hidden>→</span>
             </Link>
           </li>

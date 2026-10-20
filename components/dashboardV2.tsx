@@ -5,17 +5,21 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { AccountsLeftOut } from "@/components/dashboardParts";
 import { GoalsCard } from "@/components/goalsCard";
 import { GoldLensCard } from "@/components/goldLens";
 import { HoldingsSummary } from "@/components/goldHoldings";
 import { Badge, Card, CardHeader, EmptyState, Figure, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { formatAmount } from "@/lib/domain/currencies";
-import { convert } from "@/lib/domain/fx";
 import { useDashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { useRates } from "@/lib/data/queries";
+import { DEFAULT_ACCOUNTS } from "@/lib/ui/dashboardLayout";
+import { dashboardAccountRows } from "@/lib/ui/dashboardAccounts";
+import { isMixedGold } from "@/lib/ui/pocket/portfolioSections";
+import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -41,6 +45,7 @@ export function DashboardV2() {
   const { displayCurrency } = useApp();
   const rates = useRates();
   const d = useDashboardData(displayCurrency);
+  const { layout } = useDashboardLayout();
 
   if (!d) return <Spinner />;
 
@@ -48,20 +53,15 @@ export function DashboardV2() {
   const positive = d.netWorth.total >= 0;
 
   const live = d.accounts.filter((a) => !a.archived);
-  const assets = live.filter((a) => a.kind !== "credit_card");
-  const cards = live.filter((a) => a.kind === "credit_card");
   const accountById = new Map(d.accounts.map((a) => [a.id, a]));
 
-  const inDisplay = (id: string): number | null => {
-    const a = accountById.get(id);
-    if (!a || !rates.data) return null;
-    return convert(d.balances.get(id) ?? 0, a.currency, displayCurrency, rates.data.usdPer);
-  };
-
-  // biggest holding first: the ledger is for finding a number, not for
-  // admiring the order you happened to create accounts in
-  const byValue = (list: typeof live) =>
-    [...list].sort((a, b) => Math.abs(inDisplay(b.id) ?? 0) - Math.abs(inDisplay(a.id) ?? 0));
+  // biggest holding first, cards last: the ledger is for finding a number,
+  // not for admiring the order you happened to create accounts in. Every
+  // account, less those chosen away in Settings (the totals still count them).
+  const accountRows = dashboardAccountRows(
+    { ...d, usdPer: rates.data?.usdPer, display: displayCurrency },
+    layout?.accounts ?? DEFAULT_ACCOUNTS
+  );
 
   return (
     <div className="space-y-[var(--ui-gap)]">
@@ -115,53 +115,53 @@ export function DashboardV2() {
 
       <div className="grid gap-[var(--ui-gap)] lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* what you hold */}
-        <Card>
-          <CardHeader
-            title={t("dashboard.accounts")}
-            action={
-              <Link href="/accounts" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-                {t("dashboard.seeAll")}
-              </Link>
-            }
-          />
-          <div className="divide-y divide-[var(--edge-soft)]">
-            {assets.length === 0 ? (
-              <div className="p-[var(--ui-card-pad-x)]">
-                <EmptyState>{t("accounts.empty")}</EmptyState>
-              </div>
-            ) : (
-              byValue(assets).map((a) => {
-                // a gold account holding a mix reads in lira, with what it holds as its label
-                const mixed = a.kind === "gold" && (a.holdings?.length ?? 0) > 0;
-                const inTry = mixed && rates.data ? convert(d.balances.get(a.id) ?? 0, a.currency, "TRY", rates.data.usdPer) : null;
-                return (
-                  <LedgerRow
-                    key={a.id}
-                    name={a.name}
-                    meta={mixed ? <HoldingsSummary holdings={a.holdings!} /> : a.currency === "XAU_G" ? "GOLD g" : a.currency}
-                    raw={inTry != null ? formatAmount(inTry, "TRY", locale) : formatAmount(d.balances.get(a.id) ?? 0, a.currency, locale)}
-                    converted={(inTry != null ? "TRY" : a.currency) === displayCurrency ? null : money(inDisplay(a.id) ?? 0)}
-                  />
-                );
-              })
-            )}
-            {/* a card shows what it's owed, not its ledger balance (lib/domain/cards.ts) */}
-            {cards.map((a) => {
-              const owed = d.book.owed(a.id, d.today);
-              const owedInDisplay = rates.data ? convert(-owed, a.currency, displayCurrency, rates.data.usdPer) : null;
-              return (
-                <LedgerRow
-                  key={a.id}
-                  name={a.name}
-                  meta={t("nav.cards")}
-                  raw={formatAmount(-owed, a.currency, locale)}
-                  converted={a.currency === displayCurrency ? null : money(owedInDisplay ?? 0)}
-                  tone={owed > 0.005 ? "neg" : undefined}
-                />
-              );
-            })}
-          </div>
-        </Card>
+        <div data-card="accounts">
+          <Card className="h-full">
+            <CardHeader
+              title={t("dashboard.accounts")}
+              action={
+                <Link href="/accounts" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
+                  {t("dashboard.seeAll")}
+                </Link>
+              }
+            />
+            <div className="divide-y divide-[var(--edge-soft)]">
+              {live.length === 0 ? (
+                <div className="p-[var(--ui-card-pad-x)]">
+                  <EmptyState>{t("accounts.empty")}</EmptyState>
+                </div>
+              ) : (
+                accountRows.rows.map(({ account: a, shown, converted, card, balance }) =>
+                  card ? (
+                    // a card shows what it's owed, not its ledger balance (lib/domain/cards.ts)
+                    <LedgerRow
+                      key={a.id}
+                      name={a.name}
+                      meta={t("nav.cards")}
+                      raw={formatAmount(balance, a.currency, locale)}
+                      converted={a.currency === displayCurrency ? null : money(converted ?? 0)}
+                      tone={card.owed > 0.005 ? "neg" : undefined}
+                    />
+                  ) : (
+                    // a gold account holding a mix reads in lira, with what it holds as its label
+                    <LedgerRow
+                      key={a.id}
+                      name={a.name}
+                      meta={isMixedGold(a) ? <HoldingsSummary holdings={a.holdings!} /> : a.currency === "XAU_G" ? "GOLD g" : a.currency}
+                      raw={formatAmount(shown.amount, shown.currency, locale)}
+                      converted={shown.currency === displayCurrency ? null : money(converted ?? 0)}
+                    />
+                  )
+                )
+              )}
+            </div>
+            <AccountsLeftOut
+              hidden={accountRows.hiddenCount}
+              empty={accountRows.emptyHidden}
+              className="mt-0 border-t border-[var(--edge-soft)] px-[var(--ui-card-pad-x)] py-[var(--ui-row-py)]"
+            />
+          </Card>
+        </div>
 
         {/* what's about to happen */}
         <Card>

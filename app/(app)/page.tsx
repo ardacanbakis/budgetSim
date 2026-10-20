@@ -12,6 +12,7 @@ import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
+import { AccountsLeftOut } from "@/components/dashboardParts";
 import { GoldLensCard } from "@/components/goldLens";
 import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -31,6 +32,8 @@ import {
   setCardVisible,
   visibleCards,
 } from "@/lib/ui/dashboardLayout";
+import { dashboardAccountRows } from "@/lib/ui/dashboardAccounts";
+import { formatSigned } from "@/lib/ui/pocket/format";
 import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { useDashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
@@ -86,6 +89,12 @@ function DashboardPage() {
 
   const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
   const activeAccounts = (accounts.data ?? []).filter((a) => !a.archived);
+  // the accounts the card lists: hiding one tidies the list, never a total
+  const accountRows = dashboardAccountRows(
+    { ...derived, usdPer: rates.data?.usdPer, display: displayCurrency },
+    layout.accounts,
+    layout.accounts.limit
+  );
 
   // Each change is worked out again on the layout as saved (useDashboardLayout
   // re-reads it first), so a move names cards rather than positions on this
@@ -161,11 +170,11 @@ function DashboardPage() {
       <Card className="h-full p-4">
         <div className="text-xs text-zinc-500">{t("dashboard.accounts")}</div>
         <div className="mt-1 space-y-1">
-          {activeAccounts.slice(0, 5).map((a) => (
-            <div key={a.id} className="flex justify-between text-sm">
-              <span className="truncate text-zinc-600 dark:text-zinc-300">{a.name}</span>
-              <span className="font-medium tabular-nums">
-                {formatAmount(derived.balances.get(a.id) ?? 0, a.currency, locale)}
+          {accountRows.rows.map((line) => (
+            <div key={line.account.id} className="flex justify-between gap-2 text-sm">
+              <span className="truncate text-zinc-600 dark:text-zinc-300">{line.account.name}</span>
+              <span className={`shrink-0 font-medium tabular-nums ${line.card && line.balance < 0 ? "text-red-600" : ""}`}>
+                {formatSigned(line.shown.amount, line.shown.currency, locale)}
               </span>
             </div>
           ))}
@@ -174,7 +183,13 @@ function DashboardPage() {
               {t("accounts.empty")}
             </Link>
           ) : null}
+          {accountRows.overflow > 0 ? (
+            <Link href="/accounts" className="block text-xs text-teal-600 hover:underline">
+              {t("dashboard.accountsMore", { count: accountRows.overflow })} →
+            </Link>
+          ) : null}
         </div>
+        <AccountsLeftOut hidden={accountRows.hiddenCount} empty={accountRows.emptyHidden} />
       </Card>
     ),
     upcoming: (
