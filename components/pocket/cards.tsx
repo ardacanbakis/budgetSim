@@ -413,6 +413,7 @@ function CardsScreen() {
       <AccountModal
         open={editingCard != null || creatingCard}
         initial={editingCard}
+        initialKind="credit_card"
         onClose={() => {
           setEditingCard(null);
           setCreatingCard(false);

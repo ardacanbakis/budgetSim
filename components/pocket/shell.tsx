@@ -16,6 +16,7 @@ import { CURRENCIES, Currency } from "@/lib/domain/currencies";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { cardsDueSoon, cardStandings } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
+import { currencyQuotes, formatTickerValue, TickerItem } from "@/lib/domain/ticker";
 import { useI18n } from "@/lib/i18n";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { activeSlot, barSlots, DEFAULT_FOURTH } from "@/lib/ui/pocket/bar";
@@ -272,6 +273,8 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
     },
   };
 
+  // each currency the way it's quoted, beside its row in the currency sheet
+  const quotes: Partial<Record<Currency, TickerItem>> = rates.data ? currencyQuotes(rates.data.usdPer, rates.data.prevUsdPer) : {};
   const lastFetched = rates.data ? new Date(rates.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
   const stale = rates.data != null && isStaleTable(rates.data);
 
@@ -479,8 +482,11 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
                 }}
                 className="flex min-h-[56px] w-full items-center gap-3 px-4 text-left active:bg-[var(--edge-soft)]"
               >
-                <span className="w-16 text-sm font-semibold">{c === "XAU_G" ? "GOLD g" : c}</span>
-                <span className="flex-1 truncate text-sm text-zinc-500">{t(`currency.${c}`)}</span>
+                <span className="w-16 shrink-0 text-sm font-semibold">{c === "XAU_G" ? "GOLD g" : c}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-zinc-500">{t(`currency.${c}`)}</span>
+                  <CurrencyQuote item={quotes[c]} locale={locale} />
+                </span>
                 {displayCurrency === c ? <Icon name="check" size={20} className="text-teal-600 dark:text-teal-400" /> : null}
               </button>
             ))}
@@ -623,5 +629,23 @@ function Snackbar() {
         </button>
       ) : null}
     </div>
+  );
+}
+
+/** "USD/TRY 41.80 ▲ 0.12%" under a currency's name; the move only where the rates have a day-old figure. */
+function CurrencyQuote({ item, locale }: { item: TickerItem | undefined; locale: string }) {
+  if (!item) return null;
+  const change = item.changePct;
+  return (
+    <span data-quote className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap text-xs tabular-nums">
+      <span className="truncate text-zinc-400">{item.label}</span>{" "}
+      <span className="shrink-0 font-medium text-zinc-700 dark:text-zinc-200">{formatTickerValue(item, locale)}</span>
+      {change != null ? " " : null}
+      {change != null ? (
+        <span className={`shrink-0 ${change >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+          {change >= 0 ? "▲" : "▼"} {Math.abs(change).toFixed(2)}%
+        </span>
+      ) : null}
+    </span>
   );
 }
