@@ -6,6 +6,7 @@ import * as pocketActivity from "./pocket/activity";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
+import * as extras from "./extras";
 
 export const en = {
   common: {
@@ -1009,6 +1010,7 @@ export const en = {
     signedInAs: "Signed in as",
     demoData: "Demo data",
   },
+  extras: extras.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -2022,6 +2024,7 @@ export const tr: Dictionary = {
     signedInAs: "Giriş yapan",
     demoData: "Demo verisi",
   },
+  extras: extras.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",
