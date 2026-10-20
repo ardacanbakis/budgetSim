@@ -63,6 +63,13 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go("/settings?tab=dashboard"),
     });
+    // a tab of Plan now, not a page of its own
+    pages.push({
+      id: "nav:/planner?tab=evim",
+      label: t("nav.savings"),
+      hint: t("palette.page"),
+      run: go("/planner?tab=evim"),
+    });
     pages.push({
       id: "nav:/transactions?tab=timeline",
       label: t("timeline.tab"),

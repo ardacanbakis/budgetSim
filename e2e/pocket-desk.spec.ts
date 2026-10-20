@@ -7,13 +7,20 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * The desk pages inside Pocket: Debt, Reports, Planner and Evim sistemi keep
+ * The desk pages inside Pocket: Debt, Reports, Plan and its Evim sistemi tab keep
  * their Classic markup, and marker classes fix what breaks on a phone. Runs in
  * the demo at 390×844 with the Pocket phone layout switched on, then checks
  * that the same classes do nothing with Pocket off.
  */
 
 const DESK = ["loans", "reports", "planner", "savings"] as const;
+/** where each desk page lives: Evim sistemi is a tab of Plan */
+const PATH: Record<(typeof DESK)[number], string> = {
+  loans: "/loans",
+  reports: "/reports",
+  planner: "/planner",
+  savings: "/planner?tab=evim",
+};
 
 async function enterDemo(page: Page, width = 390, height = 844) {
   await page.setViewportSize({ width, height });
@@ -34,7 +41,7 @@ async function enterPocket(page: Page, width = 390, height = 844) {
 }
 
 async function open(page: Page, route: (typeof DESK)[number]) {
-  await page.goto(`/${route}`);
+  await page.goto(PATH[route]);
   await expect(page.locator("main h1").first()).toBeVisible({ timeout: 15_000 });
 }
 

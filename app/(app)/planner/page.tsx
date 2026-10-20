@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, ReactNode, Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { HorizonSlider, horizonLabel } from "@/components/horizonSlider";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
@@ -50,6 +51,9 @@ import { buildPlanExport } from "@/lib/domain/planExport";
 import { todayISO } from "@/lib/domain/recurrence";
 import { averageMonthlySpend } from "@/lib/domain/stats";
 import { useI18n } from "@/lib/i18n";
+import { EvimTab } from "@/components/evimTab";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { parseTab } from "@/lib/ui/urlTab";
 
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
@@ -84,7 +88,57 @@ function monthLabelOf(month: string, locale: string): string {
   });
 }
 
-export default function PlannerPage() {
+const PLAN_TABS = ["forecast", "evim"] as const;
+type PlanTab = (typeof PLAN_TABS)[number];
+
+export default function PlanPage() {
+  // useSearchParams needs a Suspense boundary on a prerendered page
+  return (
+    <Suspense fallback={<Spinner />}>
+      <PlanScreen />
+    </Suspense>
+  );
+}
+
+/**
+ * Plan: the forecast and Evim sistemi, as tabs. The open tab lives in the URL
+ * (?tab=evim), so /savings can redirect here and a link opens the right one;
+ * switching replaces the history entry (replaceQuery), as the Transactions
+ * tabs do. Each tab mounts only while it's open, so the forecast's
+ * arithmetic doesn't run behind Evim sistemi.
+ */
+function PlanScreen() {
+  const { t } = useI18n();
+  const params = useSearchParams();
+  const tab: PlanTab = parseTab(params.get("tab"), PLAN_TABS, "forecast");
+
+  const tabs = (
+    <div role="tablist" aria-label={t("nav.planner")} className="pocket-scroll-x flex gap-1 border-b border-[var(--edge)]">
+      {PLAN_TABS.map((id) => (
+        <button
+          key={id}
+          role="tab"
+          type="button"
+          aria-selected={tab === id}
+          onClick={() => replaceQuery(id === "forecast" ? "/planner" : `/planner?tab=${id}`)}
+          className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+            tab === id
+              ? "border-teal-600 text-teal-700 dark:text-teal-300"
+              : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
+        >
+          {id === "forecast" ? t("pages.forecast") : t("nav.savings")}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (tab === "evim") return <EvimTab tabs={tabs} />;
+  return <ForecastTab tabs={tabs} />;
+}
+
+/** The forecast: today's ledger, recurring items and a scenario's what-ifs, run forward. */
+function ForecastTab({ tabs }: { tabs: ReactNode }) {
   const { t, locale } = useI18n();
   const { displayCurrency } = useApp();
   const accounts = useAccounts();
@@ -1293,10 +1347,7 @@ export default function PlannerPage() {
       }
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{t("planner.title")}</h1>
-          <p className="text-sm text-zinc-500">{t("planner.hint")}</p>
-        </div>
+        <h1 className="text-xl font-bold">{t("nav.planner")}</h1>
         <div className="no-print hidden items-center gap-2 xl:flex">
           {view === "custom" ? (
             <>
@@ -1340,6 +1391,9 @@ export default function PlannerPage() {
           </div>
         </div>
       </div>
+
+      {tabs}
+      <p className="text-sm text-zinc-500">{t("planner.hint")}</p>
 
       <ScenarioBar
         scenarios={scenarios.scenarios}

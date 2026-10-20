@@ -963,10 +963,10 @@ test("part3: phone bar shows five targets and a More sheet", async ({ page }) =>
 
   await bar.getByRole("button", { name: /more|daha/i }).click();
   const sheet = page.locator(".fixed.inset-0").filter({ hasText: /More|Daha/ });
-  await expect(sheet.getByRole("link", { name: /planner|planlayıcı/i })).toBeVisible();
+  await expect(sheet.getByRole("link", { name: /\bplan$/i })).toBeVisible();
   await page.screenshot({ path: "e2e/screenshots/mobile-more-sheet.png" });
 
-  await sheet.getByRole("link", { name: /planner|planlayıcı/i }).click();
+  await sheet.getByRole("link", { name: /\bplan$/i }).click();
   await expect(page).toHaveURL(/\/planner/);
   // the page you're on stays visible in the bar even though it lives in More
   await expect(bar.locator('a[aria-current="page"]')).toHaveCount(1);
@@ -997,7 +997,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/planner?tab=evim", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -1009,7 +1009,7 @@ test("scenarios: named plans save, reload and compare", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
   await page.goto("/planner");
-  await expect(page.getByRole("heading", { name: /planner|planlayıcı/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^plan$/i })).toBeVisible();
 
   // the plan that was device-local is now a named scenario
   const picker = page.getByLabel(/^Scenario$/i);
@@ -1622,8 +1622,8 @@ test("style: quick jump finds a page and an account by a few letters", async ({ 
   await expect(palette).toBeVisible();
 
   // a subsequence is enough — you don't have to type the name in full
-  await page.keyboard.type("plnr");
-  await expect(palette.getByRole("button", { name: /Planner/ })).toBeVisible();
+  await page.keyboard.type("pln");
+  await expect(palette.getByRole("button", { name: /^Plan/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await page.waitForTimeout(1200);
   await expect(page).toHaveURL(/\/planner/);
@@ -1727,7 +1727,7 @@ test("planner: what-if items group by type by default and split into two cards",
 
 test("savings: three modes, at every screen size", async ({ page }) => {
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   const sizes = [
@@ -1757,7 +1757,7 @@ test("savings: three modes, at every screen size", async ({ page }) => {
 test("savings: the schedule reproduces a real quote to the kuruş", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   // fixture B, with the signing date pinned so the dates are deterministic
@@ -1790,7 +1790,7 @@ test("savings: the schedule reproduces a real quote to the kuruş", async ({ pag
 test("savings: a flat schedule collapses the tier tags", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   const stepper = page.getByRole("group", { name: /step-up/i });
@@ -1810,7 +1810,7 @@ test("savings: a flat schedule collapses the tier tags", async ({ page }) => {
 test("savings: a violation offers a fix that writes back into the form", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1100 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   // ₺100,000 stretches the term and breaks the one-third spread
@@ -1832,7 +1832,7 @@ test("savings: a violation offers a fix that writes back into the form", async (
 test("savings: a saved scenario survives a deep link and overlays the planner", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1100 });
   await enterDemo(page);
-  await page.goto("/savings");
+  await page.goto("/planner?tab=evim");
   await page.waitForTimeout(1500);
 
   await page.getByLabel("Scenario name").fill("Evim 5M");
@@ -1840,7 +1840,7 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.waitForTimeout(1200);
 
   // saving claims a URL, which is the share link
-  await expect(page).toHaveURL(/\/savings\?plan=/);
+  await expect(page).toHaveURL(/\/planner\?tab=evim&plan=/);
   const url = page.url();
 
   // and that link reopens it from cold
@@ -1850,9 +1850,15 @@ test("savings: a saved scenario survives a deep link and overlays the planner", 
   await page.waitForTimeout(1500);
   await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
 
+  // so does the address it had before Evim sistemi was a tab of Plan
+  const id = new URL(url).searchParams.get("plan")!;
+  await page.goto(`/savings?plan=${id}`);
+  await expect(page).toHaveURL(new RegExp(`/planner\\?tab=evim&plan=${id}$`));
+  await expect(page.getByLabel("Scenario name")).toHaveValue("Evim 5M");
+
   // New scenario lets go of the link, though the page was opened by it
   await page.getByRole("button", { name: "New scenario" }).click();
-  await expect(page).toHaveURL(/\/savings$/);
+  await expect(page).toHaveURL(/\/planner\?tab=evim$/);
   await expect(page.getByLabel("Scenario name")).toHaveValue("");
 
   // the planner can lay it over the projection without writing anything

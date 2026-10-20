@@ -16,7 +16,7 @@ describe("sidebar order and hidden items", () => {
   });
 
   it("round-trips through what's saved", () => {
-    const saved = ["/", "!/victvs", "/accounts", "!/savings"];
+    const saved = ["/", "!/victvs", "/accounts", "!/reports"];
     const encoded = encodeNav(navEntries(saved));
     expect(encoded.slice(0, 4)).toEqual(saved);
     // pages added since the order was saved come at the end, shown
@@ -43,5 +43,23 @@ describe("pages that moved into another", () => {
   it("leaves a page in the nav, and an href it doesn't know, as they are", () => {
     expect(navHost("/planner")).toBe("/planner");
     expect(navHost("/gone")).toBe("/gone");
+  });
+
+  it("reads Evim sistemi, now a tab of Plan, as Plan", () => {
+    expect(navHost("/savings")).toBe("/planner");
+    expect(hrefs(orderedNav(["/savings", "/"])).slice(0, 2)).toEqual(["/planner", "/"]);
+    expect(orderedNav(["/savings", "/planner"])).toHaveLength(NAV.length);
+  });
+
+  it("keeps a page shown when it or a page that moved into it was saved as shown", () => {
+    // hid the Planner but kept Evim sistemi: Evim's new home stays
+    expect(hrefs(visibleNav(["!/planner", "/savings"]))).toContain("/planner");
+    expect(hrefs(visibleNav(["/savings", "!/planner"]))).toContain("/planner");
+    expect(hrefs(visibleNav(["/planner", "!/savings"]))).toContain("/planner");
+    // both hidden: hidden, saved back as the host alone
+    expect(hrefs(visibleNav(["!/planner", "!/savings"]))).not.toContain("/planner");
+    expect(encodeNav(navEntries(["!/savings", "!/planner"])).filter((h) => h.includes("/planner") || h.includes("/savings"))).toEqual([
+      "!/planner",
+    ]);
   });
 });

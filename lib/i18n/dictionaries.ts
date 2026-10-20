@@ -10,6 +10,7 @@ import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
+import * as pages from "./pages";
 
 export const en = {
   common: {
@@ -60,7 +61,7 @@ export const en = {
     victvs: "VICTVS",
     loans: "Debt",
     reports: "Reports",
-    planner: "Planner",
+    planner: "Plan",
     savings: "Evim sistemi",
     settings: "Settings",
     logout: "Log out",
@@ -241,7 +242,7 @@ export const en = {
     balloon: "final",
     delivery: "delivery",
     overlayTitle: "Evim sistemi",
-    overlayOpen: "Open planner",
+    overlayOpen: "Open Evim sistemi",
     overlayEmpty: "No saved scenarios yet. Build one and it can be laid over this projection.",
     overlayNoDelivery: "no delivery",
     overlayLine: "{first} first, {months} instalments",
@@ -1017,6 +1018,7 @@ export const en = {
     demoData: "Demo data",
   },
   extras: extras.en,
+  pages: pages.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -1077,7 +1079,7 @@ export const tr: Dictionary = {
     victvs: "VICTVS",
     loans: "Borçlar",
     reports: "Raporlar",
-    planner: "Planlayıcı",
+    planner: "Plan",
     savings: "Evim sistemi",
     settings: "Ayarlar",
     logout: "Çıkış",
@@ -1258,7 +1260,7 @@ export const tr: Dictionary = {
     balloon: "son",
     delivery: "teslim",
     overlayTitle: "Evim sistemi",
-    overlayOpen: "Planlayıcıyı aç",
+    overlayOpen: "Evim sistemini aç",
     overlayEmpty: "Henüz kayıtlı senaryo yok. Bir tane oluştur, bu projeksiyonun üzerine bindirilebilir.",
     overlayNoDelivery: "teslim yok",
     overlayLine: "İlk {first}, {months} taksit",
@@ -2034,6 +2036,7 @@ export const tr: Dictionary = {
     demoData: "Demo verisi",
   },
   extras: extras.tr,
+  pages: pages.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",

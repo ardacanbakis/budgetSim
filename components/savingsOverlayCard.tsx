@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { PlanRecord } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
@@ -8,6 +7,7 @@ import { buildSavingsPlan, normalizeSavingsBody, SavingsPlan } from "@/lib/domai
 import { ExtraFlow } from "@/lib/domain/projector";
 import { monthsBetween } from "@/lib/domain/planner";
 import { useI18n } from "@/lib/i18n";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 
 /**
  * Turn a saved savings-finance scenario into hypothetical flows for the
@@ -58,6 +58,28 @@ export function savingsOverlayFlows(plan: SavingsPlan, months: number, firstMont
  * is deliberately not persisted — this is "what would this do to my year",
  * not a commitment.
  */
+/**
+ * Evim sistemi is the next tab on this page, so the link changes the query in
+ * place (lib/ui/shallowUrl.ts); it stays a link for opening in a new tab.
+ */
+function OpenEvim() {
+  const { t } = useI18n();
+  return (
+    <a
+      href="/planner?tab=evim"
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        replaceQuery("/planner?tab=evim");
+        window.scrollTo(0, 0);
+      }}
+      className="text-xs text-teal-600 hover:underline dark:text-teal-400"
+    >
+      {t("savings.overlayOpen")}
+    </a>
+  );
+}
+
 export function SavingsOverlayCard({
   plans,
   enabled,
@@ -76,17 +98,13 @@ export function SavingsOverlayCard({
       <CardHeader
         title={t("savings.overlayTitle")}
         action={
-          <Link href="/savings" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-            {t("savings.overlayOpen")}
-          </Link>
+          <OpenEvim />
         }
       />
       {plans.length === 0 ? (
         <div className="p-4">
           <EmptyState action={
-            <Link href="/savings" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-              {t("savings.overlayOpen")}
-            </Link>
+            <OpenEvim />
           }>
             {t("savings.overlayEmpty")}
           </EmptyState>

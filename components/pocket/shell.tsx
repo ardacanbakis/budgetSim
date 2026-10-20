@@ -34,7 +34,7 @@ import { PocketActionSheet, PocketSheet } from "./sheet";
 import { PullToRefresh } from "./pull";
 
 /** Pages with work that wants a larger screen; Pocket says so once. */
-const DESK_NOTE = new Set(["/planner", "/savings"]);
+const DESK_NOTE = new Set(["/planner"]);
 
 type SheetName = "more" | "currency" | "menu" | "demo" | "pickCard" | "pickAccount";
 

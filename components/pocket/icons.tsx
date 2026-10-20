@@ -80,8 +80,6 @@ export function navIcon(href: string): IconName {
       return "chart";
     case "/planner":
       return "grid";
-    case "/savings":
-      return "savings";
     case "/settings":
       return "settings";
     default:
