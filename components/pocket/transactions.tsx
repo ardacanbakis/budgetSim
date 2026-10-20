@@ -19,7 +19,9 @@ import { PocketRecurring } from "./recurring";
  * The ledger tab is PocketActivity (components/pocket/activity.tsx), keyed by
  * its deep link (?show=due, ?filter=, ?account=, ?q=) so following a new link
  * starts from that link's filters. The recurring tab is PocketRecurring
- * (components/pocket/recurring.tsx); its + sits in the header.
+ * (components/pocket/recurring.tsx); its + sits in the header. On the
+ * ledger tab the header holds Select, which turns the ledger's selection mode
+ * on and off (the bulk actions are PocketActivity's).
  */
 
 type Tab = "ledger" | "recurring";
@@ -38,10 +40,25 @@ function TransactionsScreen() {
   const params = useSearchParams();
   const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
   const [creating, setCreating] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  // selection belongs to the ledger tab: another tab ends it
+  if (tab !== "ledger" && selecting) setSelecting(false);
 
   const action = useMemo(
     () =>
-      tab === "recurring" ? (
+      tab === "ledger" ? (
+        <button
+          type="button"
+          onClick={() => setSelecting((on) => !on)}
+          aria-label={t("pocket.activity.select")}
+          aria-pressed={selecting}
+          className={`flex h-11 w-11 items-center justify-center rounded-full active:bg-[var(--edge-soft)] ${
+            selecting ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300" : "text-teal-600 dark:text-teal-400"
+          }`}
+        >
+          <Icon name="checkCircle" size={22} />
+        </button>
+      ) : tab === "recurring" ? (
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -52,7 +69,7 @@ function TransactionsScreen() {
           <Icon name="plus" size={22} />
         </button>
       ) : undefined,
-    [tab, t]
+    [tab, t, selecting]
   );
 
   const link: ActivityLink = {
@@ -76,7 +93,12 @@ function TransactionsScreen() {
       {tab === "recurring" ? (
         <PocketRecurring creating={creating} onCreatingChange={setCreating} />
       ) : (
-        <PocketActivity key={[link.show, link.filter, link.account, link.q].join("|")} link={link} />
+        <PocketActivity
+          key={[link.show, link.filter, link.account, link.q].join("|")}
+          link={link}
+          selecting={selecting}
+          onEndSelection={() => setSelecting(false)}
+        />
       )}
     </PocketPage>
   );

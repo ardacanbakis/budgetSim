@@ -26,7 +26,7 @@ import { Approx, Avatar, Money } from "./kit";
  *   {sheet.element}
  *
  * Exports
- * - PocketDayList({ months, onRowTap, onComplete?, stickyHeaders?, inCard?, accountCurrency? })
+ * - PocketDayList({ months, onRowTap, onComplete?, stickyHeaders?, inCard?, accountCurrency?, selection? })
  *   - each month: a 48px MonthSeparator (h2, not sticky) with its net;
  *   - each day: a <section aria-labelledby> whose DayHeader is an h3 ("Today ·
  *     3" and the day's net), sticky under the Pocket header unless
@@ -34,10 +34,14 @@ import { Approx, Avatar, Money } from "./kit";
  *   - inCard: the list sits inside a host card (Home's recent activity): no
  *     month separators, plain rows, headers that don't stick;
  *   - accountCurrency: the months were grouped with an accountId, so nets are
- *     in that currency and rows read as that account's history.
- * - PocketTxRow({ tx, lookup, onTap, onComplete?, accountScoped?, due? }): one
- *   button for the row and, on a planned row given onComplete, a 44px ✓ beside
- *   it. Renders nothing when the row's account is unknown.
+ *     in that currency and rows read as that account's history;
+ *   - selection: selection mode (Activity's bulk actions): a tap chooses the
+ *     row instead of opening its sheet, and the ✓ steps aside.
+ * - PocketTxRow({ tx, lookup, onTap, onComplete?, accountScoped?, due?, selection? }):
+ *   one button for the row and, on a planned row given onComplete, a 44px ✓
+ *   beside it. In selection mode the button toggles the row (aria-pressed), a
+ *   check circle takes the avatar's place and there's no ✓. Renders nothing
+ *   when the row's account is unknown.
  * - CompleteCheck({ name, ready, onClick }): that ✓, for any planned row
  *   (Home's Coming up), disabled with a reason until rates arrive.
  * - MonthSeparator, DayHeader: the two headings, for lists built by hand.
@@ -45,10 +49,13 @@ import { Approx, Avatar, Money } from "./kit";
  * - describeTx(tx, lookup, t): a row's title, accounts and kind.
  * - useDueLabel(): "Today", "Tomorrow", "in 3 days", "2 days late" (core's
  *   relativeDue, worded). Day headers use core's dayLabel (dates.ts).
- *
- * Deferred: selection mode (aria-selected, check circles) arrives with the
- * selection bar.
  */
+
+/** Selection mode: which rows are chosen, and choosing one. */
+export interface RowSelection {
+  has: (id: string) => boolean;
+  toggle: (tx: Transaction) => void;
+}
 
 export interface TxLookup {
   accountsById: ReadonlyMap<string, Account>;
@@ -251,6 +258,8 @@ export interface PocketDayListProps {
   inCard?: boolean;
   /** the months were grouped for one account: nets are in its currency */
   accountCurrency?: Currency;
+  /** selection mode: a tap chooses the row */
+  selection?: RowSelection;
 }
 
 export function PocketDayList({
@@ -260,6 +269,7 @@ export function PocketDayList({
   stickyHeaders = true,
   inCard = false,
   accountCurrency,
+  selection,
 }: PocketDayListProps) {
   const lookup = useTxLookup();
   const currency = accountCurrency ?? lookup.display;
@@ -279,6 +289,7 @@ export function PocketDayList({
               accountScoped={accountCurrency != null}
               onRowTap={onRowTap}
               onComplete={onComplete}
+              selection={selection}
             />
           ))}
         </div>
@@ -296,6 +307,7 @@ function DaySection({
   accountScoped,
   onRowTap,
   onComplete,
+  selection,
 }: {
   day: DayGroup;
   lookup: TxLookup;
@@ -305,6 +317,7 @@ function DaySection({
   accountScoped: boolean;
   onRowTap: (tx: Transaction) => void;
   onComplete?: (tx: Transaction) => void;
+  selection?: RowSelection;
 }) {
   const id = useId();
   return (
@@ -325,10 +338,28 @@ function DaySection({
             onTap={onRowTap}
             onComplete={onComplete}
             accountScoped={accountScoped}
+            selection={selection}
           />
         ))}
       </ul>
     </section>
+  );
+}
+
+/** Selection mode's check circle, in the avatar's place; decorative (the row says aria-pressed). */
+function SelectCircle({ selected }: { selected: boolean }) {
+  return (
+    <span aria-hidden className="flex h-9 w-9 items-center justify-center">
+      <span
+        className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+          selected
+            ? "border-teal-600 bg-teal-600 text-white dark:border-teal-500 dark:bg-teal-500 dark:text-zinc-950"
+            : "border-zinc-300 dark:border-zinc-600"
+        }`}
+      >
+        {selected ? <Icon name="check" size={14} /> : null}
+      </span>
+    </span>
   );
 }
 
@@ -355,6 +386,7 @@ export function PocketTxRow({
   onComplete,
   accountScoped = false,
   due = false,
+  selection,
 }: {
   tx: Transaction;
   lookup: TxLookup;
@@ -365,6 +397,8 @@ export function PocketTxRow({
   accountScoped?: boolean;
   /** lists without day headers: the second line starts with when it's due ("2 days late"), in place of "Planned" */
   due?: boolean;
+  /** selection mode: a tap chooses the row */
+  selection?: RowSelection;
 }) {
   const { t, locale } = useI18n();
   const dueLabel = useDueLabel();
@@ -386,8 +420,9 @@ export function PocketTxRow({
   // list is one account's, where each leg is
   const sign: MoneySign = d.transfer && !accountScoped ? "none" : tx.direction === "income" ? "in" : "out";
   const cross = d.other && d.otherAccount && d.otherAccount.currency !== d.account.currency ? d.other : null;
+  const selected = selection ? selection.has(tx.id) : false;
   // a card's instalment is paid by the card payment that covers it, never ticked by hand
-  const showCheck = planned && onComplete != null && lookup.book.roleOf(tx) !== "charge";
+  const showCheck = !selection && planned && onComplete != null && lookup.book.roleOf(tx) !== "charge";
 
   const parts: Array<{ key: string; node: ReactNode; shrink?: boolean }> = [];
   if (when) {
@@ -407,13 +442,17 @@ export function PocketTxRow({
     <li className={`flex items-center ${tx.legacy ? "opacity-60" : ""}`}>
       <button
         type="button"
-        onClick={() => onTap(tx)}
-        className={`flex min-h-[var(--pocket-row-tx,60px)] min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left active:bg-[var(--edge-soft)] ${
+        onClick={() => (selection ? selection.toggle(tx) : onTap(tx))}
+        aria-pressed={selection ? selected : undefined}
+        data-selected={selected ? "" : undefined}
+        className={`flex min-h-[var(--pocket-row-tx,60px)] min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left ${
           showCheck ? "pr-1" : "pr-4"
-        }`}
+        } ${selected ? "bg-teal-50 shadow-[inset_4px_0_0_var(--color-teal-600)] dark:bg-teal-950" : "active:bg-[var(--edge-soft)]"}`}
       >
         <span className="shrink-0">
-          {d.transfer || d.cardPayment ? (
+          {selection ? (
+            <SelectCircle selected={selected} />
+          ) : d.transfer || d.cardPayment ? (
             <MoveAvatar card={d.cardPayment} />
           ) : (
             <Avatar color={d.category?.color} label={d.category?.name ?? d.title} />
