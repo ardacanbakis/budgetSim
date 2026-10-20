@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { ReactNode, Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
 import { useRepo } from "@/lib/data/provider";
@@ -12,15 +12,18 @@ import { Account, Category, Transaction, TxDirection, TxStatus } from "@/lib/dat
 import { buildCardBook, isIncome, isSpending } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
-import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { todayISO } from "@/lib/domain/recurrence";
 import { useApp } from "@/lib/data/provider";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { RecurringTab } from "@/components/recurringTab";
+import { TimelineTab } from "@/components/timelineTab";
+import { CompleteModal, EditModal } from "@/components/txModals";
 import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { parseTab } from "@/lib/ui/urlTab";
 
 const PocketTransactions = dynamic(() => import("@/components/pocket/transactions").then((m) => m.PocketTransactions), {
   ssr: false,
@@ -29,7 +32,7 @@ const PocketTransactions = dynamic(() => import("@/components/pocket/transaction
 
 export default pocketable(TransactionsPage, PocketTransactions);
 
-const TABS = ["ledger", "recurring"] as const;
+const TABS = ["ledger", "timeline", "recurring"] as const;
 type Tab = (typeof TABS)[number];
 
 function TransactionsPage() {
@@ -42,14 +45,16 @@ function TransactionsPage() {
 }
 
 /**
- * The ledger and the recurring items that fill it, as two tabs. The open tab
- * lives in the URL (?tab=recurring), so /recurring can redirect here and the
- * back button steps between them.
+ * The ledger, the timeline and the recurring items that fill them, as three
+ * tabs. The open tab lives in the URL (?tab=timeline, ?tab=recurring), so
+ * /recurring can redirect here and a link opens the right one. Switching
+ * replaces the history entry (replaceQuery), so Back leaves the page rather
+ * than stepping between tabs.
  */
 function TransactionsScreen() {
   const { t } = useI18n();
   const params = useSearchParams();
-  const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
+  const tab: Tab = parseTab(params.get("tab"), TABS, "ledger");
 
   const tabs = (
     <div role="tablist" aria-label={t("tx.title")} className="flex gap-1 border-b border-[var(--edge)]">
@@ -66,13 +71,15 @@ function TransactionsScreen() {
               : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          {id === "ledger" ? t("tx.tabLedger") : t("recurring.title")}
+          {id === "ledger" ? t("tx.tabLedger") : id === "timeline" ? t("timeline.tab") : t("recurring.title")}
         </button>
       ))}
     </div>
   );
 
-  return tab === "recurring" ? <RecurringTab tabs={tabs} /> : <LedgerTab tabs={tabs} />;
+  if (tab === "recurring") return <RecurringTab tabs={tabs} />;
+  if (tab === "timeline") return <TimelineTab key={params.get("account") ?? ""} tabs={tabs} accountParam={params.get("account")} />;
+  return <LedgerTab tabs={tabs} />;
 }
 
 function LedgerTab({ tabs }: { tabs: ReactNode }) {
@@ -521,155 +528,5 @@ function TxRow({
         </Button>
       </div>
     </li>
-  );
-}
-
-function EditModal({
-  tx,
-  accounts,
-  categories,
-  onClose,
-  onSave,
-}: {
-  tx: Transaction | null;
-  accounts: Account[];
-  categories: Category[];
-  onClose: () => void;
-  onSave: (patch: Partial<Pick<Transaction, "amount" | "dueDate" | "description" | "categoryId" | "accountId">>) => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [key, setKey] = useState<string | null>(null);
-
-  if (tx && key !== tx.id) {
-    setKey(tx.id);
-    setDescription(tx.description);
-    setAmount(String(tx.amount));
-    setDueDate(tx.dueDate);
-    setCategoryId(tx.categoryId ?? "");
-    setAccountId(tx.accountId);
-  }
-
-  const dirCategories = categories.filter((c) => !tx || c.direction === tx.direction);
-  const account = accounts.find((a) => a.id === accountId);
-
-  return (
-    <Modal open={tx != null} onClose={onClose} title={t("tx.editTitle")}>
-      <form
-        className="space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (saving) return;
-          setSaving(true);
-          try {
-            await onSave({
-              description,
-              amount: Number(amount),
-              dueDate,
-              categoryId: categoryId || null,
-              accountId,
-            });
-          } finally {
-            setSaving(false);
-          }
-        }}
-      >
-        <Field label={t("common.description")}>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={`${t("common.amount")} ${account ? `(${account.currency})` : ""}`}>
-            <Input type="number" step="any" min="0" required inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </Field>
-          <Field label={t("common.date")}>
-            <Input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t("common.account")}>
-            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.currency})
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={t("common.category")}>
-            <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">{t("common.none")}</option>
-              {dirCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-        {tx?.status === "completed" ? <p className="text-xs text-zinc-400">{t("tx.editCompletedHint")}</p> : null}
-        <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving || !(Number(amount) > 0)}>
-            {t("common.save")}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-/** older than this (months) → the legacy checkbox is pre-checked */
-const LEGACY_AGE_MONTHS = 3;
-
-function CompleteModal({
-  tx,
-  accountCurrency,
-  onClose,
-  onConfirm,
-}: {
-  tx: Transaction | null;
-  accountCurrency?: string;
-  onClose: () => void;
-  onConfirm: (amount?: number, legacy?: boolean) => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const [amount, setAmount] = useState("");
-  const [legacy, setLegacy] = useState(false);
-  const [key, setKey] = useState<string | null>(null);
-  if (tx && key !== tx.id) {
-    setKey(tx.id);
-    setAmount(String(tx.amount));
-    // pre-check for items due well in the past — assume they've long since settled
-    setLegacy(tx.dueDate < addMonthsClamped(todayISO(), -LEGACY_AGE_MONTHS));
-  }
-  return (
-    <Modal open={tx != null} onClose={onClose} title={t("tx.completeTitle")}>
-      <div className="space-y-3">
-        <p className="text-sm text-zinc-500">{t("tx.completeHint")}</p>
-        <Field label={`${t("tx.finalAmount")} (${accountCurrency ?? ""})`}>
-          <Input type="number" step="any" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </Field>
-        <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal-600" checked={legacy} onChange={(e) => setLegacy(e.target.checked)} />
-          <span>
-            <span className="block text-sm font-medium">{t("legacy.completeAs")}</span>
-            <span className="block text-xs text-zinc-500">{t("legacy.completeHint")}</span>
-          </span>
-        </label>
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={() => onConfirm(Number(amount) || undefined, legacy)}>
-            {t("common.confirm")}
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }

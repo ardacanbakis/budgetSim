@@ -63,6 +63,12 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go("/settings?tab=dashboard"),
     });
+    pages.push({
+      id: "nav:/transactions?tab=timeline",
+      label: t("timeline.tab"),
+      hint: t("palette.page"),
+      run: go("/transactions?tab=timeline"),
+    });
     const actions: Command[] = [
       {
         id: "act:tx",

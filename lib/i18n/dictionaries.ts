@@ -3,6 +3,8 @@ import * as pocketAdd from "./pocket/add";
 import * as pocketLists from "./pocket/lists";
 import * as pocketHome from "./pocket/home";
 import * as pocketActivity from "./pocket/activity";
+import * as pocketTimeline from "./pocket/timeline";
+import * as timeline from "./timeline";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
@@ -358,6 +360,7 @@ export const en = {
     lists: pocketLists.en,
     home: pocketHome.en,
     activity: pocketActivity.en,
+    timeline: pocketTimeline.en,
     portfolio: pocketPortfolio.en,
     cards: pocketCards.en,
     desk: pocketDesk.en,
@@ -487,6 +490,7 @@ export const en = {
     filterStatus: "Status",
     filterDirection: "Direction",
   },
+  timeline: timeline.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -1372,6 +1376,7 @@ export const tr: Dictionary = {
     lists: pocketLists.tr,
     home: pocketHome.tr,
     activity: pocketActivity.tr,
+    timeline: pocketTimeline.tr,
     portfolio: pocketPortfolio.tr,
     cards: pocketCards.tr,
     desk: pocketDesk.tr,
@@ -1501,6 +1506,7 @@ export const tr: Dictionary = {
     filterStatus: "Durum",
     filterDirection: "Yön",
   },
+  timeline: timeline.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",

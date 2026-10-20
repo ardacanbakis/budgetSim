@@ -11,12 +11,32 @@ import { roundTo } from "@/lib/domain/money";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
+/** A transfer to start from: the Timeline's "Plan this transfer" fills it in. */
+export interface TransferPrefill {
+  fromId: string;
+  toId: string;
+  fromAmount: number;
+  date: string;
+  description?: string;
+}
+
 /**
  * Cross-currency transfer: the destination amount is prefilled from the live
  * market rate; if the bank gave a different amount the user overrides it and
  * the effective rate + spread vs market are shown and stored.
+ *
+ * With `initial`, each opening starts from it; a date after today makes it a
+ * planned transfer, as any transfer dated ahead is.
  */
-export function TransferModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function TransferModal({
+  open,
+  onClose,
+  initial,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initial?: TransferPrefill | null;
+}) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const accounts = useAccounts();
@@ -29,6 +49,22 @@ export function TransferModal({ open, onClose }: { open: boolean; onClose: () =>
   const [toTouched, setToTouched] = useState(false);
   const [date, setDate] = useState(todayISO());
   const [description, setDescription] = useState("");
+  const [seeded, setSeeded] = useState<TransferPrefill | null>(null);
+
+  // re-seed on each opening with a prefill, so it starts from that one
+  const prefill = open ? (initial ?? null) : null;
+  if (prefill !== seeded) {
+    setSeeded(prefill);
+    if (prefill) {
+      setFromId(prefill.fromId);
+      setToId(prefill.toId);
+      setFromAmount(String(prefill.fromAmount));
+      setToAmount("");
+      setToTouched(false);
+      setDate(prefill.date);
+      setDescription(prefill.description ?? "");
+    }
+  }
 
   const createTransfer = useAppMutation((input: NewTransfer) => repo.createTransfer(input), [
     KEYS.transactions,
