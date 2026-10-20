@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeNav, NAV, navEntries, orderedNav, visibleNav } from "@/components/shell.nav";
+import { encodeNav, NAV, NAV_ALIASES, navEntries, navHost, orderedNav, visibleNav } from "@/components/shell.nav";
 
 const hrefs = (items: { href: string }[]) => items.map((i) => i.href);
 
@@ -32,5 +32,16 @@ describe("sidebar order and hidden items", () => {
   it("drops what it doesn't know", () => {
     expect(hrefs(orderedNav(["/gone", "!/also-gone", "/"]))[0]).toBe("/");
     expect(orderedNav(["/gone"])).toHaveLength(NAV.length);
+  });
+});
+
+describe("pages that moved into another", () => {
+  it("point each alias at a page that is in the nav", () => {
+    for (const host of Object.values(NAV_ALIASES)) expect(NAV.map((i) => i.href)).toContain(host);
+  });
+
+  it("leaves a page in the nav, and an href it doesn't know, as they are", () => {
+    expect(navHost("/planner")).toBe("/planner");
+    expect(navHost("/gone")).toBe("/gone");
   });
 });

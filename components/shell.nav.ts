@@ -21,6 +21,24 @@ export type NavItem = (typeof NAV)[number];
 const ALWAYS_SHOWN = "/settings";
 const HIDDEN = "!";
 
+/**
+ * Pages that became part of another, and the page they live in now: Evim
+ * sistemi is a tab of the Planner, Debt a view of the Portfolio. A saved
+ * sidebar, a hidden page or the Pocket fourth-tab choice that names one
+ * means its host. An alias only applies once its page has left NAV.
+ */
+export const NAV_ALIASES: Readonly<Record<string, string>> = {
+  "/savings": "/planner",
+  "/loans": "/accounts",
+};
+
+const KNOWN = new Set<string>(NAV.map((item) => item.href));
+
+/** The page an href stands for today: itself, or the page it moved into. */
+export function navHost(href: string): string {
+  return KNOWN.has(href) ? href : (NAV_ALIASES[href] ?? href);
+}
+
 export interface NavEntry {
   item: NavItem;
   hidden: boolean;
@@ -33,19 +51,28 @@ export interface NavEntry {
  * migration. A version from before hiding reads "!/victvs" as unknown and
  * shows that page at the end. Unknown hrefs are dropped; pages missing from
  * the list (added since it was saved) are appended, shown.
+ *
+ * A page that moved into another (NAV_ALIASES) counts as its host: the host
+ * takes the first place either was saved in, and is shown if either was
+ * saved as shown, so hiding the Planner but keeping Evim sistemi keeps the
+ * page Evim now lives on.
  */
 export function navEntries(navOrder: string[] | null | undefined): NavEntry[] {
   const byHref = new Map<string, NavItem>(NAV.map((item) => [item.href, item]));
-  const result: NavEntry[] = [];
+  const placed = new Map<string, NavEntry>();
   for (const saved of navOrder ?? []) {
     const marked = saved.startsWith(HIDDEN);
-    const href = marked ? saved.slice(HIDDEN.length) : saved;
+    const href = navHost(marked ? saved.slice(HIDDEN.length) : saved);
     const item = byHref.get(href);
     if (!item) continue;
-    byHref.delete(href);
-    result.push({ item, hidden: marked && href !== ALWAYS_SHOWN });
+    const hidden = marked && href !== ALWAYS_SHOWN;
+    const seen = placed.get(href);
+    // a page and its alias both saved: it keeps the first place, and is shown if either was
+    if (seen) seen.hidden = seen.hidden && hidden;
+    else placed.set(href, { item, hidden });
   }
-  for (const item of byHref.values()) result.push({ item, hidden: false });
+  const result = [...placed.values()];
+  for (const item of NAV) if (!placed.has(item.href)) result.push({ item, hidden: false });
   return result;
 }
 
