@@ -36,6 +36,7 @@ import { PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
 import { Icon } from "./icons";
 import { Avatar, Chip, ChipRow, Money, Section } from "./kit";
 import { AmountPhrase } from "./paceBar";
+import { FlagGlyph, useMilestoneText } from "@/components/timelineParts";
 import { usePocketTxSheet } from "./txActions";
 
 const TimelineChart = dynamic(() => import("@/components/timelineChart"), {
@@ -627,39 +628,6 @@ function StatementRow({ event, lookup, onPay }: { event: TimelineEvent; lookup: 
       ) : null}
     </li>
   );
-}
-
-function FlagGlyph() {
-  return (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
-    </svg>
-  );
-}
-
-/** "Car loan: last payment", and what it frees each month; leads to where it's managed. */
-export function useMilestoneText(): (event: TimelineEvent) => { title: string; frees: ReactNode | null } {
-  const { t, locale } = useI18n();
-  return (event) => {
-    const m = event.milestone!;
-    const title =
-      m.what === "loan"
-        ? t("timeline.loanEnds", { name: m.name })
-        : m.what === "purchase"
-          ? t("timeline.purchaseEnds", { name: m.name })
-          : t("timeline.templateEnds", { name: m.name });
-    if (m.frees == null || m.currency == null) return { title, frees: null };
-    const amount = formatSigned(m.frees, m.currency, locale, "none");
-    const key =
-      m.direction === "income"
-        ? "timeline.incomeEnds"
-        : m.frequency === "weekly"
-          ? "timeline.freesWeekly"
-          : m.frequency === "yearly"
-            ? "timeline.freesYearly"
-            : "timeline.freesMonthly";
-    return { title, frees: <AmountPhrase text={t(key, { amount: AMOUNT_SLOT })} amount={amount} /> };
-  };
 }
 
 function MilestoneRow({ event }: { event: TimelineEvent }) {

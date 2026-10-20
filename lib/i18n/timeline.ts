@@ -52,6 +52,14 @@ export const en = {
   balanceChart: "{name}: balance over time",
   balanceAfter: "Balance after",
   empty: "Nothing on the timeline yet.",
+  zoom: "Show by",
+  zoomDay: "Day",
+  zoomMonth: "Month",
+  biggest: "Biggest outflows",
+  statements: "Card statements",
+  markersAhead: "Milestones ahead",
+  noMarkers: "No loan, taksit or recurring item ends ahead.",
+  inMonth: "{count} entries",
 };
 
 export const tr: typeof en = {
@@ -99,4 +107,12 @@ export const tr: typeof en = {
   balanceChart: "{name}: zaman içinde bakiye",
   balanceAfter: "Sonraki bakiye",
   empty: "Zaman tünelinde henüz bir şey yok.",
+  zoom: "Gösterim",
+  zoomDay: "Gün",
+  zoomMonth: "Ay",
+  biggest: "En büyük çıkışlar",
+  statements: "Kart ekstreleri",
+  markersAhead: "Yaklaşan dönüm noktaları",
+  noMarkers: "Bitecek kredi, taksit ya da düzenli işlem yok.",
+  inMonth: "{count} kayıt",
 };
