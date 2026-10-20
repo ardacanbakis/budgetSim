@@ -3,14 +3,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The desk pages (Debt, Reports, Plan with its Evim sistemi tab) keep their Classic
+ * The desk pages (Reports, and Plan with its Evim sistemi and loan simulator tabs) keep their Classic
  * markup inside Pocket. All they gain are marker classes and pocket: variant
  * classes, which must do nothing outside Pocket and must actually take effect
  * inside it. These checks hold the class lists to that.
  */
 const root = join(__dirname, "../../..");
 const DESK_FILES = [
-  "app/(app)/loans/page.tsx",
+  "components/loanSimulator.tsx",
   "app/(app)/reports/page.tsx",
   "app/(app)/planner/page.tsx",
   "components/evimTab.tsx",

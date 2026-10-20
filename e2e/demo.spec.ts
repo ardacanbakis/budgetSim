@@ -40,7 +40,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `e2e/screenshots/dashboard-${vp.name}.png`, fullPage: false });
 
-    for (const route of ["victvs", "transactions", "cards", "accounts", "loans", "reports", "planner"] as const) {
+    for (const route of ["victvs", "transactions", "cards", "accounts", "reports", "planner"] as const) {
       await page.goto(`/${route}`);
       await page.waitForTimeout(700);
       await page.screenshot({ path: `e2e/screenshots/${route}-${vp.name}.png`, fullPage: false });
@@ -53,7 +53,7 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/accounts");
   await expect(page.getByText(/Select an account|Geçmişini görmek/)).toBeVisible();
-  // cards have their own page now, so the portfolio lists everything else
+  // cards are paid on their own page: the portfolio lists one as a link there, never a pane of its own
   await expect(page.getByRole("button", { name: /Bonus Card/ })).toHaveCount(0);
   await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
   await expect(page.getByRole("heading", { name: /History|Geçmiş/i })).toBeVisible();
@@ -997,7 +997,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/loans", "/reports", "/planner", "/planner?tab=evim", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/accounts?view=debts", "/reports", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -1377,9 +1377,13 @@ test("cards: own page, payment logging, and a per-card schedule", async ({ page 
   await page.setViewportSize({ width: 1400, height: 1000 });
   await enterDemo(page);
 
-  // credit cards have left the portfolio
-  await page.goto("/accounts");
+  // the portfolio lists a card only as what it owes, a link to this page,
+  // and only where debts are shown
+  await page.goto("/accounts?view=assets");
+  await expect(page.getByRole("button", { name: "Assets", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Credit cards")).toHaveCount(0);
+  await page.goto("/accounts");
+  await expect(page.getByRole("link", { name: /Bonus Card/ })).toHaveAttribute("href", "/cards");
 
   await page.goto("/cards");
   await expect(page.getByRole("heading", { name: /^Cards$/ })).toBeVisible();
@@ -2017,7 +2021,7 @@ const tile = (page: Page, caption: string) =>
 test("loans: a custom schedule posts its own payments into future months", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   // an equal-principal loan pays a different amount every month, which is the
@@ -2057,7 +2061,7 @@ test("loans: a custom schedule posts its own payments into future months", async
 test("loans: Turkish levies are on by default and move the installment", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   // consumer credit pays KKDF 15 and BSMV 10, which is why a bank's quote
@@ -2080,7 +2084,7 @@ test("loans: Turkish levies are on by default and move the installment", async (
 test("loans: an interest-free plan charges no interest and no levies", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await enterDemo(page);
-  await page.goto("/loans");
+  await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
   await num(page, "Principal").fill("120000");

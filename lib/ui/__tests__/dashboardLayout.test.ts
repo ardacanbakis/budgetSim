@@ -18,7 +18,7 @@ import {
 } from "../dashboardLayout";
 
 // every page in the menus, VICTVS included
-const ALL_PAGES = ["/", "/victvs", "/transactions", "/cards", "/accounts", "/loans", "/reports", "/planner", "/settings"];
+const ALL_PAGES = ["/", "/victvs", "/transactions", "/cards", "/accounts", "/reports", "/planner", "/settings"];
 const NO_VICTVS = ALL_PAGES.filter((href) => href !== "/victvs");
 
 // the ten cards Classic has always had, in their default order
@@ -110,7 +110,7 @@ describe("visibility", () => {
       expect(isCardVisible(fresh, id, "classic", ALL_PAGES)).toBe(false);
       expect(isCardVisible(fresh, id, "v2", ALL_PAGES)).toBe(false);
     }
-    expect(isCardVisible(setCardVisible(fresh, "debt", true), "debt", "classic", NO_VICTVS.filter((h) => h !== "/loans"))).toBe(false);
+    expect(isCardVisible(setCardVisible(fresh, "debt", true), "debt", "classic", NO_VICTVS.filter((h) => h !== "/accounts"))).toBe(false);
     expect(isCardVisible(setCardVisible(fresh, "victvs-outlook", true), "victvs-outlook", "v2", NO_VICTVS)).toBe(false);
   });
 

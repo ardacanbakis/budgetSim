@@ -471,8 +471,8 @@ test.describe("Optional cards", () => {
     await page.evaluate((key) => {
       const store = JSON.parse(localStorage.getItem(key) ?? "{}");
       store.settings.dashboardLayout = { order: [], hidden: [], shown: ["debt", "victvs-outlook"] };
-      // the menu without Loans and VICTVS
-      store.settings.navOrder = ["/", "/transactions", "/cards", "/accounts", "/reports", "/planner", "/settings", "!/loans", "!/victvs"];
+      // the menu without the Portfolio (where debts live) and VICTVS
+      store.settings.navOrder = ["/", "/transactions", "/cards", "/reports", "/planner", "/settings", "!/accounts", "!/victvs"];
       localStorage.setItem(key, JSON.stringify(store));
     }, DEMO_KEY);
     await page.reload();

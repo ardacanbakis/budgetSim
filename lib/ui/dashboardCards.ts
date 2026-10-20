@@ -5,6 +5,7 @@ import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, DueCardPayment } from "@/lib/domain/purchases";
 import { Pace, pace } from "./pocket/pace";
 import { statementFigure, StatementFigure } from "./pocket/attention";
+import { loanHref } from "./portfolioUrl";
 
 /**
  * The arithmetic behind the dashboards' optional cards (off until turned on
@@ -22,8 +23,8 @@ import { statementFigure, StatementFigure } from "./pocket/attention";
  * - statementRows(…): each open card's statement (statementFigure), its
  *   standing and its next three months to pay (cardSchedule); idle cards
  *   (nothing owed, nothing coming) apart.
- * - debtHref(loanId): where a loan opens, in one place so a page move is a
- *   one-line change.
+ * - debtHref(loanId): where a loan opens: the Portfolio's Debts view with
+ *   that loan (loanHref).
  */
 
 export interface FlowMonth {
@@ -152,12 +153,7 @@ export function statementRows(params: {
   return { active, idle };
 }
 
-/**
- * Where a loan opens. The loans page has no link to one loan yet, so every
- * loan opens the page; callers pass the id all the same, so that link (or
- * a move of the page) is a change here alone.
- */
+/** Where a loan opens: the Portfolio's Debts view with that loan open (lib/ui/portfolioUrl.ts). */
 export function debtHref(loanId?: string | null): string {
-  void loanId;
-  return "/loans";
+  return loanHref(loanId);
 }

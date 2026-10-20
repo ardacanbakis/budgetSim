@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * The desk pages inside Pocket: Debt, Reports, Plan and its Evim sistemi tab keep
+ * The desk pages inside Pocket: Reports, Plan, and Plan's Evim sistemi and loan simulator tabs keep
  * their Classic markup, and marker classes fix what breaks on a phone. Runs in
  * the demo at 390×844 with the Pocket phone layout switched on, then checks
  * that the same classes do nothing with Pocket off.
@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 const DESK = ["loans", "reports", "planner", "savings"] as const;
 /** where each desk page lives: Evim sistemi is a tab of Plan */
 const PATH: Record<(typeof DESK)[number], string> = {
-  loans: "/loans",
+  loans: "/planner?tab=loan",
   reports: "/reports",
   planner: "/planner",
   savings: "/planner?tab=evim",
@@ -83,14 +83,15 @@ async function expectSheetWithPinnedButtons(page: Page, title: RegExp, primary: 
 }
 
 test.describe("Pocket desk pages", () => {
-  test("Debt: tracked loans first, simulator figures apart, schedule without an inner scroll", async ({ page }) => {
+  test("Loan simulator: figures apart, schedule without an inner scroll, tracked loans after it", async ({ page }) => {
     await enterPocket(page);
     await open(page, "loans");
 
+    // the tab is about simulating; what's tracked follows it, each a link to the Portfolio
     const tracked = page.getByText("Tracked loans", { exact: true });
     const simulator = page.getByText("Simulator", { exact: true });
     await expect(tracked).toBeVisible();
-    expect((await tracked.boundingBox())!.y).toBeLessThan((await simulator.boundingBox())!.y);
+    expect((await tracked.boundingBox())!.y).toBeGreaterThan((await simulator.boundingBox())!.y);
 
     // each result's figure stays inside its own column and clear of its neighbours
     const results = page.locator("main .pocket-cols-2");

@@ -2,7 +2,7 @@ import { Account, Loan, Transaction } from "@/lib/data/types";
 import { buildCardBook } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
-import { buildSchedule } from "./loanSchedule";
+import { buildSchedule, ScheduleResult } from "./loanSchedule";
 
 export interface DebtItem {
   kind: "loan" | "card";
@@ -94,4 +94,49 @@ export function computeDebtOverview(params: {
     : null;
 
   return { items, totalInDisplay, debtFreeDate, avalancheTarget };
+}
+
+export interface LoanProgress {
+  schedule: ScheduleResult;
+  /** instalments paid: the loan's completed rows, never more than the schedule has */
+  paid: number;
+  /** instalments in all */
+  term: number;
+  /** principal still owed, in the loan's currency */
+  remaining: number;
+  /** paid ÷ term, 0–100, rounded */
+  pct: number;
+  /** the last scheduled payment; null for an empty schedule */
+  endDate: string | null;
+}
+
+/**
+ * One tracked loan's standing: its schedule (its own shape and levies), how
+ * many instalments are paid (completed rows carrying its id) and what's left,
+ * as computeDebtOverview counts it.
+ */
+export function loanProgress(loan: Loan, transactions: readonly Transaction[]): LoanProgress {
+  const schedule = buildSchedule({
+    kind: loan.scheduleKind,
+    principal: loan.principal,
+    monthlyRatePct: loan.monthlyRatePct,
+    termMonths: loan.termMonths,
+    startDate: loan.startDate,
+    currency: loan.currency,
+    kkdfPct: loan.kkdfPct,
+    bsmvPct: loan.bsmvPct,
+    customInstalments: loan.customInstalments ?? undefined,
+  });
+  const term = schedule.rows.length;
+  const paidCount = transactions.filter((t) => t.loanId === loan.id && t.status === "completed").length;
+  const paid = Math.min(paidCount, term);
+  const remaining = paid > 0 ? schedule.rows[paid - 1].remaining : loan.principal;
+  return {
+    schedule,
+    paid,
+    term,
+    remaining,
+    pct: term > 0 ? Math.round((paid / term) * 100) : 0,
+    endDate: term > 0 ? schedule.rows[term - 1].date : null,
+  };
 }

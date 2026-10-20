@@ -51,6 +51,13 @@ describe("pages that moved into another", () => {
     expect(orderedNav(["/savings", "/planner"])).toHaveLength(NAV.length);
   });
 
+  it("reads Debt, now a view of the Portfolio, as the Portfolio", () => {
+    expect(navHost("/loans")).toBe("/accounts");
+    expect(hrefs(visibleNav(["!/accounts", "/loans"]))).toContain("/accounts");
+    expect(hrefs(visibleNav(["/accounts", "!/loans"]))).toContain("/accounts");
+    expect(hrefs(visibleNav(["!/loans", "!/accounts"]))).not.toContain("/accounts");
+  });
+
   it("keeps a page shown when it or a page that moved into it was saved as shown", () => {
     // hid the Planner but kept Evim sistemi: Evim's new home stays
     expect(hrefs(visibleNav(["!/planner", "/savings"]))).toContain("/planner");

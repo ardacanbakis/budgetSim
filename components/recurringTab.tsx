@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ReactNode, useMemo, useState } from "react";
 import { LabelColorSettings } from "@/components/labelColorPicker";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
@@ -22,6 +23,7 @@ import { useI18n } from "@/lib/i18n";
 import { RECURRING_DIRECTION_FILTER_KEY, RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
 import { LABELED_STATUSES, LabelColor, LabeledStatus, SWATCH_CLASS, useLabelColor } from "@/lib/ui/labelColors";
 import { useFormatDate } from "@/lib/useFormatDate";
+import { loanHref } from "@/lib/ui/portfolioUrl";
 
 type StatusFilter = "all" | TemplateStatus;
 const STATUS_FILTERS: readonly StatusFilter[] = ["all", "active", "notStarted", "toConfirm", "completed"];
@@ -247,7 +249,12 @@ function TemplateCard({
             {progress && progress.open > 0 ? (
               <Badge tone={colors.toConfirm}>{t("recurring.openCount", { count: progress.open })}</Badge>
             ) : null}
-            {tpl.loanId ? <Badge tone="sky">{t("recurring.linkedLoan")}</Badge> : null}
+            {/* the loan writes this item; it's changed from the loan, in the Portfolio's Debts view */}
+            {tpl.loanId ? (
+              <Link href={loanHref(tpl.loanId)} className="hover:opacity-80">
+                <Badge tone="sky">{t("recurring.linkedLoan")} →</Badge>
+              </Link>
+            ) : null}
             {/* nothing left to auto-complete once it's finished */}
             {tpl.autoComplete && !finished ? <Badge tone="green">{t("recurring.autoComplete")}</Badge> : null}
           </div>

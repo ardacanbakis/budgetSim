@@ -74,8 +74,6 @@ export function navIcon(href: string): IconName {
       return "card";
     case "/victvs":
       return "checkCircle";
-    case "/loans":
-      return "bank";
     case "/reports":
       return "chart";
     case "/planner":

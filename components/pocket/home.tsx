@@ -223,7 +223,7 @@ export function PocketHome() {
       case "debt":
       case "victvsOutlook":
         // a page hidden from the menus takes its section with it
-        if (!visibleNav(navOrder).some((i) => i.href === (id === "debt" ? "/loans" : "/victvs"))) return null;
+        if (!visibleNav(navOrder).some((i) => i.href === (id === "debt" ? "/accounts" : "/victvs"))) return null;
         return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
       case "thisMonth":
       case "statements":
