@@ -1050,7 +1050,7 @@ export default function PlannerPage() {
                 <span className="block text-xs text-zinc-500">{t("victvs.forecastInPlannerHint")}</span>
               </span>
             </label>
-            {victvsForecast ? <VictvsForecastView forecast={victvsForecast} rows={plan.victvsForecast ? 12 : 6} /> : null}
+            {victvsForecast ? <VictvsForecastView forecast={victvsForecast} rows={plan.victvsForecast ? 12 : 6} editable /> : null}
           </div>
         </Card>
         </>

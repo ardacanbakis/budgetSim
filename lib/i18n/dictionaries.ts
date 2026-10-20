@@ -10,6 +10,7 @@ import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
+import * as victvsForecast from "./victvsForecast";
 
 export const en = {
   common: {
@@ -508,6 +509,7 @@ export const en = {
     sameCurrencyHint: "Same currency — amounts should normally match.",
   },
   victvs: {
+    ...victvsForecast.en,
     forecastTitle: "Forecast",
     forecastSeasonal: "Each month from the same month in earlier years ({months} months of history).",
     forecastRecent: "Less than a year of history: months without an earlier year use your recent months.",
@@ -1526,6 +1528,7 @@ export const tr: Dictionary = {
     sameCurrencyHint: "Aynı para birimi — tutarlar normalde eşit olmalı.",
   },
   victvs: {
+    ...victvsForecast.tr,
     forecastTitle: "Tahmin",
     forecastSeasonal: "Her ay, önceki yılların aynı ayından ({months} aylık geçmiş).",
     forecastRecent: "Geçmiş bir yıldan kısa: önceki yılı olmayan aylar son aylarınızdan hesaplanır.",
