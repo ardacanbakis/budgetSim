@@ -423,13 +423,8 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
                 type="button"
                 onClick={() => {
                   setSheet(null);
-                  try {
-                    window.localStorage.setItem("renovator-settings-tab", "preferences");
-                  } catch {
-                    // the page opens on its last tab instead
-                  }
                   if (pathname === "/settings") window.dispatchEvent(new Event(SHOW_PHONE_LAYOUT_EVENT));
-                  else router.push(`/settings#${PHONE_LAYOUT_ANCHOR}`);
+                  else router.push(`/settings?tab=preferences#${PHONE_LAYOUT_ANCHOR}`);
                 }}
                 className="flex min-h-[52px] w-full items-center gap-3 px-4 text-left text-[15px] active:bg-[var(--edge-soft)]"
               >

@@ -34,7 +34,9 @@ import { DashboardAccounts, DashboardLayout } from "@/lib/data/types";
  * back to storage until the user changes something.
  *
  * isCardVisible / visibleCards / cardsOff, setCardVisible, moveCard and
- * resetCards work on a normalised layout.
+ * resetCards work on a normalised layout; so do the account choices
+ * (setAccountHidden, setHideEmpty, setAccountLimit, resetAccounts) and
+ * setUpcomingDays. Each returns a new layout for useDashboardLayout's update.
  */
 
 /** The two dashboards that arrange cards: Classic's grid and the version-2 one. */
@@ -207,4 +209,30 @@ export function moveCard(
 /** Every card back to its default place and state; accounts and Upcoming's range stay. */
 export function resetCards(layout: NormalizedLayout): NormalizedLayout {
   return { ...layout, order: [...CARD_IDS], hidden: [], shown: [] };
+}
+
+/* ------------------------------------------------------------- accounts */
+
+/** One account on or off the dashboards' lists. */
+export function setAccountHidden(layout: NormalizedLayout, accountId: string, hidden: boolean): NormalizedLayout {
+  const rest = layout.accounts.hidden.filter((id) => id !== accountId);
+  return { ...layout, accounts: { ...layout.accounts, hidden: hidden ? [...rest, accountId] : rest } };
+}
+
+export function setHideEmpty(layout: NormalizedLayout, hideEmpty: boolean): NormalizedLayout {
+  return { ...layout, accounts: { ...layout.accounts, hideEmpty } };
+}
+
+/** Rows on Classic's Accounts card before "+N more"; null for all of them. */
+export function setAccountLimit(layout: NormalizedLayout, limit: number | null): NormalizedLayout {
+  return { ...layout, accounts: { ...layout.accounts, limit } };
+}
+
+/** Every account listed again, at the default limit; the cards stay as they are. */
+export function resetAccounts(layout: NormalizedLayout): NormalizedLayout {
+  return { ...layout, accounts: { ...layout.accounts, ...DEFAULT_ACCOUNTS, hidden: [] } };
+}
+
+export function setUpcomingDays(layout: NormalizedLayout, upcomingDays: UpcomingDays): NormalizedLayout {
+  return { ...layout, upcomingDays };
 }

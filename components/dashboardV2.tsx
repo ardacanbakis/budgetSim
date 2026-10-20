@@ -229,6 +229,12 @@ export function DashboardV2() {
         <GoalsCard />
         <AvgSpendCard />
       </div>
+
+      <div className="flex justify-end">
+        <Link href="/settings?tab=dashboard" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
+          {t("dashboard.customise")} →
+        </Link>
+      </div>
     </div>
   );
 }

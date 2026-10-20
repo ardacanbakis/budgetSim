@@ -733,16 +733,9 @@ function Budgets({ rows, today }: { rows: ReturnType<typeof budgetStatuses>; tod
       <div className="divide-y divide-[var(--edge-soft)]">{topBudgets(rows).map(bar)}</div>
       <PocketSheet open={all} onClose={() => setAll(false)} title={t("budgets.title")}>
         <div className="divide-y divide-[var(--edge-soft)]">{topBudgets(rows, rows.length).map(bar)}</div>
+        {/* budgets are edited on Settings' Categories tab */}
         <Link
-          href="/settings"
-          onClick={() => {
-            try {
-              // budgets are edited on Settings' Categories tab
-              window.localStorage.setItem("renovator-settings-tab", "categories");
-            } catch {
-              // the page opens on its last tab instead
-            }
-          }}
+          href="/settings?tab=categories"
           className="mb-2 mt-3 flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-[var(--edge)] text-[15px] font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
         >
           {t("budgets.editIn")}

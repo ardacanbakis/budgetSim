@@ -7,8 +7,13 @@ import {
   isCardVisible,
   moveCard,
   normalizeLayout,
+  resetAccounts,
   resetCards,
+  setAccountHidden,
+  setAccountLimit,
   setCardVisible,
+  setHideEmpty,
+  setUpcomingDays,
   visibleCards,
 } from "../dashboardLayout";
 
@@ -174,5 +179,29 @@ describe("resetCards", () => {
     expect(layout.shown).toEqual([]);
     expect(layout.accounts).toEqual({ hidden: ["a"], hideEmpty: true, limit: null });
     expect(layout.upcomingDays).toBe(7);
+  });
+});
+
+describe("account choices", () => {
+  const fresh = normalizeLayout(null);
+
+  it("hides and shows an account by id, once", () => {
+    let layout = setAccountHidden(fresh, "a", true);
+    layout = setAccountHidden(layout, "a", true);
+    expect(layout.accounts.hidden).toEqual(["a"]);
+    expect(setAccountHidden(layout, "a", false).accounts.hidden).toEqual([]);
+    // the cards are left alone
+    expect(layout.order).toEqual(fresh.order);
+  });
+
+  it("sets hide-empty, the limit and Upcoming's range, and resets the accounts only", () => {
+    let layout = setHideEmpty(setAccountLimit(setAccountHidden(fresh, "a", true), null), true);
+    layout = setCardVisible(setUpcomingDays(layout, 14), "goals", false);
+    expect(layout.accounts).toEqual({ hidden: ["a"], hideEmpty: true, limit: null });
+    expect(layout.upcomingDays).toBe(14);
+    const reset = resetAccounts(layout);
+    expect(reset.accounts).toEqual(DEFAULT_ACCOUNTS);
+    expect(reset.hidden).toEqual(["goals"]);
+    expect(reset.upcomingDays).toBe(14);
   });
 });

@@ -225,7 +225,7 @@ test.describe("Pocket desk pages", () => {
     await page.goto("/");
     await expect(page.locator("[data-pocket-shell]")).toBeVisible({ timeout: 15_000 });
     await row();
-    await expect(page).toHaveURL(/\/settings#phone-layout$/);
+    await expect(page).toHaveURL(/\/settings\?tab=preferences#phone-layout$/);
     await expect(card).toBeAttached({ timeout: 15_000 });
     await expect.poll(inView).toBe(true);
 

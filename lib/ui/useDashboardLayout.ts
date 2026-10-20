@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { visibleNav } from "@/components/shell.nav";
 import { useRepo } from "@/lib/data/provider";
@@ -38,24 +38,22 @@ export function useDashboardLayout() {
   const settings = useUserSettings();
   const accounts = useAccounts();
 
-  const layout = useMemo(
+  const saved = useMemo(
     () => (settings.data ? normalizeLayout(settings.data.dashboardLayout, accounts.data?.map((a) => a.id)) : null),
     [settings.data, accounts.data]
   );
+  // The cache is updated in the same tick as a change, but React Query tells
+  // its readers a tick later; a controlled checkbox would flick back in
+  // between. So the change also shows here, until the settings it was made
+  // on are replaced (by the cache update carrying it, or by anything newer).
+  const [draft, setDraft] = useState<{ base: UserSettings; layout: NormalizedLayout } | null>(null);
+  const layout = draft && draft.base === settings.data ? draft.layout : saved;
   const navOrder = settings.data?.navOrder;
   const navHrefs = useMemo(() => visibleNav(navOrder).map((item) => item.href), [navOrder]);
 
   const save = useMutation({
     mutationKey: MUTATION_KEY,
     scope: SCOPE,
-    onMutate: async (change: LayoutChange) => {
-      const accountIds = queryClient.getQueryData<Account[]>(KEYS.accounts)?.map((a) => a.id);
-      // a settings fetch still in flight would land on top of the change
-      await queryClient.cancelQueries({ queryKey: KEYS.userSettings });
-      queryClient.setQueryData<UserSettings>(KEYS.userSettings, (current) =>
-        current ? { ...current, dashboardLayout: change(normalizeLayout(current.dashboardLayout, accountIds)) } : current
-      );
-    },
     mutationFn: async (change: LayoutChange) => {
       const fresh = await repo.getUserSettings();
       const accountIds = queryClient.getQueryData<Account[]>(KEYS.accounts)?.map((a) => a.id);
@@ -75,7 +73,21 @@ export function useDashboardLayout() {
   });
 
   const { mutate } = save;
-  const update = useCallback((change: LayoutChange) => mutate(change), [mutate]);
+  const update = useCallback(
+    (change: LayoutChange) => {
+      // shown in the same tick, so a checkbox never flicks back: a settings
+      // fetch still in flight is stopped first (synchronously, kept data
+      // and all), or it would land on top of the change
+      if (settings.data && layout) setDraft({ base: settings.data, layout: change(layout) });
+      void queryClient.cancelQueries({ queryKey: KEYS.userSettings });
+      const accountIds = queryClient.getQueryData<Account[]>(KEYS.accounts)?.map((a) => a.id);
+      queryClient.setQueryData<UserSettings>(KEYS.userSettings, (current) =>
+        current ? { ...current, dashboardLayout: change(normalizeLayout(current.dashboardLayout, accountIds)) } : current
+      );
+      mutate(change);
+    },
+    [mutate, queryClient, settings.data, layout]
+  );
 
   return { layout, navHrefs, update };
 }

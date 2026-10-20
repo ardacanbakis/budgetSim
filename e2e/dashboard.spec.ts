@@ -196,3 +196,96 @@ test.describe("Pocket accounts strip", () => {
   });
 });
 
+const tabButton = (page: Page, name: RegExp) => page.getByRole("button", { name });
+
+test.describe("Settings → Dashboard", () => {
+  test("opens by link, is remembered, and switching tabs keeps working after a query", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/settings?tab=dashboard");
+    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("heading", { name: "Dashboard cards" })).toBeVisible();
+    await expect(page.getByText(/This one uses the Classic style/)).toBeVisible();
+
+    // the tabs still switch, and say so in the URL
+    await tabButton(page, /Data$/).click();
+    await expect(page).toHaveURL(/\/settings\?tab=data$/);
+    await expect(tabButton(page, /Data$/)).toHaveAttribute("aria-pressed", "true");
+    await tabButton(page, /Dashboard$/).click();
+    await expect(page).toHaveURL(/\/settings\?tab=dashboard$/);
+
+    // the sidebar's plain /settings brings no old query back, and opens the last tab
+    const sidebar = page.locator("aside nav");
+    await sidebar.locator('a[href="/accounts"]').click();
+    await expect(page).toHaveURL(/\/accounts$/);
+    await sidebar.locator('a[href="/settings"]').click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-pressed", "true");
+    await tabButton(page, /Preferences$/).click();
+    await expect(page).toHaveURL(/\/settings\?tab=preferences$/);
+    await expect(page.getByText(/Display currency/).first()).toBeVisible();
+  });
+
+  test("a card switched on in Settings shows on the dashboard and stays on", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/settings?tab=dashboard");
+    const gold = page.getByRole("checkbox", { name: "Show In gold" });
+    await expect(gold).not.toBeChecked();
+    await gold.check();
+    await expect(gold).toBeChecked();
+    // Upcoming's range sits under it while it's on
+    const range = page.getByRole("group", { name: "Looks ahead" });
+    await expect(range.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true");
+    await range.getByRole("button", { name: "14 days" }).click();
+    await expect.poll(async () => (await storedLayout(page))?.upcomingDays).toBe(14);
+    await page.getByRole("checkbox", { name: "Show Upcoming" }).uncheck();
+    await expect(range).toHaveCount(0);
+
+    await page.goto("/");
+    await expect(card(page, "gold-lens")).toBeVisible({ timeout: 15_000 });
+    await expect(card(page, "upcoming")).toHaveCount(0);
+    await page.reload();
+    await expect(card(page, "gold-lens")).toBeVisible({ timeout: 15_000 });
+    // the net-worth words stay the net-worth card's alone
+    await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible();
+
+    // and Reset puts every card back
+    await page.goto("/settings?tab=dashboard");
+    await page.getByRole("button", { name: "Reset cards" }).click();
+    await expect(gold).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Show Upcoming" })).toBeChecked();
+  });
+
+  test("the account choices tidy the dashboard and say totals don't change", async ({ page }) => {
+    await enterDemo(page);
+    const netWorth = (await card(page, "net-worth").textContent())!;
+    await seedAccounts(page, null);
+    await page.goto("/settings?tab=dashboard");
+    await expect(page.getByText("Hidden accounts still count in every total")).toBeVisible();
+    await page.getByRole("switch", { name: "Hide empty accounts (1 now)" }).check();
+    await page.getByRole("checkbox", { name: "Show Ziraat TRY on the dashboards" }).uncheck();
+    await page.getByRole("combobox").filter({ has: page.locator("option", { hasText: "All" }) }).selectOption("all");
+    await expect.poll(async () => (await storedLayout(page))?.accounts).toMatchObject({ hideEmpty: true, limit: null });
+
+    await page.goto("/");
+    await expect(accountsCard(page)).toContainText("Wise USD", { timeout: 15_000 });
+    await expect(accountsCard(page)).not.toContainText("Ziraat TRY");
+    await expect(accountsCard(page)).not.toContainText("Empty drawer");
+    await expect(card(page, "net-worth")).toHaveText(netWorth);
+
+    // the footer leads back to the account list in Settings
+    await accountsCard(page).locator("[data-accounts-left-out]").click();
+    await expect(page).toHaveURL(/\/settings\?tab=dashboard#accounts$/);
+    await expect(page.getByRole("heading", { name: "Dashboard accounts" })).toBeInViewport();
+    await page.getByRole("button", { name: "Show all accounts" }).click();
+    await expect(page.getByRole("checkbox", { name: "Show Ziraat TRY on the dashboards" })).toBeChecked();
+  });
+
+  test("reads in Turkish", async ({ page }) => {
+    await enterDemo(page);
+    await page.evaluate(() => localStorage.setItem("renovator-locale", "tr"));
+    await page.goto("/settings?tab=dashboard");
+    await expect(tabButton(page, /Özet$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("heading", { name: "Özet kartları" })).toBeVisible();
+    await expect(page.getByText(/Gizli hesaplar her toplamda sayılmaya devam eder/)).toBeVisible();
+  });
+});

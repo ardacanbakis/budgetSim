@@ -219,7 +219,7 @@ test.describe("Pocket home", () => {
     await budgets.getByRole("button", { name: /All budgets \(2\)/ }).click();
     const sheet = page.getByRole("dialog");
     await expect(sheet.getByRole("progressbar")).toHaveCount(2);
-    await expect(sheet.getByRole("link", { name: /Edit limits/ })).toHaveAttribute("href", "/settings");
+    await expect(sheet.getByRole("link", { name: /Edit limits/ })).toHaveAttribute("href", "/settings?tab=categories");
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
 
