@@ -10,7 +10,7 @@ import { convert } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
 import { findDueCardPayments } from "@/lib/domain/purchases";
 import { goldRatiosOf } from "@/lib/domain/gold";
-import { addDays, addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 
 export interface DashboardData {
   balances: Map<string, number>;
@@ -21,7 +21,6 @@ export interface DashboardData {
   book: CardBook;
   duePayments: ReturnType<typeof findDueCardPayments>;
   safe: ReturnType<typeof safeToSpend>;
-  upcoming: Transaction[];
   flow: Array<{ month: string; income: number; expense: number }>;
   unpaidVictvs: number;
   accounts: Account[];
@@ -69,13 +68,6 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     today,
   });
 
-  // a card's charges are paid with its statement, which is listed itself
-  const upcoming = transactions.data
-    .filter((tx) => tx.status === "planned" && tx.dueDate <= addDays(today, 30))
-    .filter((tx) => book.roleOf(tx) !== "charge" && book.roleOf(tx) !== "cardSide")
-    .sort((a, b) => (a.dueDate > b.dueDate ? 1 : -1))
-    .slice(0, 6);
-
   // last 6 completed months of income/expense in display currency: transfers
   // excluded, a card counted when it's paid (lib/domain/cards.ts)
   const byMonth = new Map<string, { income: number; expense: number }>();
@@ -112,7 +104,6 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     book,
     duePayments,
     safe,
-    upcoming,
     flow,
     unpaidVictvs,
     accounts: accounts.data,

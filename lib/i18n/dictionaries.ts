@@ -1,11 +1,15 @@
+import * as dashboardStrings from "./dashboard";
 import * as pocketCore from "./pocket/core";
 import * as pocketAdd from "./pocket/add";
 import * as pocketLists from "./pocket/lists";
 import * as pocketHome from "./pocket/home";
 import * as pocketActivity from "./pocket/activity";
+import * as pocketTimeline from "./pocket/timeline";
+import * as timeline from "./timeline";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
+import * as extras from "./extras";
 
 export const en = {
   common: {
@@ -357,6 +361,7 @@ export const en = {
     lists: pocketLists.en,
     home: pocketHome.en,
     activity: pocketActivity.en,
+    timeline: pocketTimeline.en,
     portfolio: pocketPortfolio.en,
     cards: pocketCards.en,
     desk: pocketDesk.en,
@@ -372,6 +377,7 @@ export const en = {
     wideNote: "This screen is wider than a phone, so it keeps its usual layout. Open the app on your phone to see Pocket.",
   },
   dashboard: {
+    ...dashboardStrings.en,
     netWorth: "Net worth",
     safeToSpend: "Safe to spend",
     safeHint: "Liquid accounts + expected income − remaining bills and installments this month.",
@@ -486,6 +492,7 @@ export const en = {
     filterStatus: "Status",
     filterDirection: "Direction",
   },
+  timeline: timeline.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -1009,6 +1016,7 @@ export const en = {
     signedInAs: "Signed in as",
     demoData: "Demo data",
   },
+  extras: extras.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -1370,6 +1378,7 @@ export const tr: Dictionary = {
     lists: pocketLists.tr,
     home: pocketHome.tr,
     activity: pocketActivity.tr,
+    timeline: pocketTimeline.tr,
     portfolio: pocketPortfolio.tr,
     cards: pocketCards.tr,
     desk: pocketDesk.tr,
@@ -1385,6 +1394,7 @@ export const tr: Dictionary = {
     wideNote: "Bu ekran telefondan geniş, bu yüzden her zamanki yerleşimini korur. Cep'i görmek için uygulamayı telefonundan aç.",
   },
   dashboard: {
+    ...dashboardStrings.tr,
     netWorth: "Toplam varlık",
     safeToSpend: "Harcanabilir",
     safeHint: "Likit hesaplar + beklenen gelir − bu ayın kalan fatura ve taksitleri.",
@@ -1499,6 +1509,7 @@ export const tr: Dictionary = {
     filterStatus: "Durum",
     filterDirection: "Yön",
   },
+  timeline: timeline.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",
@@ -2022,6 +2033,7 @@ export const tr: Dictionary = {
     signedInAs: "Giriş yapan",
     demoData: "Demo verisi",
   },
+  extras: extras.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",

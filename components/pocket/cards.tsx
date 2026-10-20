@@ -10,11 +10,11 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Purchase, Transaction } from "@/lib/data/types";
-import { buildCardBook, CardBook, cardSchedule, chargeAmount } from "@/lib/domain/cards";
+import { buildCardBook, CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, cardStandings, DueCardPayment, findDueCardPayments, purchaseProgress } from "@/lib/domain/purchases";
-import { addDays, parseISODate, todayISO, toISODate } from "@/lib/domain/recurrence";
+import { addDays, parseISODate, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 import { CARDS_TAB_KEY, useLocalChoice } from "@/lib/prefs";
 import { statementFigure } from "@/lib/ui/pocket/attention";
@@ -110,13 +110,6 @@ function chipMonth(month: string, thisYear: string, locale: string): string {
   }).format(new Date(Date.UTC(y, m - 1, 1)));
 }
 
-/** This month's payment day, clamped to the month's length. */
-function paymentDateThisMonth(day: number, today: string): string {
-  const { y, m } = parseISODate(today);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return toISODate(y, m, Math.min(day, last));
-}
-
 /**
  * What the line under a card's name says:
  * - paid: a payment is recorded for this month and it has been made;
@@ -139,7 +132,7 @@ function dueStateOf(
   if (recorded.length > 0 && !pending) return { paid: true };
   if (pending) return { paid: false, date: pending.date };
   if (card.paymentDay == null || standing.daysToDue == null) return null;
-  const thisMonths = paymentDateThisMonth(card.paymentDay, today);
+  const thisMonths = paymentDateIn(thisMonth, card.paymentDay)!;
   if (due && thisMonths < today) return { paid: false, date: thisMonths };
   return { paid: false, date: addDays(today, standing.daysToDue) };
 }
@@ -413,6 +406,7 @@ function CardsScreen() {
       <AccountModal
         open={editingCard != null || creatingCard}
         initial={editingCard}
+        initialKind="credit_card"
         onClose={() => {
           setEditingCard(null);
           setCreatingCard(false);

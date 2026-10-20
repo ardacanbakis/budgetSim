@@ -20,7 +20,7 @@ import { useI18n } from "@/lib/i18n";
  * Which provider quoted the gram is named on the card, because a number this
  * load-bearing should say where it came from.
  */
-export function GoldLensCard() {
+export function GoldLensCard({ className }: { className?: string }) {
   const { t, locale } = useI18n();
   const { displayCurrency } = useApp();
   const rates = useRates();
@@ -39,7 +39,7 @@ export function GoldLensCard() {
   const meta = SOURCE_META[source];
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader
         title={t("gold.title")}
         action={

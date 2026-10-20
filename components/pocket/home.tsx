@@ -5,6 +5,7 @@ import { Fragment, ReactNode, useId, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
+import { OptionalCard } from "@/components/dashboardCards";
 import { GoalsCard } from "@/components/goalsCard";
 import { GoldLensCard } from "@/components/goldLens";
 import { visibleNav } from "@/components/shell.nav";
@@ -34,12 +35,15 @@ import {
   parseSections,
   RECENT_DAYS,
   recentRows,
+  SECTION_CARD,
   SectionId,
   shownSections,
   topBudgets,
 } from "@/lib/ui/pocket/homeSections";
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
+import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { PocketDayList, PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
+import { HomeSectionsEditor } from "./homeEditor";
 import { Icon } from "./icons";
 import { Approx, Avatar, FitFigure, Money, PocketPage, Section } from "./kit";
 import { AmountPhrase, PaceBar } from "./paceBar";
@@ -56,7 +60,10 @@ import { usePocketTxSheet } from "./txActions";
  * 2. Then the sections in the order kept on the device (lib/ui/pocket/
  *    homeSections.ts): Coming up (overdue first, one action per row),
  *    Accounts, Budgets, Recent activity; Monthly flow, Goals and Gold when
- *    switched on.
+ *    switched on, and the dashboards' optional cards (This month, Card
+ *    statements, the trend, Debts, Fixed costs, the VICTVS outlook) as
+ *    sections. The header's sliders open the Customise Home sheet
+ *    (homeEditor.tsx), which edits them in place.
  *
  * Same numbers as Classic: useDashboardData for the hero and the accounts,
  * budgetStatuses for budgets, the list kit's comingUp/statementFigure for
@@ -99,6 +106,7 @@ export function PocketHome() {
   const [stored] = usePocketPref(HOME_SECTIONS_KEY, "");
   const [range] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const [paying, setPaying] = useState<Account | null>(null);
+  const [customising, setCustomising] = useState(false);
 
   const days = Number(range);
   const today = lookup.today;
@@ -155,6 +163,22 @@ export function PocketHome() {
 
   const loading = lookup.loading;
 
+  // memoised: the header is set again whenever its action changes
+  const action = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setCustomising(true)}
+        aria-label={t("pocket.home.customise")}
+        aria-haspopup="dialog"
+        className="flex h-11 w-11 items-center justify-center rounded-full text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400"
+      >
+        <Icon name="adjust" size={22} />
+      </button>
+    ),
+    [t]
+  );
+
   const render = (id: SectionId): ReactNode => {
     switch (id) {
       case "comingUp":
@@ -196,16 +220,30 @@ export function PocketHome() {
         return <GoalsCard />;
       case "gold":
         return <GoldLensCard />;
+      case "debt":
+      case "victvsOutlook":
+        // a page hidden from the menus takes its section with it
+        if (!visibleNav(navOrder).some((i) => i.href === (id === "debt" ? "/loans" : "/victvs"))) return null;
+        return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
+      case "thisMonth":
+      case "statements":
+      case "trend":
+      case "commitments":
+        return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
     }
   };
 
   return (
-    <PocketPage title={t("nav.dashboard")} condensed={condensed}>
+    <PocketPage title={t("nav.dashboard")} condensed={condensed} action={action}>
       <Hero lead={lead} hero={hero === "safe" ? "safe" : "net"} derived={derived} loading={loading} />
       {sections.map((id) => (
         <Fragment key={id}>{render(id)}</Fragment>
       ))}
       {txSheet.element}
+      {/* over Home, so each change shows behind it as it's made */}
+      <PocketSheet open={customising} onClose={() => setCustomising(false)} title={t("pocket.home.customise")}>
+        <HomeSectionsEditor />
+      </PocketSheet>
       <CardPaymentModal
         card={paying}
         suggested={Math.max(0, covers.reduce((sum, c) => sum + chargeAmount(c), 0))}
@@ -610,16 +648,24 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
   const { t } = useI18n();
   const { displayCurrency } = useApp();
   const headId = useId();
-  const tiles = derived
-    ? accountTiles({
-        accounts: derived.accounts,
-        balances: derived.balances,
-        book: derived.book,
-        today: derived.today,
-        usdPer,
-        display: displayCurrency,
-      })
-    : null;
+  // which accounts the dashboards list is synced (dashboardLayout.accounts);
+  // Home only reads it here
+  const { layout } = useDashboardLayout();
+  const tiles =
+    derived && layout
+      ? accountTiles({
+          accounts: derived.accounts,
+          balances: derived.balances,
+          book: derived.book,
+          today: derived.today,
+          usdPer,
+          display: displayCurrency,
+          hiddenIds: layout.accounts.hidden,
+          hideEmpty: layout.accounts.hideEmpty,
+        })
+      : null;
+  // what the strip leaves out, for the end tile
+  const leftOut = tiles && derived ? derived.accounts.filter((a) => !a.archived).length - tiles.length : 0;
 
   return (
     <section aria-labelledby={headId}>
@@ -643,7 +689,7 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
             </div>
           ))}
         </div>
-      ) : tiles.length === 0 ? (
+      ) : tiles.length === 0 && leftOut === 0 ? (
         <Link
           href="/accounts"
           className="flex min-h-[56px] items-center gap-3 rounded-[var(--ui-card-radius)] border border-dashed border-[var(--edge)] px-4 py-3 text-sm text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
@@ -675,6 +721,7 @@ function AccountsStrip({ derived, usdPer }: { derived: Derived; usdPer: UsdPerMa
               className="flex min-h-[5.5rem] w-[9.5rem] items-center justify-center gap-1 rounded-[var(--ui-card-radius)] border border-dashed border-[var(--edge)] p-3 text-sm font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
             >
               {t("pocket.home.allAccounts")}
+              {leftOut > 0 ? <span data-left-out>{t("pocket.home.moreAccounts", { count: leftOut })}</span> : null}
               <span aria-hidden>→</span>
             </Link>
           </li>
@@ -723,16 +770,9 @@ function Budgets({ rows, today }: { rows: ReturnType<typeof budgetStatuses>; tod
       <div className="divide-y divide-[var(--edge-soft)]">{topBudgets(rows).map(bar)}</div>
       <PocketSheet open={all} onClose={() => setAll(false)} title={t("budgets.title")}>
         <div className="divide-y divide-[var(--edge-soft)]">{topBudgets(rows, rows.length).map(bar)}</div>
+        {/* budgets are edited on Settings' Categories tab */}
         <Link
-          href="/settings"
-          onClick={() => {
-            try {
-              // budgets are edited on Settings' Categories tab
-              window.localStorage.setItem("renovator-settings-tab", "categories");
-            } catch {
-              // the page opens on its last tab instead
-            }
-          }}
+          href="/settings?tab=categories"
           className="mb-2 mt-3 flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-[var(--edge)] text-[15px] font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
         >
           {t("budgets.editIn")}

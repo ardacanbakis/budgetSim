@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { en, tr } from "../dictionaries";
 import * as core from "../pocket/core";
 
-const PACKAGES = ["add", "lists", "home", "activity", "portfolio", "cards", "desk"] as const;
+const PACKAGES = ["add", "lists", "home", "activity", "timeline", "portfolio", "cards", "desk"] as const;
 
 describe("Pocket strings", () => {
   it("never let a package's namespace replace a core key", () => {

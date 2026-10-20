@@ -5,24 +5,31 @@ import { Suspense, useMemo, useState } from "react";
 import { Spinner } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { parseTab } from "@/lib/ui/urlTab";
 import { ActivityLink, PocketActivity } from "./activity";
 import { Icon } from "./icons";
 import { PocketPage, Segmented } from "./kit";
 import { PocketRecurring } from "./recurring";
+import { PocketTimeline } from "./timeline";
 
 /**
  * /transactions in Pocket: one large title over a segmented control,
- * Transactions | Recurring, with the open tab kept in the URL (?tab=recurring)
- * as the Classic page keeps it, so /recurring's redirect and the back button
- * land on the right one.
+ * Transactions | Timeline | Recurring, with the open tab kept in the URL
+ * (?tab=timeline, ?tab=recurring) as the Classic page keeps it, so
+ * /recurring's redirect and a link land on the right one. The labels are
+ * Pocket's short ones (pocket.timeline.*): a third of a phone is narrow.
  *
  * The ledger tab is PocketActivity (components/pocket/activity.tsx), keyed by
  * its deep link (?show=due, ?filter=, ?account=, ?q=) so following a new link
- * starts from that link's filters. The recurring tab is PocketRecurring
- * (components/pocket/recurring.tsx); its + sits in the header.
+ * starts from that link's filters. The timeline tab is PocketTimeline
+ * (components/pocket/timeline.tsx), keyed by ?account=. The recurring tab is
+ * PocketRecurring (components/pocket/recurring.tsx); its + sits in the header.
+ * On the ledger tab the header holds Select, which turns the ledger's
+ * selection mode on and off (the bulk actions are PocketActivity's).
  */
 
-type Tab = "ledger" | "recurring";
+const TABS = ["ledger", "timeline", "recurring"] as const;
+type Tab = (typeof TABS)[number];
 
 export function PocketTransactions() {
   // useSearchParams needs a Suspense boundary on a prerendered page
@@ -36,12 +43,27 @@ export function PocketTransactions() {
 function TransactionsScreen() {
   const { t } = useI18n();
   const params = useSearchParams();
-  const tab: Tab = params.get("tab") === "recurring" ? "recurring" : "ledger";
+  const tab: Tab = parseTab(params.get("tab"), TABS, "ledger");
   const [creating, setCreating] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  // selection belongs to the ledger tab: another tab ends it
+  if (tab !== "ledger" && selecting) setSelecting(false);
 
   const action = useMemo(
     () =>
-      tab === "recurring" ? (
+      tab === "ledger" ? (
+        <button
+          type="button"
+          onClick={() => setSelecting((on) => !on)}
+          aria-label={t("pocket.activity.select")}
+          aria-pressed={selecting}
+          className={`flex h-11 w-11 items-center justify-center rounded-full active:bg-[var(--edge-soft)] ${
+            selecting ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300" : "text-teal-600 dark:text-teal-400"
+          }`}
+        >
+          <Icon name="checkCircle" size={22} />
+        </button>
+      ) : tab === "recurring" ? (
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -52,7 +74,7 @@ function TransactionsScreen() {
           <Icon name="plus" size={22} />
         </button>
       ) : undefined,
-    [tab, t]
+    [tab, t, selecting]
   );
 
   const link: ActivityLink = {
@@ -69,14 +91,22 @@ function TransactionsScreen() {
         value={tab}
         options={[
           { value: "ledger", label: t("tx.tabLedger") },
-          { value: "recurring", label: t("recurring.title") },
+          { value: "timeline", label: t("pocket.timeline.tabTimeline") },
+          { value: "recurring", label: t("pocket.timeline.tabRecurring") },
         ]}
-        onChange={(next) => replaceQuery(next === "ledger" ? "/transactions" : "/transactions?tab=recurring")}
+        onChange={(next) => replaceQuery(next === "ledger" ? "/transactions" : `/transactions?tab=${next}`)}
       />
       {tab === "recurring" ? (
         <PocketRecurring creating={creating} onCreatingChange={setCreating} />
+      ) : tab === "timeline" ? (
+        <PocketTimeline key={link.account ?? ""} accountParam={link.account ?? null} />
       ) : (
-        <PocketActivity key={[link.show, link.filter, link.account, link.q].join("|")} link={link} />
+        <PocketActivity
+          key={[link.show, link.filter, link.account, link.q].join("|")}
+          link={link}
+          selecting={selecting}
+          onEndSelection={() => setSelecting(false)}
+        />
       )}
     </PocketPage>
   );

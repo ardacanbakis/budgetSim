@@ -56,6 +56,19 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go("/transactions?tab=recurring"),
     });
+    // the dashboard's cards and accounts, chosen in Settings
+    pages.push({
+      id: "nav:/settings?tab=dashboard",
+      label: t("extras.dashboardSettings"),
+      hint: t("palette.page"),
+      run: go("/settings?tab=dashboard"),
+    });
+    pages.push({
+      id: "nav:/transactions?tab=timeline",
+      label: t("timeline.tab"),
+      hint: t("palette.page"),
+      run: go("/transactions?tab=timeline"),
+    });
     const actions: Command[] = [
       {
         id: "act:tx",

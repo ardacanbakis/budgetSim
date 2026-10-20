@@ -114,6 +114,11 @@ export function PocketSheet({
   // drag to dismiss: direct style writes, no re-render per pointer move
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // a press on a button inside the header (Close) is that button's: capturing
+    // the pointer here would send its click to the header and the sheet would
+    // never close. The handle is a button too, but it's the drag target itself.
+    const pressed = (e.target as Element).closest("button, a, input, select, textarea");
+    if (pressed && pressed !== e.currentTarget) return;
     drag.current = { startY: e.clientY, startT: e.timeStamp, dy: 0 };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };

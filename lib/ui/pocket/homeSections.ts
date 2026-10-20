@@ -4,6 +4,8 @@ import { CardBook, isIncome, isSpending } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays } from "@/lib/domain/recurrence";
+import { dashboardAccountRows } from "../dashboardAccounts";
+import { CardId } from "../dashboardLayout";
 import { ComingUpItem } from "./attention";
 import { isTransferLanding } from "./dayGroups";
 import { POCKET_KEYS } from "./prefs";
@@ -14,15 +16,18 @@ import { POCKET_KEYS } from "./prefs";
  *
  * Sections (below the hero, which never moves or hides):
  * - SECTION_IDS, the default order: Coming up, Accounts, Budgets, Recent
- *   activity; then Monthly flow, Goals and Gold, hidden.
+ *   activity; then Monthly flow, Goals and Gold, and the dashboards'
+ *   optional cards (SECTION_CARD), hidden.
  * - decodeSections(saved) / encodeSections(entries): one list of ids, hidden
  *   ones marked with a leading "!" (["comingUp", "!recent", …]), the same
  *   contract as navEntries in components/shell.nav.ts: unknown ids and
  *   repeats are dropped, ids missing from the list (added since it was
  *   saved) are appended in their default state. parseSections /
  *   serializeSections read and write that list as the stored JSON string
- *   (HOME_SECTIONS_KEY, on the device only; Classic's dashboardLayout in
- *   user_settings is never touched).
+ *   (HOME_SECTIONS_KEY, on the device only). Home's sections never reach
+ *   the synced dashboardLayout in user_settings: Pocket writes only its
+ *   `accounts` part (which accounts the dashboards list, from the Customise
+ *   Home sheet), never the cards' order, hidden or shown.
  * - moveSection(entries, id, ±1), canMove, toggleSection(entries, id),
  *   resetSections(), shownSections(entries).
  *
@@ -37,7 +42,9 @@ import { POCKET_KEYS } from "./prefs";
  *   VICTVS row count for nothing. Null without rates.
  * - accountTiles(…): open accounts by the size of their display value, cards
  *   last showing what they're owed (as a negative). A gold account holding a
- *   mix of coins reads in lira (the Portfolio page's figure() rule).
+ *   mix of coins reads in lira (the Portfolio page's figure() rule). The
+ *   dashboards' rows (lib/ui/dashboardAccounts.ts), so the synced choices in
+ *   dashboardLayout.accounts (hiddenIds, hideEmpty) apply here too.
  * - topBudgets(statuses, n): the n most used budgets, by percent spent.
  *
  * splitAtSlot(text): a sentence translated with AMOUNT_SLOT in place of its
@@ -45,14 +52,52 @@ import { POCKET_KEYS } from "./prefs";
  * alone can carry data-amount and blur when amounts are hidden.
  */
 
-export const SECTION_IDS = ["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold"] as const;
+export const SECTION_IDS = [
+  "comingUp",
+  "accounts",
+  "budgets",
+  "recent",
+  "flow",
+  "goals",
+  "gold",
+  "thisMonth",
+  "statements",
+  "trend",
+  "debt",
+  "commitments",
+  "victvsOutlook",
+] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
+
+/**
+ * The sections that are one of the dashboards' optional cards, drawn by the
+ * same component (components/dashboardCards.tsx). Only the components are
+ * shared: which sections show stays on the phone.
+ */
+export const SECTION_CARD = {
+  thisMonth: "this-month",
+  statements: "card-statements",
+  trend: "trend",
+  debt: "debt",
+  commitments: "commitments",
+  victvsOutlook: "victvs-outlook",
+} as const satisfies Partial<Record<SectionId, CardId>>;
 
 /** The device key Home's order and hidden sections live under. */
 export const HOME_SECTIONS_KEY = POCKET_KEYS.home;
 
 const HIDDEN = "!";
-const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set(["flow", "goals", "gold"]);
+const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set([
+  "flow",
+  "goals",
+  "gold",
+  "thisMonth",
+  "statements",
+  "trend",
+  "debt",
+  "commitments",
+  "victvsOutlook",
+]);
 
 export interface SectionEntry {
   id: SectionId;
@@ -192,30 +237,18 @@ export function accountTiles(params: {
   today: string;
   usdPer: UsdPerMap | null | undefined;
   display: Currency;
+  /** dashboardLayout.accounts: the accounts left off the dashboards */
+  hiddenIds?: readonly string[];
+  hideEmpty?: boolean;
 }): AccountTile[] {
-  const { accounts, balances, book, today, usdPer, display } = params;
-  const tiles: AccountTile[] = [];
-  for (const account of accounts) {
-    if (account.archived) continue;
-    const card = account.kind === "credit_card";
-    const balance = card ? -book.owed(account.id, today) : (balances.get(account.id) ?? 0);
-    const inDisplay = usdPer ? convert(balance, account.currency, display, usdPer) : null;
-    const mixed = account.kind === "gold" && (account.holdings?.length ?? 0) > 0;
-    const inTry = mixed && usdPer ? convert(balance, account.currency, "TRY", usdPer) : null;
-    tiles.push({
-      account,
-      amount: inTry ?? balance,
-      currency: inTry != null ? "TRY" : account.currency,
-      display: inDisplay,
-      card,
-    });
-  }
-  const size = (t: AccountTile) => (t.display == null ? -1 : Math.abs(t.display));
-  return tiles.sort((a, b) => {
-    if (a.card !== b.card) return a.card ? 1 : -1;
-    if (size(a) !== size(b)) return size(b) - size(a);
-    return a.account.name.localeCompare(b.account.name);
-  });
+  const { hiddenIds = [], hideEmpty = false, ...input } = params;
+  return dashboardAccountRows(input, { hidden: [...hiddenIds], hideEmpty }).rows.map((line) => ({
+    account: line.account,
+    amount: line.shown.amount,
+    currency: line.shown.currency,
+    display: line.converted,
+    card: line.account.kind === "credit_card",
+  }));
 }
 
 export function topBudgets(statuses: readonly BudgetStatus[], n = 3): BudgetStatus[] {

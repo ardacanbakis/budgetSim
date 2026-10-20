@@ -476,12 +476,15 @@ export function AccountModal({
   onClose,
   onSave,
   onDelete,
+  initialKind,
 }: {
   open: boolean;
   initial: Account | null;
   onClose: () => void;
   onSave: (input: NewAccount) => Promise<void>;
   onDelete?: () => Promise<void>;
+  /** a new account starts as this kind (a "new card" button opens with credit card ticked); ignored when editing */
+  initialKind?: Account["kind"];
 }) {
   const { t } = useI18n();
   const accounts = useAccounts();
@@ -505,9 +508,10 @@ export function AccountModal({
   if (open && initialized !== targetKey) {
     setInitialized(targetKey);
     setName(initial?.name ?? "");
-    setCurrency(initial?.currency ?? "TRY");
+    // a new crypto or gold account starts in its one currency
+    setCurrency(initial?.currency ?? (initialKind === "crypto" ? "BTC" : initialKind === "gold" ? "XAU_G" : "TRY"));
     setOpening(String(initial?.openingBalance ?? 0));
-    setIsCard(initial?.kind === "credit_card");
+    setIsCard((initial?.kind ?? initialKind) === "credit_card");
     setPaymentAccountId(initial?.paymentAccountId ?? "");
     setPaymentDay(initial?.paymentDay != null ? String(initial.paymentDay) : "");
     setCreditLimit(initial?.creditLimit != null ? String(initial.creditLimit) : "");
@@ -568,16 +572,17 @@ export function AccountModal({
           </Select>
         </Field>
         {fiat ? (
-          <Field label={t("accounts.kind")}>
+          // two buttons, so a Fieldset: a Field's <label> would rename the first one
+          <Fieldset label={t("accounts.kind")}>
             <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant={!isCard ? "primary" : "secondary"} onClick={() => setIsCard(false)}>
+              <Button type="button" variant={!isCard ? "primary" : "secondary"} aria-pressed={!isCard} onClick={() => setIsCard(false)}>
                 {t("accounts.bankOrCash")}
               </Button>
-              <Button type="button" variant={isCard ? "primary" : "secondary"} onClick={() => setIsCard(true)}>
+              <Button type="button" variant={isCard ? "primary" : "secondary"} aria-pressed={isCard} onClick={() => setIsCard(true)}>
                 💳 {t("accounts.creditCard")}
               </Button>
             </div>
-          </Field>
+          </Fieldset>
         ) : null}
         {fiat && isCard ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

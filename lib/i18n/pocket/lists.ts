@@ -25,6 +25,9 @@ export const en = {
   lateMany: "{count} days late",
   entriesOne: "1 entry",
   entriesMany: "{count} entries",
+  // what a row's swipe shows behind it: right marks paid, left opens its actions
+  swipePaid: "Paid",
+  swipeOptions: "Options",
 };
 
 export const tr: typeof en = {
@@ -43,4 +46,6 @@ export const tr: typeof en = {
   lateMany: "{count} gün gecikti",
   entriesOne: "1 kayıt",
   entriesMany: "{count} kayıt",
+  swipePaid: "Ödendi",
+  swipeOptions: "Seçenekler",
 };
