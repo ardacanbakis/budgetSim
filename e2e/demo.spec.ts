@@ -773,7 +773,7 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const netWorthTile = page.locator('[data-card="net-worth"]');
   const before = (await netWorthTile.textContent())!;
 
   await page.goto("/settings");
@@ -831,7 +831,7 @@ test("complete as legacy: planned item completes without moving net worth", asyn
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const netWorthTile = page.locator('[data-card="net-worth"]');
   const before = (await netWorthTile.textContent())!;
 
   // complete a planned item with the legacy checkbox ticked
@@ -863,7 +863,7 @@ test("part2: bulk paste imports a card statement as legacy expenses", async ({ p
   await page.setViewportSize({ width: 1280, height: 1000 });
   await enterDemo(page);
 
-  const netWorthTile = page.locator("text=Net worth").locator("..");
+  const netWorthTile = page.locator('[data-card="net-worth"]');
   const before = (await netWorthTile.textContent())!;
 
   await page.goto("/settings");

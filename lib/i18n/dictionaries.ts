@@ -1,3 +1,4 @@
+import * as dashboardStrings from "./dashboard";
 import * as pocketCore from "./pocket/core";
 import * as pocketAdd from "./pocket/add";
 import * as pocketLists from "./pocket/lists";
@@ -372,6 +373,7 @@ export const en = {
     wideNote: "This screen is wider than a phone, so it keeps its usual layout. Open the app on your phone to see Pocket.",
   },
   dashboard: {
+    ...dashboardStrings.en,
     netWorth: "Net worth",
     safeToSpend: "Safe to spend",
     safeHint: "Liquid accounts + expected income − remaining bills and installments this month.",
@@ -1385,6 +1387,7 @@ export const tr: Dictionary = {
     wideNote: "Bu ekran telefondan geniş, bu yüzden her zamanki yerleşimini korur. Cep'i görmek için uygulamayı telefonundan aç.",
   },
   dashboard: {
+    ...dashboardStrings.tr,
     netWorth: "Toplam varlık",
     safeToSpend: "Harcanabilir",
     safeHint: "Likit hesaplar + beklenen gelir − bu ayın kalan fatura ve taksitleri.",
