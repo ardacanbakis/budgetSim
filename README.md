@@ -44,7 +44,7 @@ where to get each key.
 ### Supabase setup (one time)
 
 1. Create a project at supabase.com.
-2. Run every file in `supabase/migrations/` (**0001 → 0016**, in order) in the
+2. Run every file in `supabase/migrations/` (**0001 → 0017**, in order) in the
    SQL editor. **All migrations are idempotent** — if a run fails halfway or
    you're unsure what already ran, just run the file again; `already exists`
    can't happen. A database that's behind shows "The database is behind this

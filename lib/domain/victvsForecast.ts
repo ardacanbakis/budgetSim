@@ -24,10 +24,30 @@ import type { ExtraFlow } from "./projector";
  * month's earnings that far ahead. Sessions already worked but not yet paid
  * land at their own month plus the lag, or this month if that has passed.
  *
+ * You can set a month's figure yourself (`overrides`, by the month the work
+ * is done). That month then expects exactly your figure, its range closes on
+ * it, and its money lands through the same lag as any other month's. The
+ * computed forecast stays on the month as `auto`, so the screens can show it
+ * beside yours and putting it back is just dropping the override. Overrides
+ * for months already over are ignored: the history speaks for those.
+ *
  * Every amount is in USD, as sessions are.
  */
 
-export type VictvsBasis = "seasonal" | "recent" | "none";
+/** "manual": a figure you set yourself, in place of the computed one */
+export type VictvsBasis = "seasonal" | "recent" | "none" | "manual";
+
+/** Your own figures for the months ahead: USD the month's work should earn, by yyyy-MM. */
+export type VictvsOverrides = Readonly<Record<string, number>>;
+
+/** What the forecast computes for a month, before any figure of yours. */
+export interface VictvsAutoForecast {
+  expected: number;
+  low: number;
+  high: number;
+  basis: Exclude<VictvsBasis, "manual">;
+  samples: Array<{ month: string; amount: number }>;
+}
 
 export interface VictvsMonthForecast {
   /** yyyy-MM */
@@ -37,10 +57,12 @@ export interface VictvsMonthForecast {
   low: number;
   high: number;
   basis: VictvsBasis;
-  /** the months the forecast stands on: the same month in earlier years, or the recent ones */
+  /** the months the computed forecast stands on: the same month in earlier years, or the recent ones */
   samples: Array<{ month: string; amount: number }>;
   /** worked so far: this month only, 0 for the months after it */
   soFar: number;
+  /** the computed forecast, on a month whose figure you set yourself (basis "manual") */
+  auto?: VictvsAutoForecast;
 }
 
 export interface VictvsCashMonth {
@@ -97,6 +119,29 @@ export function payoutLagDays(sessions: readonly VictvsSession[], payouts: reado
   return lags.length ? median(lags) : null;
 }
 
+/** A usable figure of yours for `month`, or null: a non-negative number, to the cent. */
+function overrideFor(overrides: VictvsOverrides | null | undefined, month: string): number | null {
+  const value = overrides?.[month];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? round2(value) : null;
+}
+
+/**
+ * The overrides as stored (user_settings.victvs_forecast.overrides), cleaned
+ * for use and for saving: only yyyy-MM keys holding a non-negative number,
+ * and none for a month before `thisMonth` (they no longer change anything).
+ * Anything else in the stored value, from an older or newer app, is dropped.
+ */
+export function cleanVictvsOverrides(raw: unknown, thisMonth: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [month, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month < thisMonth) continue;
+    const own = overrideFor({ [month]: value as number }, month);
+    if (own != null) out[month] = own;
+  }
+  return out;
+}
+
 export function forecastVictvs(input: {
   sessions: readonly VictvsSession[];
   payouts: readonly VictvsPayout[];
@@ -104,8 +149,10 @@ export function forecastVictvs(input: {
   today: string;
   /** how many months to forecast, this one included */
   months: number;
+  /** your own figures; months already over are ignored */
+  overrides?: VictvsOverrides | null;
 }): VictvsForecast {
-  const { sessions, payouts, today, months } = input;
+  const { sessions, payouts, today, months, overrides } = input;
   const thisMonth = today.slice(0, 7);
 
   const workedIn = new Map<string, number>();
@@ -134,15 +181,20 @@ export function forecastVictvs(input: {
       amount: earned(m),
     }));
     const amounts = samples.map((s) => s.amount);
-    earnings.push({
-      month,
+    const auto: VictvsAutoForecast = {
       expected: amounts.length ? round2(amounts.reduce((a, b) => a + b, 0) / amounts.length) : 0,
       low: amounts.length ? Math.min(...amounts) : 0,
       high: amounts.length ? Math.max(...amounts) : 0,
       basis,
       samples,
-      soFar: i === 0 ? earned(month) : 0,
-    });
+    };
+    const soFar = i === 0 ? earned(month) : 0;
+    const own = overrideFor(overrides, month);
+    earnings.push(
+      own == null
+        ? { month, ...auto, soFar }
+        : { month, expected: own, low: own, high: own, basis: "manual", samples, soFar, auto }
+    );
   }
 
   const lagDays = payoutLagDays(sessions, payouts);

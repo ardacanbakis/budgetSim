@@ -213,7 +213,7 @@ function VictvsPage() {
         <Card>
           <CardHeader title={t("victvs.forecastTitle")} />
           <div className="p-4">
-            <VictvsForecastView forecast={forecast} />
+            <VictvsForecastView forecast={forecast} editable />
           </div>
         </Card>
       ) : null}
