@@ -212,6 +212,11 @@ export interface Plan {
   /** income category ids to model as lost — "what if the VICTVS work dried up" */
   lostIncome: string[];
   funding: Funding;
+  /**
+   * Plan VICTVS income from the seasonal forecast (lib/domain/victvsForecast.ts)
+   * instead of the VICTVS income on the ledger; off unless asked for
+   */
+  victvsForecast?: boolean;
 }
 
 export const NO_DEVALUATION: Devaluation = { enabled: false, pctPerYear: 25 };
@@ -230,6 +235,7 @@ export const EMPTY_PLAN: Plan = {
   devaluation: NO_DEVALUATION,
   lostIncome: [],
   funding: NO_FUNDING,
+  victvsForecast: false,
 };
 
 /** The currency that devalues. Everything else is treated as stable. */
@@ -387,6 +393,7 @@ export function planIsEmpty(plan: Plan): boolean {
     !plan.budgets.some((b) => b.enabled && b.monthlyAmount > 0) &&
     !(plan.loans ?? []).some((l) => l.enabled && l.principal > 0 && l.termMonths > 0) &&
     (plan.lostIncome ?? []).length === 0 &&
+    !plan.victvsForecast &&
     activeRate(plan.devaluation) === 0
   );
 }
@@ -421,6 +428,7 @@ export function normalizePlan(raw: unknown, thisMonth: string): Plan {
   return {
     devaluation: saved.devaluation ?? EMPTY_PLAN.devaluation,
     lostIncome: saved.lostIncome ?? [],
+    victvsForecast: saved.victvsForecast === true,
     funding: {
       enabled: saved.funding?.enabled ?? true,
       order: saved.funding?.order ?? [],

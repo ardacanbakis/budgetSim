@@ -11,7 +11,7 @@ import { Page } from "@playwright/test";
  * Call it from test.beforeEach: a test that routes /api/rates itself does so
  * later, and Playwright lets the most recent route win.
  */
-export async function pinRates(page: Page): Promise<void> {
+export async function pinRates(page: Page, extra: Record<string, unknown> = {}): Promise<void> {
   await page.route("**/api/rates**", (route) =>
     route.fulfill({
       json: {
@@ -19,6 +19,9 @@ export async function pinRates(page: Page): Promise<void> {
         fetchedAt: new Date().toISOString(),
         sources: { USD: "identity", TRY: "fallback", EUR: "fallback", BTC: "fallback", XAU_G: "fallback" },
         diagnostics: [],
+        // a test that needs more of the table (coin prices) adds it here,
+        // rather than letting the request through to the live providers
+        ...extra,
       },
     })
   );

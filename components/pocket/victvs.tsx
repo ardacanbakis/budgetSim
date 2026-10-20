@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AddModal, MarkPaidModal, PasteModal, typeBadgeTone } from "@/app/(app)/victvs/page";
 import { EmptyState, Skeleton } from "@/components/ui";
+import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { useRepo } from "@/lib/data/provider";
 import {
   KEYS,
@@ -163,6 +164,7 @@ function ListSkeleton() {
 
 function VictvsScreen() {
   const { t, locale } = useI18n();
+  const forecast = useVictvsForecast(12);
   const params = useSearchParams();
   const repo = useRepo();
   const sessions = useVictvsSessions();
@@ -311,6 +313,15 @@ function VictvsScreen() {
               </button>
             </div>
           </section>
+
+          {forecast ? (
+            <section className={`${cardClass} p-4`} aria-labelledby="victvs-forecast-title">
+              <h2 id="victvs-forecast-title" className="mb-2 text-[15px] font-semibold">
+                {t("victvs.forecastTitle")}
+              </h2>
+              <VictvsForecastView forecast={forecast} initialRows={3} />
+            </section>
+          ) : null}
 
           <Segmented<VictvsFilter>
             label={t("common.status")}
