@@ -27,7 +27,7 @@ import { DEFAULT_FOURTH, fourthTabChoices } from "@/lib/ui/pocket/bar";
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { RateSourcesCard } from "@/components/settingsRates";
 import { ViewsCard } from "@/components/settingsViews";
-import { DashboardAccountsCard, DashboardCardsCard } from "@/components/settingsDashboard";
+import { DashboardAccountsCard, DashboardCardsCard, PocketHomeCard } from "@/components/settingsDashboard";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
 
 const SETTINGS_TABS = ["preferences", "dashboard", "categories", "victvs", "data", "account"] as const;
@@ -169,8 +169,10 @@ function SettingsScreen() {
 
       {tab === "dashboard" ? (
         <>
+          {pocket ? <PocketHomeCard /> : null}
           <DashboardCardsCard />
           <DashboardAccountsCard />
+          {pocket ? null : <PocketHomeCard />}
         </>
       ) : null}
 

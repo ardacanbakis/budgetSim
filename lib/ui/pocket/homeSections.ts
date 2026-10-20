@@ -22,8 +22,10 @@ import { POCKET_KEYS } from "./prefs";
  *   repeats are dropped, ids missing from the list (added since it was
  *   saved) are appended in their default state. parseSections /
  *   serializeSections read and write that list as the stored JSON string
- *   (HOME_SECTIONS_KEY, on the device only; Classic's dashboardLayout in
- *   user_settings is never touched).
+ *   (HOME_SECTIONS_KEY, on the device only). Home's sections never reach
+ *   the synced dashboardLayout in user_settings: Pocket writes only its
+ *   `accounts` part (which accounts the dashboards list, from the Customise
+ *   Home sheet), never the cards' order, hidden or shown.
  * - moveSection(entries, id, ±1), canMove, toggleSection(entries, id),
  *   resetSections(), shownSections(entries).
  *

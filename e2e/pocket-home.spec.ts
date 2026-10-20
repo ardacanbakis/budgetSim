@@ -251,6 +251,63 @@ test.describe("Pocket home", () => {
     expect((await store(page)).settings.dashboardLayout).toBeNull();
   });
 
+  test("the Customise Home sheet hides and moves sections, on this phone only", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByRole("switch", { name: "Budgets" }).click();
+    await expect(sheet.getByRole("switch", { name: "Budgets" })).toHaveAttribute("aria-checked", "false");
+    await sheet.getByRole("button", { name: "Move Recent activity up" }).click();
+    await sheet.getByRole("button", { name: "Move Recent activity up" }).click();
+    // the first and last rows can't move further
+    await expect(sheet.getByRole("button", { name: "Move Coming up up" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    expect(await headings(page)).toEqual(["Coming up", "Recent activity", "Accounts"]);
+    expect(JSON.parse((await page.evaluate(() => localStorage.getItem("renovator-pocket-home")))!)).toEqual([
+      "comingUp",
+      "recent",
+      "accounts",
+      "!budgets",
+      "!flow",
+      "!goals",
+      "!gold",
+    ]);
+    expect((await store(page)).settings.dashboardLayout).toBeNull();
+
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Reset sections" }).click();
+    await page.keyboard.press("Escape");
+    expect(await headings(page)).toEqual(["Coming up", "Accounts", "Budgets", "Recent activity"]);
+  });
+
+  test("the sheet's account choices are the dashboards' synced ones, and touch nothing else", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByText("Accounts apply on every device")).toBeVisible();
+    await sheet.getByRole("button", { name: "Choose accounts…" }).click();
+    await sheet.getByRole("switch", { name: "Wise USD" }).click();
+    await expect(sheet.getByRole("switch", { name: "Wise USD" })).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+
+    const strip = page.locator("section").filter({ has: page.getByRole("heading", { name: "Accounts" }) });
+    await expect(strip.getByRole("link", { name: /Wise USD/ })).toHaveCount(0);
+    await expect(strip.locator("li").last()).toContainText("+1");
+    await expect
+      .poll(async () => (await store(page)).settings.dashboardLayout as { hidden: string[]; shown: string[]; accounts: { hidden: string[] } } | null)
+      .toMatchObject({ hidden: [], shown: [], accounts: { hidden: [expect.any(String)] } });
+    // Home's own sections stayed on the phone
+    expect(await page.evaluate(() => localStorage.getItem("renovator-pocket-home"))).toBeNull();
+  });
+
+  test("Settings → Dashboard holds the same editor, labelled for this phone", async ({ page }) => {
+    await enterPocket(page);
+    await page.goto("/settings?tab=dashboard");
+    await expect(page.getByRole("heading", { name: "Pocket Home · this phone" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("[data-home-editor]").getByRole("switch", { name: "Coming up" })).toBeVisible();
+  });
+
   test("keeps its shape under the Contrast skin", async ({ page }) => {
     await enterPocket(page, { style: "contrast" });
     await expect(page.locator("html")).toHaveAttribute("data-skin", "contrast");

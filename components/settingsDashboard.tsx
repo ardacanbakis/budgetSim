@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect } from "react";
+import { HomeSectionsEditor } from "@/components/pocket/homeEditor";
 import { Button, Card, CardHeader, Select } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { useRates } from "@/lib/data/queries";
@@ -33,7 +34,8 @@ import { useDashboardData } from "@/lib/useDashboardData";
  * Settings → Dashboard: which cards the dashboards show and in what order,
  * and which accounts they list. Both are synced (user_settings.dashboard_
  * layout, through useDashboardLayout), so they say "on every device"; Pocket's
- * Home keeps its own sections on the phone and has its own card below these.
+ * Home keeps its own sections on the phone and has its own card below these
+ * (PocketHomeCard), shown only on a device that has chosen Pocket.
  */
 
 /** Rows Classic's Accounts card can be set to list; null = all of them. */
@@ -278,6 +280,24 @@ export function DashboardAccountsCard() {
           </div>
         );
       })}
+    </Card>
+  );
+}
+
+/**
+ * Pocket's Home editor, on a device that has chosen Pocket: the same one the
+ * Customise Home sheet holds. Its sections are this phone's alone.
+ */
+export function PocketHomeCard() {
+  const { t } = useI18n();
+  const { phoneLayout } = useApp();
+  if (phoneLayout !== "pocket") return null;
+  return (
+    <Card>
+      <CardHeader title={t("pocket.home.editorTitle")} />
+      <div className="p-4">
+        <HomeSectionsEditor />
+      </div>
     </Card>
   );
 }

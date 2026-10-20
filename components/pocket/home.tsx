@@ -41,6 +41,7 @@ import {
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
 import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { PocketDayList, PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
+import { HomeSectionsEditor } from "./homeEditor";
 import { Icon } from "./icons";
 import { Approx, Avatar, FitFigure, Money, PocketPage, Section } from "./kit";
 import { AmountPhrase, PaceBar } from "./paceBar";
@@ -57,7 +58,8 @@ import { usePocketTxSheet } from "./txActions";
  * 2. Then the sections in the order kept on the device (lib/ui/pocket/
  *    homeSections.ts): Coming up (overdue first, one action per row),
  *    Accounts, Budgets, Recent activity; Monthly flow, Goals and Gold when
- *    switched on.
+ *    switched on. The header's sliders open the Customise Home sheet
+ *    (homeEditor.tsx), which edits them in place.
  *
  * Same numbers as Classic: useDashboardData for the hero and the accounts,
  * budgetStatuses for budgets, the list kit's comingUp/statementFigure for
@@ -100,6 +102,7 @@ export function PocketHome() {
   const [stored] = usePocketPref(HOME_SECTIONS_KEY, "");
   const [range] = usePocketPref(POCKET_KEYS.upcomingRange, "7", (v) => v === "7" || v === "30");
   const [paying, setPaying] = useState<Account | null>(null);
+  const [customising, setCustomising] = useState(false);
 
   const days = Number(range);
   const today = lookup.today;
@@ -156,6 +159,22 @@ export function PocketHome() {
 
   const loading = lookup.loading;
 
+  // memoised: the header is set again whenever its action changes
+  const action = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setCustomising(true)}
+        aria-label={t("pocket.home.customise")}
+        aria-haspopup="dialog"
+        className="flex h-11 w-11 items-center justify-center rounded-full text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400"
+      >
+        <Icon name="adjust" size={22} />
+      </button>
+    ),
+    [t]
+  );
+
   const render = (id: SectionId): ReactNode => {
     switch (id) {
       case "comingUp":
@@ -201,12 +220,16 @@ export function PocketHome() {
   };
 
   return (
-    <PocketPage title={t("nav.dashboard")} condensed={condensed}>
+    <PocketPage title={t("nav.dashboard")} condensed={condensed} action={action}>
       <Hero lead={lead} hero={hero === "safe" ? "safe" : "net"} derived={derived} loading={loading} />
       {sections.map((id) => (
         <Fragment key={id}>{render(id)}</Fragment>
       ))}
       {txSheet.element}
+      {/* over Home, so each change shows behind it as it's made */}
+      <PocketSheet open={customising} onClose={() => setCustomising(false)} title={t("pocket.home.customise")}>
+        <HomeSectionsEditor />
+      </PocketSheet>
       <CardPaymentModal
         card={paying}
         suggested={Math.max(0, covers.reduce((sum, c) => sum + chargeAmount(c), 0))}
