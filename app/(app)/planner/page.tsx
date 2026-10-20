@@ -5,7 +5,9 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { HorizonSlider, horizonLabel } from "@/components/horizonSlider";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
-import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions } from "@/lib/data/queries";
+import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions, useUserSettings } from "@/lib/data/queries";
+import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
+import { victvsForecastFlows } from "@/lib/domain/victvsForecast";
 import { TxDirection } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import {
@@ -15,6 +17,7 @@ import {
   CategoryBudget,
   itemHorizonTotal,
   PlanFrequency,
+  Plan,
   PlanItem,
   planExtraFlows,
   planIsEmpty,
@@ -110,6 +113,8 @@ export default function PlannerPage() {
   const [pickingTiles, setPickingTiles] = useState(false);
   const [shownTiles, setShownTiles] = useState<TileId[]>(DEFAULT_TILES);
   const grid = usePlannerGrid();
+  const userSettings = useUserSettings();
+  const victvsForecast = useVictvsForecast(Math.max(months, 12));
   const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, SHORT_THRESHOLD_TRY);
 
   const toggleMonth = (month: string) =>
@@ -171,6 +176,25 @@ export default function PlannerPage() {
   }
 
   const firstMonth = todayISO().slice(0, 7);
+
+  // with the switch on, VICTVS income comes from the seasonal forecast instead
+  // of the ledger's planned VICTVS income (the category payouts are filed
+  // under, found the way Mark paid finds it); marking VICTVS as lost wins
+  const victvsCategory = categories.data.find((c) => c.direction === "income" && c.name.toLowerCase().includes("victvs"));
+  const forecastOn = (p: Plan) => p.victvsForecast === true && victvsForecast != null && !(victvsCategory && p.lostIncome.includes(victvsCategory.id));
+  const victvsFlows = (p: Plan) =>
+    forecastOn(p)
+      ? victvsForecastFlows(victvsForecast!, firstMonth, {
+          accountId: userSettings.data?.victvsAccountId ?? null,
+          categoryId: victvsCategory?.id ?? "",
+          label: t("victvs.forecastTitle"),
+        })
+      : [];
+  const droppedIncome = (p: Plan) => {
+    const dropped = planDroppedIncome(p);
+    if (forecastOn(p) && victvsCategory) dropped.add(victvsCategory.id);
+    return dropped;
+  };
   // anything that isn't a credit card can be sold to get through a bad month
   const drawable = accounts.data.filter((a) => !a.archived && a.kind !== "credit_card");
   const fundingOrder = planFundingOrder(plan, drawable.map((a) => a.id));
@@ -215,9 +239,9 @@ export default function PlannerPage() {
     fromDate: todayISO(),
     months,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
-    extraFlows: [...planExtraFlows(plan, months, firstMonth), ...savingsFlows],
+    extraFlows: [...planExtraFlows(plan, months, firstMonth), ...victvsFlows(plan), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
-    dropIncomeCategories: planDroppedIncome(plan),
+    dropIncomeCategories: droppedIncome(plan),
     funding: fundingArg,
   });
 
@@ -241,9 +265,9 @@ export default function PlannerPage() {
         fromDate: todayISO(),
         months,
         ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
-        extraFlows: planExtraFlows(compareNormalized, months, firstMonth),
+        extraFlows: [...planExtraFlows(compareNormalized, months, firstMonth), ...victvsFlows(compareNormalized)],
         replaceCategories: planReplacedCategories(compareNormalized),
-        dropIncomeCategories: planDroppedIncome(compareNormalized),
+        dropIncomeCategories: droppedIncome(compareNormalized),
         funding: {
           order: planFundingOrder(compareNormalized, drawable.map((a) => a.id)),
           overrides: compareNormalized.funding?.overrides ?? {},
@@ -1005,6 +1029,34 @@ export default function PlannerPage() {
       ),
     },
     {
+      id: "victvs",
+      title: t("victvs.forecastInPlanner"),
+      defaultSize: { w: 2, h: 3 },
+      node: (
+        <>
+        {/* VICTVS income from the same months in earlier years */}
+        <Card>
+          <CardHeader title={`VICTVS · ${t("victvs.forecastTitle")}`} />
+          <div className="space-y-3 p-4">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={plan.victvsForecast === true}
+                onChange={(e) => persist({ ...plan, victvsForecast: e.target.checked })}
+              />
+              <span>
+                <span className="font-medium">{t("victvs.forecastInPlanner")}</span>
+                <span className="block text-xs text-zinc-500">{t("victvs.forecastInPlannerHint")}</span>
+              </span>
+            </label>
+            {victvsForecast ? <VictvsForecastView forecast={victvsForecast} rows={plan.victvsForecast ? 12 : 6} /> : null}
+          </div>
+        </Card>
+        </>
+      ),
+    },
+    {
       id: "funding",
       title: t("planner.fundingTitle"),
       defaultSize: { w: 2, h: 4 },
@@ -1342,6 +1394,7 @@ export default function PlannerPage() {
             <div className="space-y-4">
               {block("dev")}
               {block("lost")}
+              {block("victvs")}
               {block("funding")}
               {block("sales")}
               {block("items")}

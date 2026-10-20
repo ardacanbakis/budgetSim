@@ -717,7 +717,7 @@ test("part1: victvs payouts group by year and month", async ({ page }) => {
   await page.waitForTimeout(400);
 
   // it lands under a year → month heading rather than a flat row
-  const payouts = page.getByText("Payouts").locator("../..");
+  const payouts = page.getByText("Payouts", { exact: true }).locator("../..");
   const thisMonth = new Date().toLocaleDateString("en-US", { month: "long" });
   await expect(payouts).toContainText(String(new Date().getFullYear()));
   await expect(payouts).toContainText(thisMonth);

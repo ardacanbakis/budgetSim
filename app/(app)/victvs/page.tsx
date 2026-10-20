@@ -25,6 +25,7 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { pocketable } from "@/components/pocket/pocketable";
 
 const PocketVictvs = dynamic(() => import("@/components/pocket/victvs").then((m) => m.PocketVictvs), {
@@ -60,6 +61,7 @@ function VictvsPage() {
   const accounts = useAccounts();
   const rates = useRates();
   const settings = useUserSettings();
+  const forecast = useVictvsForecast(12);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -206,6 +208,15 @@ function VictvsPage() {
           </Button>
         </div>
       </div>
+
+      {forecast && (sessions.data ?? []).length > 0 ? (
+        <Card>
+          <CardHeader title={t("victvs.forecastTitle")} />
+          <div className="p-4">
+            <VictvsForecastView forecast={forecast} />
+          </div>
+        </Card>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">

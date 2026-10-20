@@ -19,6 +19,7 @@ import { parseVictvsPaste } from "@/lib/domain/victvsParser";
 import { DATE_FORMATS, DATE_FORMAT_SAMPLE, DateFormat, DEFAULT_DATE_FORMAT, formatDate } from "@/lib/domain/dates";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { Locale, useI18n } from "@/lib/i18n";
+import { BUILD, MAIN_BRANCH } from "@/lib/buildInfo";
 import { PHONE_LAYOUT_ANCHOR, PHONE_LAYOUTS, SHOW_PHONE_LAYOUT_EVENT } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
 import { useIsPhone, usePocket } from "@/lib/ui/usePocket";
@@ -230,7 +231,49 @@ export default function SettingsPage() {
           </Card>
         </>
       ) : null}
+
+      <AboutLine />
     </div>
+  );
+}
+
+/**
+ * Which build is running, at the foot of every tab: the PR it came from, the
+ * commit and when it was built (lib/buildInfo.ts). On a preview deploy it
+ * names the branch, so a preview is never mistaken for what's live.
+ */
+function AboutLine() {
+  const { t, locale } = useI18n();
+  const { commit, branch, pr, repo, builtAt } = BUILD;
+  const short = commit.slice(0, 7);
+  const when = builtAt
+    ? new Date(builtAt).toLocaleString(locale === "tr" ? "tr-TR" : "en-GB", { dateStyle: "medium", timeStyle: "short" })
+    : "";
+  const link = (path: string, text: string) =>
+    repo ? (
+      <a href={`https://github.com/${repo}/${path}`} target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-zinc-600 dark:hover:text-zinc-300">
+        {text}
+      </a>
+    ) : (
+      text
+    );
+  const parts: React.ReactNode[] = [];
+  if (pr) parts.push(link(`pull/${pr}`, t("settings.aboutPr", { n: pr })));
+  if (short) parts.push(<span className="font-mono">{link(`commit/${commit}`, short)}</span>);
+  if (branch && branch !== MAIN_BRANCH && branch !== "HEAD") parts.push(t("settings.aboutPreview", { branch }));
+  if (when) parts.push(t("settings.aboutBuilt", { when }));
+  return (
+    <p data-build className="px-1 pt-2 text-center text-xs text-zinc-400">
+      {t("settings.aboutVersion")}:{" "}
+      {parts.length
+        ? parts.map((part, i) => (
+            <span key={i}>
+              {i > 0 ? " · " : null}
+              {part}
+            </span>
+          ))
+        : t("settings.aboutDev")}
+    </p>
   );
 }
 
