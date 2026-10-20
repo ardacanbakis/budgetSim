@@ -16,8 +16,41 @@ const DEMO_KEY = "renovator-demo-v5";
 const SHOTS = "e2e/screenshots";
 
 interface Store {
-  accounts: Array<{ id: string; name: string; paymentDay: number | null }>;
-  transactions: Array<{ id: string; description: string; status: string; dueDate: string }>;
+  accounts: Array<{ id: string; name: string; paymentDay: number | null; openingBalance: number }>;
+  transactions: Array<{
+    id: string;
+    accountId: string;
+    description: string;
+    status: string;
+    dueDate: string;
+    amount: number;
+    transferGroupId: string | null;
+    direction: string;
+  }>;
+}
+
+/** A big planned lira bill `days` out, so the runway runs short on that day whatever today is. */
+function bigBill(s: Store, days: number) {
+  const dentist = s.transactions.find((t) => t.description === "Dentist follow-up")!;
+  s.transactions.push({ ...dentist, id: "e2e-big-bill", description: "Roof repair", amount: 1_000_000, dueDate: isoFromToday(days) });
+}
+
+/** "30 Oct", as the Timeline writes a day */
+const shortDay = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d)));
+};
+
+/** the weekday before, not before today */
+function businessDayBefore(days: number): string {
+  let back = days - 1;
+  for (;;) {
+    const d = new Date();
+    d.setDate(d.getDate() + back);
+    if (d.getDay() !== 0 && d.getDay() !== 6) break;
+    back -= 1;
+  }
+  return isoFromToday(Math.max(0, back));
 }
 
 /** yyyy-mm-dd, local, `days` from today */
@@ -177,6 +210,50 @@ test.describe("Timeline tab", () => {
     // this month's payout always lands within the next 30 days
     await expect.poll(amount).toBeGreaterThan(before);
     await expect(expected).not.toContainText("not in balances");
+  });
+
+  test("lira runway: short on the day a big bill lands, with the transfer that covers it", async ({ page }) => {
+    await enterDemo(page, (s) => bigBill(s, 10));
+    await page.goto("/transactions?tab=timeline");
+    const runway = page.locator("[data-runway]");
+    const by = businessDayBefore(10);
+    await expect(runway).toHaveAttribute("data-runway", "short");
+    await expect(runway).toContainText(
+      new RegExp(`^Your lira covers what's planned until ${shortDay(isoFromToday(10))}\\. Convert ≈\\$[\\d,]+ by ${shortDay(by)}\\.`)
+    );
+    await runway.getByRole("button", { name: "Plan this transfer" }).click();
+    await expect(page.getByRole("heading", { name: "Transfer between accounts" })).toBeVisible();
+    const s = await store(page);
+    const wise = s.accounts.find((a) => a.name === "Wise USD")!;
+    const ziraat = s.accounts.find((a) => a.name === "Ziraat TRY")!;
+    const selects = page.locator("form select");
+    await expect(selects.nth(0)).toHaveValue(wise.id);
+    await expect(selects.nth(1)).toHaveValue(ziraat.id);
+    await expect(page.locator("form input[type=date]")).toHaveValue(by);
+    const amount = Number(await page.locator("form input[inputmode=decimal]").first().inputValue());
+    expect(amount % 10).toBe(0);
+    expect(amount).toBeGreaterThan(0);
+    await page.getByRole("button", { name: /^Confirm$/ }).click();
+    await expect(page.getByRole("heading", { name: "Transfer between accounts" })).toHaveCount(0);
+    // planned (or done, when the day to convert by is today), from Wise into Ziraat, on that day
+    await expect
+      .poll(async () => (await store(page)).transactions.filter((t) => t.transferGroupId && t.dueDate === by && t.accountId === wise.id && t.amount === amount).length)
+      .toBe(1);
+    if (by > isoFromToday(0)) {
+      const leg = (await store(page)).transactions.find((t) => t.transferGroupId && t.dueDate === by && t.accountId === wise.id)!;
+      expect(leg.status).toBe("planned");
+    }
+    // and now the lira lasts
+    await expect(runway).toHaveAttribute("data-runway", "covered");
+  });
+
+  test("lira runway: covered says so", async ({ page }) => {
+    await enterDemo(page, (s) => {
+      s.accounts.find((a) => a.name === "Ziraat TRY")!.openingBalance = 100_000_000;
+    });
+    await page.goto("/transactions?tab=timeline");
+    await expect(page.locator("[data-runway]")).toContainText("Your lira covers everything planned for the next 3 months.");
+    await expect(page.getByRole("button", { name: "Plan this transfer" })).toHaveCount(0);
   });
 
   test("reads naturally in Turkish", async ({ page }) => {

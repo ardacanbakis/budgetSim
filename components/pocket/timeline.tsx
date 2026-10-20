@@ -4,10 +4,12 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Fragment, ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
+import { TransferModal } from "@/components/transferModal";
 import { EmptyState } from "@/components/ui";
 import { Account } from "@/lib/data/types";
 import { Currency } from "@/lib/domain/currencies";
 import { addDays } from "@/lib/domain/recurrence";
+import { tryRunway } from "@/lib/domain/runway";
 import { TimelineEvent } from "@/lib/domain/timeline";
 import { useI18n } from "@/lib/i18n";
 import { dayLabel } from "@/lib/ui/pocket/dates";
@@ -36,7 +38,8 @@ import { PocketTxRow, TxLookup, useDueLabel, useTxLookup } from "./dayList";
 import { Icon } from "./icons";
 import { Avatar, Chip, ChipRow, Money, Section } from "./kit";
 import { AmountPhrase } from "./paceBar";
-import { ClipboardGlyph, expectedParts, FlagGlyph, useMilestoneText } from "@/components/timelineParts";
+import { ClipboardGlyph, expectedParts, FlagGlyph, RunwayCallout, useMilestoneText } from "@/components/timelineParts";
+import { TransferPrefill } from "@/components/transferModal";
 import { usePocketTxSheet } from "./txActions";
 
 const TimelineChart = dynamic(() => import("@/components/timelineChart"), {
@@ -82,6 +85,7 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
   const [past, setPast] = useState(1);
   const [ahead, setAhead] = useState(TIMELINE_PAGE_MONTHS);
   const [paying, setPaying] = useState<TimelineEvent | null>(null);
+  const [planning, setPlanning] = useState<TransferPrefill | null>(null);
   const [dividerEl, setDividerEl] = useState<HTMLDivElement | null>(null);
 
   const { accountsById, usdPer, display } = lookup;
@@ -116,6 +120,7 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
     };
   }, [events, account, milestones, legacy, span.from, span.to, options, today]);
 
+  const runway = useMemo(() => tryRunway({ series, today, to: lookahead, usdPer }), [series, today, lookahead, usdPer]);
   const lows = useMemo(() => {
     const rows = lowestRows(series, today, lookahead);
     return account ? rows.filter((r) => r.account.id === account.id) : rows;
@@ -175,6 +180,8 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
 
   return (
     <div className="space-y-4" data-timeline>
+      {runway ? <RunwayCallout runway={runway} months={LOOKAHEAD_MONTHS} onPlan={setPlanning} /> : null}
+
       <LowestCard
         rows={lows}
         months={LOOKAHEAD_MONTHS}
@@ -278,6 +285,7 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
         value={account?.id ?? null}
         onChange={pick}
       />
+      <TransferModal open={planning != null} initial={planning} onClose={() => setPlanning(null)} />
       <CardPaymentModal
         card={paying?.cardId ? (accountsById.get(paying.cardId) ?? null) : null}
         suggested={paying?.amount ?? 0}

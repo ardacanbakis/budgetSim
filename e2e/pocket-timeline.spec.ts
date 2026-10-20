@@ -22,7 +22,7 @@ interface StoredAccount {
 }
 interface Store {
   accounts: StoredAccount[];
-  transactions: Array<{ id: string; description: string; dueDate: string; status: string }>;
+  transactions: Array<{ id: string; accountId: string; description: string; dueDate: string; status: string; amount: number; transferGroupId: string | null }>;
 }
 
 /** yyyy-mm-dd, local, `days` from today */
@@ -216,6 +216,41 @@ test.describe("Pocket timeline, expected VICTVS", () => {
     await expect(monthNet(page)).not.toHaveText(before);
     await expect(page.locator("[data-expected]").first()).not.toContainText("not in balances");
     expect(await page.evaluate(() => localStorage.getItem("renovator-timeline-expected"))).toBe("on");
+  });
+});
+
+test.describe("Pocket timeline, lira runway", () => {
+  test("short: when, what to convert, and Plan this transfer opens the transfer form filled in", async ({ page }) => {
+    await enterPocket(page, {
+      edit: (s) => {
+        const dentist = s.transactions.find((t) => t.description === "Dentist follow-up")!;
+        s.transactions.push({ ...dentist, id: "e2e-big-bill", description: "Roof repair", amount: 1_000_000, dueDate: isoFromToday(10) });
+      },
+    });
+    const runway = page.locator("[data-runway]");
+    await expect(runway).toHaveAttribute("data-runway", "short");
+    await expect(runway).toContainText(/^Your lira covers what's planned until \d+ \w+\. Convert ≈\$[\d,]+ by \d+ \w+\./);
+    // it sits above the lowest point ahead
+    expect((await runway.boundingBox())!.y).toBeLessThan((await lowest(page).boundingBox())!.y);
+    await runway.getByRole("button", { name: "Plan this transfer" }).click();
+    const sheet = page.getByRole("dialog", { name: "Transfer between accounts" });
+    await expect(sheet).toBeVisible();
+    const wise = (await store(page)).accounts.find((a) => a.name === "Wise USD")!;
+    await expect(sheet.locator("select").first()).toHaveValue(wise.id);
+    await sheet.getByRole("button", { name: /^Confirm$/ }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(runway).toHaveAttribute("data-runway", "covered");
+  });
+
+  test("Hide amounts blurs the figure to convert", async ({ page }) => {
+    await enterPocket(page, {
+      prefs: { "renovator-pocket-hide-amounts": "on" },
+      edit: (s) => {
+        const dentist = s.transactions.find((t) => t.description === "Dentist follow-up")!;
+        s.transactions.push({ ...dentist, id: "e2e-big-bill", description: "Roof repair", amount: 1_000_000, dueDate: isoFromToday(10) });
+      },
+    });
+    await expect(page.locator("[data-runway] [data-amount]").first()).toHaveCSS("filter", /blur/);
   });
 });
 

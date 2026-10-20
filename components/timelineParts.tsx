@@ -2,15 +2,19 @@
 
 import { ReactNode } from "react";
 import { AmountPhrase } from "@/components/pocket/paceBar";
+import { TransferPrefill } from "@/components/transferModal";
+import { Currency, formatAmount } from "@/lib/domain/currencies";
+import { Runway } from "@/lib/domain/runway";
 import { TimelineEvent } from "@/lib/domain/timeline";
 import { useI18n } from "@/lib/i18n";
 import { formatSigned } from "@/lib/ui/pocket/format";
 import { AMOUNT_SLOT } from "@/lib/ui/pocket/homeSections";
+import { shortDay } from "@/lib/ui/timeline";
 
 /**
  * What the Classic and Pocket Timeline tabs both draw the same way: a
  * milestone's words and the flag that marks one, and an expected VICTVS
- * payout's words and the clipboard that marks it.
+ * payout's words and the clipboard that marks it; the lira runway callout.
  */
 
 export function FlagGlyph() {
@@ -55,6 +59,11 @@ export function useMilestoneText(): (event: TimelineEvent) => { title: string; f
   };
 }
 
+
+/** "$620": a round figure, without its zero cents. */
+function wholeAmount(amount: number, currency: Currency, locale: string): string {
+  return formatAmount(amount, currency, locale).replace(/[.,]00(?=\D*$)/, "");
+}
 
 /** "$650": an expected payout is a guess, so whole dollars. */
 export function roughUsd(amount: number, locale: string): string {
@@ -107,5 +116,82 @@ function ExpectedMeta({ event, accountName, counted }: { event: TimelineEvent; a
       {accountName ?? t("timeline.noVictvsAccount")}
       {counted ? null : ` · ${t("timeline.notCounted")}`}
     </>
+  );
+}
+
+/**
+ * The lira runway (lib/domain/runway.ts) as one callout at the top of the
+ * Timeline: when the TRY accounts would run short and what to convert by
+ * when, with "Plan this transfer"; or that they cover what's planned.
+ * Figures blur under Pocket's Hide amounts.
+ */
+export function RunwayCallout({
+  runway,
+  months,
+  onPlan,
+  className = "",
+}: {
+  runway: Runway;
+  months: number;
+  onPlan: (prefill: TransferPrefill) => void;
+  className?: string;
+}) {
+  const { t, locale } = useI18n();
+  const short = runway.shortOn != null;
+  const hint = runway.hint;
+  return (
+    <section
+      data-runway={short ? "short" : "covered"}
+      aria-label={t("timeline.runwayTitle")}
+      className={`rounded-[var(--ui-card-radius)] border px-4 py-3 text-sm ${
+        short
+          ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+          : "border-[var(--edge)] bg-[var(--surface)] text-zinc-600 dark:text-zinc-300"
+      } ${className}`}
+    >
+      {short ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="min-w-0 flex-1">
+            {t("timeline.runwayShort", { date: shortDay(runway.shortOn!, locale) })}{" "}
+            {hint ? (
+              <AmountPhrase
+                text={t("timeline.runwayConvert", { amount: AMOUNT_SLOT, date: shortDay(hint.convertBy, locale) })}
+                amount={wholeAmount(hint.amount, hint.fromAccount.currency, locale)}
+              />
+            ) : (
+              t("timeline.runwayNoSource")
+            )}
+          </p>
+          {hint ? (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() =>
+                onPlan({
+                  fromId: hint.fromAccount.id,
+                  toId: hint.toAccount.id,
+                  fromAmount: hint.amount,
+                  date: hint.convertBy,
+                  description: t("timeline.runwayDescription", { date: shortDay(runway.shortOn!, locale) }),
+                })
+              }
+              className="flex min-h-[44px] shrink-0 items-center rounded-[var(--pocket-chip-radius,0.5rem)] bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700 dark:bg-teal-500 dark:text-zinc-950"
+            >
+              {t("timeline.planTransfer")}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <p>
+          {t("timeline.runwayCovered", { months })}{" "}
+          <span className="text-zinc-500 dark:text-zinc-400">
+            <AmountPhrase
+              text={t("timeline.runwayLow", { amount: AMOUNT_SLOT, date: shortDay(runway.low.date, locale) })}
+              amount={formatSigned(runway.low.balance, "TRY", locale)}
+            />
+          </span>
+        </p>
+      )}
+    </section>
   );
 }

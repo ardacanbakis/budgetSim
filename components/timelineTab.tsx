@@ -5,9 +5,9 @@ import Link from "next/link";
 import { Fragment, ReactNode, useMemo, useRef, useState } from "react";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { describeTx, TxLookup, useDueLabel, useTxLookup } from "@/components/pocket/dayList";
-import { ClipboardGlyph, expectedParts, FlagGlyph, useMilestoneText } from "@/components/timelineParts";
+import { ClipboardGlyph, expectedParts, FlagGlyph, RunwayCallout, useMilestoneText } from "@/components/timelineParts";
 import { TransactionModal } from "@/components/transactionModal";
-import { TransferModal } from "@/components/transferModal";
+import { TransferModal, TransferPrefill } from "@/components/transferModal";
 import { CompleteModal, EditModal } from "@/components/txModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Select, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
@@ -16,6 +16,7 @@ import { Transaction } from "@/lib/data/types";
 import { Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { addDays } from "@/lib/domain/recurrence";
+import { tryRunway } from "@/lib/domain/runway";
 import { TimelineEvent } from "@/lib/domain/timeline";
 import { useI18n } from "@/lib/i18n";
 import { monthLabel } from "@/lib/ui/pocket/dayGroups";
@@ -96,6 +97,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
   const [completing, setCompleting] = useState<Transaction | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [paying, setPaying] = useState<TimelineEvent | null>(null);
+  const [planning, setPlanning] = useState<TransferPrefill | null>(null);
   const dividerRef = useRef<HTMLLIElement | null>(null);
 
   const invalidate = [KEYS.transactions, KEYS.accounts];
@@ -147,6 +149,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
     };
   }, [events, account, accountSeries, milestones, legacy, span.from, span.to, options, today, countExpected]);
 
+  const runway = useMemo(() => tryRunway({ series, today, to: lookahead, usdPer }), [series, today, lookahead, usdPer]);
   const lows = useMemo(() => lowestRows(series, today, lookahead), [series, today, lookahead]);
 
   if (lookup.loading || timeline.loading) return <Spinner />;
@@ -237,6 +240,8 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
           {t("timeline.today")} ↧
         </button>
       </div>
+
+      {runway ? <RunwayCallout runway={runway} months={LOOKAHEAD_MONTHS} onPlan={setPlanning} /> : null}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <aside className="space-y-4 lg:sticky lg:top-4 lg:order-2">
@@ -383,6 +388,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
 
       <TransactionModal open={txModal} onClose={() => setTxModal(false)} />
       <TransferModal open={transferModal} onClose={() => setTransferModal(false)} />
+      <TransferModal open={planning != null} initial={planning} onClose={() => setPlanning(null)} />
       <CardPaymentModal
         card={paying?.cardId ? (accountsById.get(paying.cardId) ?? null) : null}
         suggested={paying?.amount ?? 0}

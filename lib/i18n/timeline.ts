@@ -65,6 +65,14 @@ export const en = {
   notCounted: "not in balances",
   countExpected: "Count expected VICTVS",
   noVictvsAccount: "no deposit account set",
+  runwayTitle: "Lira runway",
+  runwayShort: "Your lira covers what's planned until {date}.",
+  runwayConvert: "Convert ≈{amount} by {date}.",
+  runwayNoSource: "There's nothing in another currency to convert from.",
+  runwayCovered: "Your lira covers everything planned for the next {months} months.",
+  runwayLow: "Lowest {amount} on {date}.",
+  planTransfer: "Plan this transfer",
+  runwayDescription: "Lira for {date}",
 };
 
 export const tr: typeof en = {
@@ -125,4 +133,12 @@ export const tr: typeof en = {
   notCounted: "bakiyelere dahil değil",
   countExpected: "Beklenen VICTVS'yi say",
   noVictvsAccount: "yatacağı hesap seçilmedi",
+  runwayTitle: "TL yeterliliği",
+  runwayShort: "Liran {date} tarihine kadar planlananları karşılıyor.",
+  runwayConvert: "{date} tarihine kadar ≈{amount} çevir.",
+  runwayNoSource: "Çevrilecek başka para biriminde hesap yok.",
+  runwayCovered: "Liran önümüzdeki {months} ay planlanan her şeyi karşılıyor.",
+  runwayLow: "En düşük {amount}, {date}.",
+  planTransfer: "Bu transferi planla",
+  runwayDescription: "{date} için TL",
 };
