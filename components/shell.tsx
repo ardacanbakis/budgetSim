@@ -407,7 +407,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       ) : null}
       <TransactionModal open={quickTx} onClose={() => setQuickTx(false)} />
       <TransferModal open={quickTransfer} onClose={() => setQuickTransfer(false)} />
-      {v2 && paletteOpen ? (
+      {/* every style: ⌘K opens it, and Settings says hidden pages are a ⌘K away */}
+      {paletteOpen ? (
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
           onNewTransaction={() => setQuickTx(true)}

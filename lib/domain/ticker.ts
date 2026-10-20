@@ -1,3 +1,4 @@
+import { Currency } from "./currencies";
 import { UsdPerMap } from "./fx";
 
 /**
@@ -33,7 +34,9 @@ function decimalsFor(value: number): number {
   return 4;
 }
 
-const PAIRS: Array<{ id: string; label: string; from: keyof UsdPerMap; to: keyof UsdPerMap }> = [
+type Pair = { id: string; label: string; from: keyof UsdPerMap; to: keyof UsdPerMap };
+
+const PAIRS: Pair[] = [
   { id: "usdtry", label: "USD/TRY", from: "USD", to: "TRY" },
   { id: "eurtry", label: "EUR/TRY", from: "EUR", to: "TRY" },
   { id: "eurusd", label: "EUR/USD", from: "EUR", to: "USD" },
@@ -50,22 +53,49 @@ export function buildTickerItems(
   usdPer: UsdPerMap,
   prevUsdPer?: Partial<UsdPerMap> | null
 ): TickerItem[] {
-  const items: TickerItem[] = [];
-  for (const pair of PAIRS) {
-    const value = quote(pair.from, pair.to, usdPer);
-    if (value == null || !Number.isFinite(value) || value <= 0) continue;
-    const previous = prevUsdPer ? quote(pair.from, pair.to, prevUsdPer) : null;
-    const changePct =
-      previous != null && previous > 0 ? ((value - previous) / previous) * 100 : null;
-    items.push({
-      id: pair.id,
-      label: pair.label,
-      value,
-      changePct: changePct != null && Number.isFinite(changePct) ? changePct : null,
-      decimals: decimalsFor(value),
-    });
+  return PAIRS.map((pair) => tickerItem(pair, usdPer, prevUsdPer)).filter((item): item is TickerItem => item != null);
+}
+
+function tickerItem(pair: Pair, usdPer: UsdPerMap, prevUsdPer?: Partial<UsdPerMap> | null): TickerItem | null {
+  const value = quote(pair.from, pair.to, usdPer);
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  const previous = prevUsdPer ? quote(pair.from, pair.to, prevUsdPer) : null;
+  const changePct = previous != null && previous > 0 ? ((value - previous) / previous) * 100 : null;
+  return {
+    id: pair.id,
+    label: pair.label,
+    value,
+    changePct: changePct != null && Number.isFinite(changePct) ? changePct : null,
+    decimals: decimalsFor(value),
+  };
+}
+
+// the pair each currency is quoted by in currencyQuotes
+const CURRENCY_PAIRS: Record<Currency, Pair> = {
+  TRY: { id: "tryusd", label: "TRY/USD", from: "TRY", to: "USD" },
+  USD: PAIRS[0],
+  EUR: PAIRS[1],
+  BTC: PAIRS[3],
+  XAU_G: PAIRS[4],
+};
+
+/**
+ * One quote per currency, for a list of currencies (Pocket's display-currency
+ * sheet): each the way it's usually quoted, which is the ticker's pair for it
+ * (USD/TRY, EUR/TRY, BTC/USD, gram gold in TRY), and the lira itself in
+ * dollars, since quoting TRY in TRY says nothing. The change follows the same
+ * rule as the ticker: only where the table has both legs' history.
+ */
+export function currencyQuotes(
+  usdPer: UsdPerMap,
+  prevUsdPer?: Partial<UsdPerMap> | null
+): Partial<Record<Currency, TickerItem>> {
+  const out: Partial<Record<Currency, TickerItem>> = {};
+  for (const [currency, pair] of Object.entries(CURRENCY_PAIRS) as Array<[Currency, Pair]>) {
+    const item = tickerItem(pair, usdPer, prevUsdPer);
+    if (item) out[currency] = item;
   }
-  return items;
+  return out;
 }
 
 export function formatTickerValue(item: TickerItem, locale: string): string {

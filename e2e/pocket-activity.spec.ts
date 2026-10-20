@@ -733,3 +733,131 @@ test.describe("Pocket activity, dark", () => {
     await page.screenshot({ path: `${SHOTS}/pocket-activity-template-sheet-dark.png` });
   });
 });
+
+test.describe("Pocket activity: selection mode", () => {
+  /** planned rows past their date, cloned from the demo's Weekly market */
+  const overdueRows =
+    (rows: Array<[string, string]>) =>
+    (s: Store) => {
+      const model = s.transactions.find((t) => t.description === "Weekly market")!;
+      for (const [description, dueDate] of rows) {
+        s.transactions.push({ ...model, id: crypto.randomUUID(), description, dueDate, status: "planned", completedAt: null } as StoredTx);
+      }
+    };
+  const selectButton = (page: Page) => page.getByRole("button", { name: "Select", exact: true });
+  const bar = (page: Page) => page.locator("[data-selection-bar]");
+  const summary = (page: Page) => page.locator("[data-selection-summary]");
+  const cardRow = (page: Page, text: string) => needs(page).locator("li").filter({ hasText: text }).getByRole("button").first();
+  const byDescription = async (page: Page, description: string) =>
+    (await store(page)).transactions.find((t) => t.description === description) as (StoredTx & { legacy?: boolean }) | undefined;
+
+  test("choose two overdue rows and mark them paid", async ({ page }) => {
+    await enterPocket(page, { edit: overdueRows([["Gym fee", isoFromToday(-3)], ["Phone bill", isoFromToday(-6)]]) });
+    await expect(needs(page).getByText("Gym fee")).toBeVisible();
+
+    await selectButton(page).click();
+    await expect(selectButton(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(summary(page)).toHaveText("Tap entries to select them");
+    // the ✓ steps aside; a tap chooses instead of opening the sheet
+    await expect(needs(page).getByRole("button", { name: /^Mark Gym fee as paid/ })).toHaveCount(0);
+    await cardRow(page, "Gym fee").click();
+    await expect(sheet(page)).toHaveCount(0);
+    await expect(cardRow(page, "Gym fee")).toHaveAttribute("aria-pressed", "true");
+    await cardRow(page, "Phone bill").click();
+    await expect(summary(page)).toHaveText("2 selected");
+    // a second tap lets one go, a third takes it back
+    await cardRow(page, "Phone bill").click();
+    await expect(summary(page)).toHaveText("1 selected");
+    await cardRow(page, "Phone bill").click();
+    await expect(summary(page)).toHaveText("2 selected");
+
+    await bar(page).getByRole("button", { name: "Mark as paid" }).click();
+    await expect(sheet(page)).toContainText("Mark 2 entries as paid");
+    const choices = sheet(page).getByRole("listitem");
+    // neither is long overdue: plain first
+    await expect(choices.first()).toHaveText(/^Mark as paid$/);
+    await expect(choices.nth(1)).toContainText("Mark as paid, as legacy");
+    await choices.first().getByRole("button").click();
+
+    await expect(page.locator("[role=status]").filter({ hasText: "Marked 2 paid" })).toBeVisible();
+    await expect.poll(async () => (await byDescription(page, "Gym fee"))?.status).toBe("completed");
+    expect((await byDescription(page, "Phone bill"))?.status).toBe("completed");
+    expect((await byDescription(page, "Gym fee"))?.legacy).toBe(false);
+    // done: selection mode ends
+    await expect(bar(page)).toHaveCount(0);
+    await expect(selectButton(page)).toHaveAttribute("aria-pressed", "false");
+    await expect(needs(page).getByText("Gym fee")).toHaveCount(0);
+  });
+
+  test("rows long overdue offer legacy first", async ({ page }) => {
+    await enterPocket(page, { edit: overdueRows([["Old gym fee", monthsAgo(5)], ["Old phone bill", monthsAgo(6)]]) });
+    await selectButton(page).click();
+    await cardRow(page, "Old gym fee").click();
+    await cardRow(page, "Old phone bill").click();
+    await expect(summary(page)).toHaveText("2 selected");
+    await bar(page).getByRole("button", { name: "Mark as paid" }).click();
+    const choices = sheet(page).getByRole("listitem");
+    await expect(choices.first()).toContainText("Mark as paid, as legacy");
+    await choices.first().getByRole("button").click();
+    await expect.poll(async () => (await byDescription(page, "Old gym fee"))?.status).toBe("completed");
+    expect((await byDescription(page, "Old gym fee"))?.legacy).toBe(true);
+    expect((await byDescription(page, "Old phone bill"))?.legacy).toBe(true);
+  });
+
+  test("delete asks for a second tap", async ({ page }) => {
+    await enterPocket(page, { edit: overdueRows([["Gym fee", isoFromToday(-3)], ["Phone bill", isoFromToday(-6)]]) });
+    await selectButton(page).click();
+    await cardRow(page, "Gym fee").click();
+    await cardRow(page, "Phone bill").click();
+    await bar(page).getByRole("button", { name: "Delete" }).click();
+    await expect(sheet(page)).toContainText("Delete 2 entries");
+    const remove = sheet(page).getByRole("button", { name: "Delete 2 entries" });
+    await remove.click();
+    await expect(sheet(page).getByRole("button", { name: "Tap again to confirm" })).toBeVisible();
+    expect(await byDescription(page, "Gym fee")).toBeDefined();
+    await sheet(page).getByRole("button", { name: "Tap again to confirm" }).click();
+    await expect(page.locator("[role=status]").filter({ hasText: "Deleted 2" })).toBeVisible();
+    await expect.poll(async () => await byDescription(page, "Gym fee")).toBeUndefined();
+    expect(await byDescription(page, "Phone bill")).toBeUndefined();
+  });
+
+  test("the writes stop at the first that fails; the rest stay chosen", async ({ page }) => {
+    // demo saves throw once window.__savesLeft runs out, the way a full localStorage does
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        const w = window as unknown as { __savesLeft?: number };
+        if (key === "renovator-demo-v5" && w.__savesLeft != null && w.__savesLeft-- <= 0) {
+          throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+        }
+        return original.call(this, key, value);
+      };
+    });
+    await enterPocket(page, {
+      edit: overdueRows([
+        ["Gym fee", isoFromToday(-3)],
+        ["Phone bill", isoFromToday(-4)],
+        ["Water bill", isoFromToday(-5)],
+      ]),
+    });
+    await selectButton(page).click();
+    for (const name of ["Gym fee", "Phone bill", "Water bill"]) await cardRow(page, name).click();
+    await expect(summary(page)).toHaveText("3 selected");
+    await page.evaluate(() => ((window as unknown as { __savesLeft?: number }).__savesLeft = 1));
+    await bar(page).getByRole("button", { name: "Mark as paid" }).click();
+    await sheet(page).getByRole("listitem").first().getByRole("button").click();
+
+    await expect(page.getByRole("alert").filter({ hasText: /Couldn't save/ })).toBeVisible();
+    await expect(page.locator("[role=status]").filter({ hasText: "Stopped after 1 of 3" })).toBeVisible();
+    // the first went through; the one that failed and the one after it are still planned, and still chosen
+    await expect(summary(page)).toHaveText("2 selected");
+    const states = await page.evaluate(() => {
+      (window as unknown as { __savesLeft?: number }).__savesLeft = undefined;
+      const s = JSON.parse(localStorage.getItem("renovator-demo-v5") ?? "{}") as { transactions: Array<{ description: string; status: string }> };
+      return Object.fromEntries(s.transactions.filter((t) => /^(Gym fee|Phone bill|Water bill)$/.test(t.description)).map((t) => [t.description, t.status]));
+    });
+    const completedFirst = Object.values(states).filter((v) => v === "completed").length;
+    expect(completedFirst).toBe(1);
+    expect(Object.values(states).filter((v) => v === "planned").length).toBe(2);
+  });
+});
