@@ -12,6 +12,7 @@ import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
+import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
 import { AccountsLeftOut } from "@/components/dashboardParts";
 import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
 import { GoldLensCard } from "@/components/goldLens";
@@ -215,6 +216,10 @@ function DashboardPage() {
     goals: <GoalsCard className="h-full" />,
     "avg-spend": <AvgSpendCard className="h-full" />,
     "gold-lens": <GoldLensCard className="h-full" />,
+    // off until turned on; each mounts, and computes, only while it's on
+    ...(Object.fromEntries(
+      OPTIONAL_CARDS.map((id) => [id, <OptionalCard key={id} id={id} d={derived} frame="card" className="h-full" />])
+    ) as Record<OptionalCardId, React.ReactNode>),
   };
 
   const visible = shownIn(layout);

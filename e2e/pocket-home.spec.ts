@@ -272,6 +272,12 @@ test.describe("Pocket home", () => {
       "!flow",
       "!goals",
       "!gold",
+      "!thisMonth",
+      "!statements",
+      "!trend",
+      "!debt",
+      "!commitments",
+      "!victvsOutlook",
     ]);
     expect((await store(page)).settings.dashboardLayout).toBeNull();
 
@@ -299,6 +305,38 @@ test.describe("Pocket home", () => {
       .toMatchObject({ hidden: [], shown: [], accounts: { hidden: [expect.any(String)] } });
     // Home's own sections stayed on the phone
     expect(await page.evaluate(() => localStorage.getItem("renovator-pocket-home"))).toBeNull();
+  });
+
+  test("the dashboards' optional cards can join Home as sections", async ({ page }) => {
+    await enterPocket(page);
+    await page.getByRole("button", { name: "Customise Home" }).click();
+    const sheet = page.getByRole("dialog");
+    for (const name of ["This month", "Card statements", "12-month trend", "Debts", "Fixed costs", "VICTVS outlook"]) {
+      await sheet.getByRole("switch", { name }).click();
+      await expect(sheet.getByRole("switch", { name })).toHaveAttribute("aria-checked", "true");
+    }
+    await page.keyboard.press("Escape");
+    expect(await headings(page)).toEqual([
+      "Coming up",
+      "Accounts",
+      "Budgets",
+      "Recent activity",
+      "This month",
+      "Card statements",
+      "12-month trend",
+      "Debts",
+      "Fixed costs",
+      "VICTVS outlook",
+    ]);
+    await expect(page.locator('[data-statement="Bonus Card"]')).toBeVisible();
+    // their figures blur with the rest
+    await hero(page).getByRole("button", { name: "Hide amounts" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-hide-amounts", "on");
+    for (const id of ["this-month", "card-statements", "debt", "commitments"]) {
+      const figure = page.locator(`[data-optional-card=${id}] [data-amount]`).first();
+      await expect(figure).toHaveCSS("filter", /blur/);
+    }
+    expect((await store(page)).settings.dashboardLayout).toBeNull();
   });
 
   test("Settings → Dashboard holds the same editor, labelled for this phone", async ({ page }) => {
@@ -329,7 +367,23 @@ test.describe("Pocket home, dark", () => {
   test.use({ colorScheme: "dark" });
 
   test("screenshots", async ({ page }) => {
-    await enterPocket(page, { home: ["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold"] });
+    await enterPocket(page, {
+      home: [
+        "comingUp",
+        "accounts",
+        "budgets",
+        "recent",
+        "flow",
+        "goals",
+        "gold",
+        "thisMonth",
+        "statements",
+        "trend",
+        "debt",
+        "commitments",
+        "victvsOutlook",
+      ],
+    });
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.screenshot({ path: `${SHOTS}/pocket-home-dark.png` });
     await page.mouse.wheel(0, 700);
@@ -338,6 +392,9 @@ test.describe("Pocket home, dark", () => {
     await page.mouse.wheel(0, 900);
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/pocket-home-optional-dark.png` });
+    await page.mouse.wheel(0, 1800);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/pocket-home-optional-cards-dark.png` });
   });
 
   test("Terminal at compact density keeps rows at least 48px tall", async ({ page }) => {

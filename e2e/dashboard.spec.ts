@@ -37,6 +37,18 @@ const storedLayout = (page: Page) =>
 
 const card = (page: Page, id: string) => page.locator(`[data-card="${id}"]`);
 
+// the cards Classic starts without, as Edit layout offers them
+const OFF_CHIPS = [
+  "+ In gold",
+  "+ This month",
+  "+ Card statements",
+  "+ 12-month trend",
+  "+ Debts",
+  "+ Fixed costs",
+  "+ Recent activity",
+  "+ VICTVS outlook",
+];
+
 test.describe("Classic dashboard layout", () => {
   test("a hidden card comes back from a translated chip, and the choice survives a reload", async ({ page }) => {
     await enterDemo(page);
@@ -49,12 +61,12 @@ test.describe("Classic dashboard layout", () => {
     await page.getByRole("button", { name: /Edit layout/ }).click();
     const chips = page.locator("[data-cards-off] button");
     // the cards that are off by default are offered too, by name
-    await expect(chips).toHaveText(["+ In gold"]);
+    await expect(chips).toHaveText(OFF_CHIPS);
     await expect(page.getByRole("link", { name: /More options/ })).toHaveAttribute("href", "/settings?tab=dashboard");
 
     await card(page, "goals").getByRole("button", { name: "Hide" }).click();
     await expect(card(page, "goals")).toHaveCount(0);
-    await expect(chips).toHaveText(["+ Goals", "+ In gold"]);
+    await expect(chips).toHaveText(["+ Goals", ...OFF_CHIPS]);
     await expect.poll(async () => (await storedLayout(page))?.hidden).toEqual(["goals"]);
 
     await page.reload();
@@ -64,7 +76,7 @@ test.describe("Classic dashboard layout", () => {
     await page.getByRole("button", { name: /Edit layout/ }).click();
     await page.getByRole("button", { name: "+ Goals" }).click();
     await expect(card(page, "goals")).toBeVisible();
-    await expect(chips).toHaveText(["+ In gold"]);
+    await expect(chips).toHaveText(OFF_CHIPS);
     await expect.poll(async () => (await storedLayout(page))?.hidden).toEqual([]);
 
     // and a card that was off by default is turned on the same way
@@ -90,7 +102,16 @@ test.describe("Classic dashboard layout", () => {
     await page.evaluate(() => localStorage.setItem("renovator-locale", "tr"));
     await page.reload();
     await page.getByRole("button", { name: /Düzeni düzenle/ }).click();
-    await expect(page.locator("[data-cards-off] button")).toHaveText(["+ Altın cinsinden"]);
+    await expect(page.locator("[data-cards-off] button")).toHaveText([
+      "+ Altın cinsinden",
+      "+ Bu ay",
+      "+ Kart ekstreleri",
+      "+ 12 aylık gidişat",
+      "+ Borçlar",
+      "+ Sabit ödemeler",
+      "+ Son hareketler",
+      "+ VICTVS görünümü",
+    ]);
     await expect(page.getByRole("link", { name: /Diğer seçenekler/ })).toBeVisible();
   });
 });
@@ -404,5 +425,60 @@ test.describe("Upcoming", () => {
     await page.getByRole("checkbox", { name: "Show Unpaid VICTVS" }).uncheck();
     await page.goto("/");
     await expect(upcoming.locator("[data-upcoming=victvs]")).toContainText(/unpaid session/, { timeout: 15_000 });
+  });
+});
+
+test.describe("Optional cards", () => {
+  // each card, and something only it shows
+  const CARDS: Array<[string, string, (scope: ReturnType<typeof card>) => ReturnType<typeof card>]> = [
+    ["this-month", "This month", (c) => c.getByText("Cash basis")],
+    ["card-statements", "Card statements", (c) => c.locator('[data-statement="Bonus Card"]')],
+    ["trend", "12-month trend", (c) => c.getByRole("img")],
+    ["debt", "Debts", (c) => c.getByText("Owed in all")],
+    ["commitments", "Fixed costs", (c) => c.getByText("Out a month")],
+    ["recent", "Recent activity", (c) => c.locator("[data-optional-card=recent]")],
+    ["victvs-outlook", "VICTVS outlook", (c) => c.locator("[data-victvs-forecast]")],
+  ];
+
+  test("each turns on from Settings on Classic and version 2, and none says net worth", async ({ page }) => {
+    await enterDemo(page);
+    await page.goto("/settings?tab=dashboard");
+    for (const [, label] of CARDS) await page.getByRole("checkbox", { name: `Show ${label}` }).check();
+    await expect.poll(async () => (await storedLayout(page))?.shown?.length).toBe(CARDS.length);
+
+    await page.goto("/");
+    for (const [id, , mark] of CARDS) {
+      await expect(card(page, id)).toBeVisible({ timeout: 15_000 });
+      await expect(mark(card(page, id)).first()).toBeVisible();
+    }
+    // the strict match the other specs enter the demo by still finds one element
+    await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible();
+
+    // Pay on a statement opens the payment form, not the card's page
+    await card(page, "card-statements").getByRole("button", { name: "Pay Bonus Card" }).click();
+    await expect(page.getByText(/ — Bonus Card$/)).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => localStorage.setItem("renovator-ui-style", "calm"));
+    await page.reload();
+    await expect(page.getByText(/Net worth · USD/)).toBeVisible({ timeout: 15_000 });
+    for (const [id, , mark] of CARDS) await expect(mark(card(page, id)).first()).toBeVisible();
+  });
+
+  test("the debt and VICTVS cards leave with their pages", async ({ page }) => {
+    await enterDemo(page);
+    await page.evaluate((key) => {
+      const store = JSON.parse(localStorage.getItem(key) ?? "{}");
+      store.settings.dashboardLayout = { order: [], hidden: [], shown: ["debt", "victvs-outlook"] };
+      // the menu without Loans and VICTVS
+      store.settings.navOrder = ["/", "/transactions", "/cards", "/accounts", "/reports", "/planner", "/settings", "!/loans", "!/victvs"];
+      localStorage.setItem(key, JSON.stringify(store));
+    }, DEMO_KEY);
+    await page.reload();
+    await expect(card(page, "net-worth")).toBeVisible({ timeout: 15_000 });
+    await expect(card(page, "debt")).toHaveCount(0);
+    await expect(card(page, "victvs-outlook")).toHaveCount(0);
+    await expect(card(page, "victvs")).toHaveCount(0);
   });
 });

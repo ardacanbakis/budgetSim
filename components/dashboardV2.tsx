@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
 import { AccountsLeftOut } from "@/components/dashboardParts";
 import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
 import { GoalsCard } from "@/components/goalsCard";
@@ -89,6 +90,9 @@ export function DashboardV2() {
     budgets: <BudgetsCard className="h-full" />,
     goals: <GoalsCard className="h-full" />,
     "avg-spend": <AvgSpendCard className="h-full" />,
+    ...(Object.fromEntries(
+      OPTIONAL_CARDS.map((id) => [id, <OptionalCard key={id} id={id} d={d} frame="card" className="h-full" />])
+    ) as Record<OptionalCardId, ReactNode>),
   };
   const grid = visible.filter((id) => gridCards[id] != null);
 

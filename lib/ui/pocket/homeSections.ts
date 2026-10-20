@@ -5,6 +5,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays } from "@/lib/domain/recurrence";
 import { dashboardAccountRows } from "../dashboardAccounts";
+import { CardId } from "../dashboardLayout";
 import { ComingUpItem } from "./attention";
 import { isTransferLanding } from "./dayGroups";
 import { POCKET_KEYS } from "./prefs";
@@ -15,7 +16,8 @@ import { POCKET_KEYS } from "./prefs";
  *
  * Sections (below the hero, which never moves or hides):
  * - SECTION_IDS, the default order: Coming up, Accounts, Budgets, Recent
- *   activity; then Monthly flow, Goals and Gold, hidden.
+ *   activity; then Monthly flow, Goals and Gold, and the dashboards'
+ *   optional cards (SECTION_CARD), hidden.
  * - decodeSections(saved) / encodeSections(entries): one list of ids, hidden
  *   ones marked with a leading "!" (["comingUp", "!recent", …]), the same
  *   contract as navEntries in components/shell.nav.ts: unknown ids and
@@ -50,14 +52,52 @@ import { POCKET_KEYS } from "./prefs";
  * alone can carry data-amount and blur when amounts are hidden.
  */
 
-export const SECTION_IDS = ["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold"] as const;
+export const SECTION_IDS = [
+  "comingUp",
+  "accounts",
+  "budgets",
+  "recent",
+  "flow",
+  "goals",
+  "gold",
+  "thisMonth",
+  "statements",
+  "trend",
+  "debt",
+  "commitments",
+  "victvsOutlook",
+] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
+
+/**
+ * The sections that are one of the dashboards' optional cards, drawn by the
+ * same component (components/dashboardCards.tsx). Only the components are
+ * shared: which sections show stays on the phone.
+ */
+export const SECTION_CARD = {
+  thisMonth: "this-month",
+  statements: "card-statements",
+  trend: "trend",
+  debt: "debt",
+  commitments: "commitments",
+  victvsOutlook: "victvs-outlook",
+} as const satisfies Partial<Record<SectionId, CardId>>;
 
 /** The device key Home's order and hidden sections live under. */
 export const HOME_SECTIONS_KEY = POCKET_KEYS.home;
 
 const HIDDEN = "!";
-const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set(["flow", "goals", "gold"]);
+const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set([
+  "flow",
+  "goals",
+  "gold",
+  "thisMonth",
+  "statements",
+  "trend",
+  "debt",
+  "commitments",
+  "victvsOutlook",
+]);
 
 export interface SectionEntry {
   id: SectionId;

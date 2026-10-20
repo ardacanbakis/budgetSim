@@ -44,6 +44,12 @@ export const SECTION_LABEL: Record<SectionId, string> = {
   flow: "dashboard.monthlyFlow",
   goals: "goals.title",
   gold: "gold.title",
+  thisMonth: "dashboard.card_this-month",
+  statements: "dashboard.card_card-statements",
+  trend: "dashboard.card_trend",
+  debt: "dashboard.card_debt",
+  commitments: "dashboard.card_commitments",
+  victvsOutlook: "dashboard.card_victvs-outlook",
 };
 
 const rowClass = "flex min-h-[var(--pocket-row,56px)] items-center gap-2 px-4";

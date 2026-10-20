@@ -76,14 +76,26 @@ const ids = (entries: SectionEntry[]) => encodeSections(entries);
 
 describe("home sections", () => {
   it("defaults to Coming up, Accounts, Budgets, Recent; flow, goals and gold hidden", () => {
-    expect(SECTION_IDS).toEqual(["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold"]);
-    expect(ids(resetSections())).toEqual(["comingUp", "accounts", "budgets", "recent", "!flow", "!goals", "!gold"]);
+    const optional = ["thisMonth", "statements", "trend", "debt", "commitments", "victvsOutlook"];
+    expect(SECTION_IDS).toEqual(["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold", ...optional]);
+    expect(ids(resetSections())).toEqual([
+      "comingUp",
+      "accounts",
+      "budgets",
+      "recent",
+      "!flow",
+      "!goals",
+      "!gold",
+      ...optional.map((id) => `!${id}`),
+    ]);
     expect(shownSections(resetSections())).toEqual(["comingUp", "accounts", "budgets", "recent"]);
   });
 
   it("decodes like navEntries: '!' hides, unknown ids and repeats drop, new ids append in their default state", () => {
     const entries = decodeSections(["budgets", "!recent", "hero", "accounts", "budgets", "!nope", "flow"]);
-    expect(ids(entries)).toEqual(["budgets", "!recent", "accounts", "flow", "comingUp", "!goals", "!gold"]);
+    expect(ids(entries).slice(0, 7)).toEqual(["budgets", "!recent", "accounts", "flow", "comingUp", "!goals", "!gold"]);
+    // the optional cards, added since, append hidden
+    expect(ids(entries).slice(7).every((id) => id.startsWith("!"))).toBe(true);
     expect(shownSections(entries)).toEqual(["budgets", "accounts", "flow", "comingUp"]);
     // anything that isn't a string is ignored
     expect(ids(decodeSections([1, null, "gold"]))).toEqual(["gold", ...ids(resetSections()).filter((s) => !s.endsWith("gold"))]);
@@ -104,10 +116,10 @@ describe("home sections", () => {
     expect(ids(moveSection(start, "budgets", -1)).slice(0, 4)).toEqual(["comingUp", "budgets", "accounts", "recent"]);
     expect(ids(moveSection(start, "comingUp", 1)).slice(0, 2)).toEqual(["accounts", "comingUp"]);
     expect(canMove(start, "comingUp", -1)).toBe(false);
-    expect(canMove(start, "gold", 1)).toBe(false);
-    expect(canMove(start, "gold", -1)).toBe(true);
+    expect(canMove(start, "victvsOutlook", 1)).toBe(false);
+    expect(canMove(start, "victvsOutlook", -1)).toBe(true);
     expect(moveSection(start, "comingUp", -1)).toEqual(start);
-    expect(moveSection(start, "gold", 1)).toEqual(start);
+    expect(moveSection(start, "victvsOutlook", 1)).toEqual(start);
     // the input is never changed
     expect(start).toEqual(resetSections());
   });

@@ -105,6 +105,15 @@ describe("normalizeLayout", () => {
 describe("visibility", () => {
   const fresh = normalizeLayout(null);
 
+  it("starts every optional card off in both styles", () => {
+    for (const id of ["this-month", "card-statements", "trend", "debt", "commitments", "recent", "victvs-outlook"] as const) {
+      expect(isCardVisible(fresh, id, "classic", ALL_PAGES)).toBe(false);
+      expect(isCardVisible(fresh, id, "v2", ALL_PAGES)).toBe(false);
+    }
+    expect(isCardVisible(setCardVisible(fresh, "debt", true), "debt", "classic", NO_VICTVS.filter((h) => h !== "/loans"))).toBe(false);
+    expect(isCardVisible(setCardVisible(fresh, "victvs-outlook", true), "victvs-outlook", "v2", NO_VICTVS)).toBe(false);
+  });
+
   it("starts GoldLens on in version 2 and off on Classic", () => {
     expect(isCardVisible(fresh, "gold-lens", "v2", ALL_PAGES)).toBe(true);
     expect(isCardVisible(fresh, "gold-lens", "classic", ALL_PAGES)).toBe(false);

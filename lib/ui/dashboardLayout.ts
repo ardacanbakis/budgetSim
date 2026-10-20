@@ -60,6 +60,7 @@ function spec<Id extends string>(id: Id, rest: Omit<CardSpec, "id" | "labelKey" 
 }
 
 const ON = { classic: true, v2: true } as const;
+const OFF = { classic: false, v2: false } as const;
 
 export const CARD_SPECS = [
   // version 2 is built around it as its headline, so there it can't go
@@ -78,6 +79,15 @@ export const CARD_SPECS = [
   // on in version 2 since it shipped; Classic never had it, so there it
   // starts off and waits to be turned on
   spec("gold-lens", { defaultOn: { classic: false, v2: true }, span: "sm:col-span-1" }),
+  // the optional cards (components/dashboardCards.tsx): off everywhere until
+  // turned on, so no layout saved before them changes
+  spec("this-month", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2 xl:col-span-1" }),
+  spec("card-statements", { defaultOn: OFF, route: "/cards", span: "sm:col-span-2" }),
+  spec("trend", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2" }),
+  spec("debt", { defaultOn: OFF, nav: "/loans", route: "/loans", span: "sm:col-span-1" }),
+  spec("commitments", { defaultOn: OFF, route: "/transactions?tab=recurring", span: "sm:col-span-1" }),
+  spec("recent", { defaultOn: OFF, route: "/transactions", span: "sm:col-span-2" }),
+  spec("victvs-outlook", { defaultOn: OFF, nav: "/victvs", route: "/victvs", span: "sm:col-span-2 xl:col-span-1" }),
 ] as const;
 
 export type CardId = (typeof CARD_SPECS)[number]["id"];

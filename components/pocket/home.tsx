@@ -5,6 +5,7 @@ import { Fragment, ReactNode, useId, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
+import { OptionalCard } from "@/components/dashboardCards";
 import { GoalsCard } from "@/components/goalsCard";
 import { GoldLensCard } from "@/components/goldLens";
 import { visibleNav } from "@/components/shell.nav";
@@ -34,6 +35,7 @@ import {
   parseSections,
   RECENT_DAYS,
   recentRows,
+  SECTION_CARD,
   SectionId,
   shownSections,
   topBudgets,
@@ -58,7 +60,9 @@ import { usePocketTxSheet } from "./txActions";
  * 2. Then the sections in the order kept on the device (lib/ui/pocket/
  *    homeSections.ts): Coming up (overdue first, one action per row),
  *    Accounts, Budgets, Recent activity; Monthly flow, Goals and Gold when
- *    switched on. The header's sliders open the Customise Home sheet
+ *    switched on, and the dashboards' optional cards (This month, Card
+ *    statements, the trend, Debts, Fixed costs, the VICTVS outlook) as
+ *    sections. The header's sliders open the Customise Home sheet
  *    (homeEditor.tsx), which edits them in place.
  *
  * Same numbers as Classic: useDashboardData for the hero and the accounts,
@@ -216,6 +220,16 @@ export function PocketHome() {
         return <GoalsCard />;
       case "gold":
         return <GoldLensCard />;
+      case "debt":
+      case "victvsOutlook":
+        // a page hidden from the menus takes its section with it
+        if (!visibleNav(navOrder).some((i) => i.href === (id === "debt" ? "/loans" : "/victvs"))) return null;
+        return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
+      case "thisMonth":
+      case "statements":
+      case "trend":
+      case "commitments":
+        return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
     }
   };
 
