@@ -14,7 +14,7 @@ describe("barSlots", () => {
       home: "/",
       activity: "/transactions",
       fourth: "/accounts",
-      more: ["/cards", "/victvs", "/loans", "/reports", "/planner", "/savings", "/settings"],
+      more: ["/cards", "/victvs", "/reports", "/planner", "/settings"],
     });
   });
 
@@ -29,7 +29,7 @@ describe("barSlots", () => {
     const slots = barSlots(["/", "!/transactions", "/accounts", "/cards"], null);
     expect(slots.activity?.href).toBe("/accounts");
     expect(slots.fourth?.href).toBe("/cards");
-    expect(hrefs(barSlots(["!/", "!/transactions", "!/accounts", "!/cards", "!/victvs", "!/loans", "!/reports", "!/planner", "!/savings"], null))).toEqual({
+    expect(hrefs(barSlots(["!/", "!/transactions", "!/accounts", "!/cards", "!/victvs", "!/reports", "!/planner"], null))).toEqual({
       home: undefined,
       activity: undefined,
       fourth: undefined,
@@ -41,6 +41,13 @@ describe("barSlots", () => {
     const slots = barSlots(["/", "/transactions", "/accounts", "!/victvs"], null);
     expect(slots.more.map((i) => i.href)).not.toContain("/victvs");
     expect(fourthTabChoices(["!/victvs"]).map((i) => i.href)).not.toContain("/victvs");
+  });
+
+  it("reads a fourth-tab choice of a page that moved as the page it moved into", () => {
+    expect(barSlots(null, "/savings").fourth?.href).toBe("/planner");
+    expect(barSlots(null, "/savings").more.map((i) => i.href)).not.toContain("/planner");
+    // Debt was a page of its own; its choice means the Portfolio
+    expect(barSlots(null, "/loans").fourth?.href).toBe("/accounts");
   });
 
   it("keeps a stale fourth-tab choice from taking Home's or Activity's place", () => {

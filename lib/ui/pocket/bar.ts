@@ -1,4 +1,4 @@
-import { NavItem, visibleNav } from "@/components/shell.nav";
+import { NavItem, navHost, visibleNav } from "@/components/shell.nav";
 
 /**
  * The Pocket tab bar: Home, Activity, +, one page of your choosing, More.
@@ -6,7 +6,8 @@ import { NavItem, visibleNav } from "@/components/shell.nav";
  * Slots never move with the page you're on (Standard's bar swaps its fourth
  * slot for whatever More page is open, so the bar shifts under your thumb).
  * A slot whose page you've hidden in Settings → Sidebar takes the next page
- * that's visible, in your order, never Settings: that lives in More.
+ * that's visible, in your order, never Settings: that lives in More. A
+ * choice of a page that moved into another (NAV_ALIASES) means its host.
  */
 export const HOME = "/";
 export const ACTIVITY = "/transactions";
@@ -31,7 +32,7 @@ export function barSlots(navOrder: string[] | null | undefined, fourthPref: stri
   };
   const home = pick(HOME);
   const activity = pick(ACTIVITY);
-  const fourth = pick(fourthPref || DEFAULT_FOURTH);
+  const fourth = pick(navHost(fourthPref || DEFAULT_FOURTH));
   const rest = visible.filter((i) => !taken.has(i.href));
   const more = [...rest.filter((i) => i.href !== "/settings"), ...rest.filter((i) => i.href === "/settings")];
   return { home, activity, fourth, more };

@@ -16,7 +16,7 @@ import { CardBook } from "@/lib/domain/cards";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { AccountSeries, balanceSeries, buildTimeline, expectedVictvsEvents, TimelineEvent } from "@/lib/domain/timeline";
-import { forecastVictvs } from "@/lib/domain/victvsForecast";
+import { cleanVictvsOverrides, forecastVictvs } from "@/lib/domain/victvsForecast";
 
 /** How far ahead the timeline reaches: as far as recurring rows are created. */
 export const TIMELINE_MONTHS_AHEAD = 12;
@@ -45,8 +45,9 @@ const isExpected = (e: TimelineEvent) => e.kind === "expected";
  * filter change never rebuilds either. Pass the book the screen already has
  * (useTxLookup().book), so one card book serves the page.
  *
- * Expected VICTVS payouts come from the VICTVS forecast (forecastVictvs),
- * into the deposit account in Settings; they move the balances only with
+ * Expected VICTVS payouts come from the VICTVS forecast (forecastVictvs,
+ * with your own figures for the months you've set), into the deposit
+ * account in Settings; they move the balances only with
  * `countExpected` (the "Count expected VICTVS" switch, off by default).
  */
 export function useTimeline(book: CardBook, countExpected = false): TimelineData {
@@ -65,9 +66,16 @@ export function useTimeline(book: CardBook, countExpected = false): TimelineData
   const usdPer = rates.data?.usdPer;
 
   const victvsAccountId = settings.data?.victvsAccountId ?? null;
+  const victvsOverrides = settings.data?.victvsForecast?.overrides;
   const expected = useMemo(() => {
     if (!sessions.data || !payouts.data) return [];
-    const forecast = forecastVictvs({ sessions: sessions.data, payouts: payouts.data, today, months: TIMELINE_MONTHS_AHEAD + 1 });
+    const forecast = forecastVictvs({
+      sessions: sessions.data,
+      payouts: payouts.data,
+      today,
+      months: TIMELINE_MONTHS_AHEAD + 1,
+      overrides: cleanVictvsOverrides(victvsOverrides, today.slice(0, 7)),
+    });
     return expectedVictvsEvents({
       forecast,
       payoutDates: payouts.data.map((p) => p.paymentDate),
@@ -76,7 +84,7 @@ export function useTimeline(book: CardBook, countExpected = false): TimelineData
       today,
       usdPer,
     });
-  }, [sessions.data, payouts.data, victvsAccountId, accounts.data, today, usdPer]);
+  }, [sessions.data, payouts.data, victvsOverrides, victvsAccountId, accounts.data, today, usdPer]);
 
   const events = useMemo(
     () =>

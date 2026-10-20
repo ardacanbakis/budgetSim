@@ -28,8 +28,8 @@ test.describe("quick jump in Classic", () => {
     await page.keyboard.press("Control+k");
     await expect(palette(page)).toBeVisible();
     await expect(palette(page).getByRole("textbox")).toBeFocused();
-    await page.keyboard.type("plnr");
-    await expect(palette(page).getByRole("button", { name: /Planner/ })).toBeVisible();
+    await page.keyboard.type("pln");
+    await expect(palette(page).getByRole("button", { name: /^Plan/ })).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/planner$/);
     await expect(palette(page)).toHaveCount(0);

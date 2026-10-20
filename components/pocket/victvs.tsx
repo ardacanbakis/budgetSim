@@ -319,7 +319,7 @@ function VictvsScreen() {
               <h2 id="victvs-forecast-title" className="mb-2 text-[15px] font-semibold">
                 {t("victvs.forecastTitle")}
               </h2>
-              <VictvsForecastView forecast={forecast} initialRows={3} />
+              <VictvsForecastView forecast={forecast} initialRows={3} editable />
             </section>
           ) : null}
 

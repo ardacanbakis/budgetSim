@@ -3,24 +3,28 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
+import {
+  CARD_HEIGHTS,
+  CARD_SIZES,
+  CardBox,
+  CardSize,
+  GAP_PX,
+  GRID_COLUMNS,
+  heightFor,
+  normalizeBoxes,
+  packBoxes,
+  ROW_PX,
+  snapHeight,
+  snapWidth,
+  stepHeight,
+  stepWidth,
+} from "@/lib/ui/plannerCards";
 
-/** one grid row, in pixels — a card's height is a whole number of these */
-const ROW_PX = 128;
-export const GRID_COLUMNS = 4;
-const MAX_ROWS = 16;
-/** matches the grid `gap-4` — needed to work a cell size back out of a rect */
-const GAP_PX = 16;
+export { GRID_COLUMNS };
+export type { CardBox };
 
-export interface CardBox {
-  /** column, 0-based */
-  x: number;
-  /** row, 0-based */
-  y: number;
-  /** columns spanned, 1–4 */
-  w: number;
-  /** rows spanned, 1–16 */
-  h: number;
-}
+/** the tallest a card gets on the canvas */
+const MAX_ROWS = CARD_HEIGHTS[CARD_HEIGHTS.length - 1];
 
 export interface GridLayout {
   /** where each card sits; absence means it has never been placed */
@@ -32,40 +36,14 @@ export interface GridBlock {
   id: string;
   title: string;
   node: ReactNode;
-  /** used the first time this card is placed */
-  defaultSize: { w: number; h: number };
+  /** its preset (lib/ui/plannerCards.ts): its height in the reading layouts, and its box the first time it's placed here */
+  size: CardSize;
 }
 
 const LAYOUT_KEY = "renovator-planner-grid-v2";
 
-const clampW = (n: number) => Math.min(GRID_COLUMNS, Math.max(1, n));
-const clampH = (n: number) => Math.min(MAX_ROWS, Math.max(1, n));
 const overlaps = (a: CardBox, b: CardBox) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-
-/**
- * Lay cards out top-to-bottom in the order given, packing them across the
- * columns. Used to seed a fresh canvas from the reading layout's order.
- */
-function pack(blocks: GridBlock[]): Record<string, CardBox> {
-  const boxes: Record<string, CardBox> = {};
-  let x = 0;
-  let y = 0;
-  let rowHeight = 0;
-  for (const b of blocks) {
-    const w = clampW(b.defaultSize.w);
-    const h = clampH(b.defaultSize.h);
-    if (x + w > GRID_COLUMNS) {
-      x = 0;
-      y += rowHeight;
-      rowHeight = 0;
-    }
-    boxes[b.id] = { x, y, w, h };
-    x += w;
-    rowHeight = Math.max(rowHeight, h);
-  }
-  return boxes;
-}
 
 /**
  * Settle a canvas after one card moved: anything the moved card now sits on
@@ -101,9 +79,14 @@ export function usePlannerGrid() {
       try {
         const raw = window.localStorage.getItem(LAYOUT_KEY);
         if (raw) {
-          const saved = JSON.parse(raw) as GridLayout;
+          const saved = JSON.parse(raw) as { boxes?: Record<string, unknown>; hidden?: unknown };
           if (saved.boxes && typeof saved.boxes === "object") {
-            setLayout({ boxes: saved.boxes, hidden: saved.hidden ?? [] });
+            // a canvas arranged before the presets loads onto them; it's
+            // written back only when you next change something
+            setLayout({
+              boxes: normalizeBoxes(saved.boxes),
+              hidden: Array.isArray(saved.hidden) ? saved.hidden.filter((h): h is string => typeof h === "string") : [],
+            });
           }
         }
       } catch {
@@ -120,7 +103,7 @@ export function usePlannerGrid() {
 
   /** start from the reading layout's arrangement rather than an empty canvas */
   function start(blocks: GridBlock[]) {
-    save({ boxes: pack(blocks), hidden: [] });
+    save({ boxes: packBoxes(blocks), hidden: [] });
   }
 
   function reset() {
@@ -152,7 +135,7 @@ export function PlannerGrid({
   let floor = Object.values(boxes).reduce((m, b) => Math.max(m, b.y + b.h), 0);
   for (const b of blocks) {
     if (boxes[b.id] || hidden.has(b.id)) continue;
-    boxes[b.id] = { x: 0, y: floor, w: clampW(b.defaultSize.w), h: clampH(b.defaultSize.h) };
+    boxes[b.id] = { x: 0, y: floor, ...CARD_SIZES[b.size] };
     floor += boxes[b.id].h;
   }
   const visible = blocks.map((b) => b.id).filter((id) => !hidden.has(id));
@@ -294,21 +277,27 @@ function GridCard({
       y: Math.max(0, box.y + Math.round(dy / size.h)),
     }));
 
+  // a resize lands on the nearest allowed size (lib/ui/plannerCards.ts)
   const startResize = (e: React.PointerEvent) =>
     gesture(e, (dx, dy, size) => ({
       ...box,
-      w: Math.min(GRID_COLUMNS - box.x, clampW(box.w + Math.round(dx / size.w))),
-      h: clampH(box.h + Math.round(dy / size.h)),
+      w: snapWidth(box.w + Math.round(dx / size.w), box.x),
+      h: snapHeight(box.h + Math.round(dy / size.h)),
     }));
 
-  /** Size the card to exactly the height its content wants. */
+  /** The smallest allowed height that shows all of the card. */
   function fitHeight() {
-    const content = el.current?.querySelector("[data-grid-card]");
-    const card = el.current;
-    if (!content || !card) return;
-    const chrome = card.getBoundingClientRect().height - content.getBoundingClientRect().height;
-    const wanted = content.scrollHeight + chrome;
-    onPlace({ ...box, h: clampH(Math.ceil((wanted + GAP_PX) / (ROW_PX + GAP_PX))) });
+    const content = el.current?.querySelector<HTMLElement>("[data-grid-card]");
+    if (!content) return;
+    // a framed card scrolls inside its body: what it wants is its height
+    // with the body at full length; anything else scrolls in the cell
+    const body = content.querySelector<HTMLElement>("[data-plan-card-body]");
+    const frame = content.querySelector<HTMLElement>("[data-plan-card]");
+    const wanted =
+      body && frame
+        ? frame.getBoundingClientRect().height - body.clientHeight + body.scrollHeight
+        : content.scrollHeight;
+    onPlace({ ...box, h: heightFor(wanted) });
   }
 
   return (
@@ -346,24 +335,24 @@ function GridCard({
           <button
             aria-label={t("plannerGrid.narrower", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={box.w <= 1}
-            onClick={() => onPlace({ ...box, w: box.w - 1 })}
+            disabled={stepWidth(box.w, -1, box.x) === box.w}
+            onClick={() => onPlace({ ...box, w: stepWidth(box.w, -1, box.x) })}
           >
             ←
           </button>
           <button
             aria-label={t("plannerGrid.wider", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={box.x + box.w >= GRID_COLUMNS}
-            onClick={() => onPlace({ ...box, w: box.w + 1 })}
+            disabled={stepWidth(box.w, 1, box.x) === box.w}
+            onClick={() => onPlace({ ...box, w: stepWidth(box.w, 1, box.x) })}
           >
             →
           </button>
           <button
             aria-label={t("plannerGrid.shorter", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
-            disabled={box.h <= 1}
-            onClick={() => onPlace({ ...box, h: box.h - 1 })}
+            disabled={stepHeight(box.h, -1) === box.h}
+            onClick={() => onPlace({ ...box, h: stepHeight(box.h, -1) })}
           >
             ↑
           </button>
@@ -371,7 +360,7 @@ function GridCard({
             aria-label={t("plannerGrid.taller", { title })}
             className="px-1 text-zinc-500 disabled:opacity-30"
             disabled={box.h >= MAX_ROWS}
-            onClick={() => onPlace({ ...box, h: box.h + 1 })}
+            onClick={() => onPlace({ ...box, h: stepHeight(box.h, 1) })}
           >
             ↓
           </button>
@@ -381,7 +370,8 @@ function GridCard({
         </div>
       ) : null}
 
-      {/* the card owns the cell: anything taller than its rows scrolls inside */}
+      {/* the card owns the cell; a framed card scrolls its own body, anything
+          else scrolls here */}
       <div data-grid-card className="min-h-0 flex-1 overflow-auto">
         {children}
       </div>

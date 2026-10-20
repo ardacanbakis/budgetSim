@@ -84,7 +84,8 @@ export const CARD_SPECS = [
   spec("this-month", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2 xl:col-span-1" }),
   spec("card-statements", { defaultOn: OFF, route: "/cards", span: "sm:col-span-2" }),
   spec("trend", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2" }),
-  spec("debt", { defaultOn: OFF, nav: "/loans", route: "/loans", span: "sm:col-span-1" }),
+  // what's owed lives in the Portfolio's Debts view, so it leaves with the Portfolio
+  spec("debt", { defaultOn: OFF, nav: "/accounts", route: "/accounts?view=debts", span: "sm:col-span-1" }),
   spec("commitments", { defaultOn: OFF, route: "/transactions?tab=recurring", span: "sm:col-span-1" }),
   spec("recent", { defaultOn: OFF, route: "/transactions", span: "sm:col-span-2" }),
   spec("victvs-outlook", { defaultOn: OFF, nav: "/victvs", route: "/victvs", span: "sm:col-span-2 xl:col-span-1" }),

@@ -1,18 +1,28 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCategories, useLoans, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
+import { buildCardBook } from "@/lib/domain/cards";
+import { computeDebtOverview } from "@/lib/domain/debt";
+import { todayISO } from "@/lib/domain/recurrence";
+import { DebtSummary, LoanPane, loanIcon } from "@/components/debtsPanel";
+import { AccountLine, LoanLine, PORTFOLIO_SEGMENTS, PortfolioSegment, sections as buildSections } from "@/lib/ui/pocket/portfolioSections";
+import { formatSigned } from "@/lib/ui/pocket/format";
+import { portfolioHref, readPortfolioQuery } from "@/lib/ui/portfolioUrl";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { GoldType, goldRatiosOf, readHoldings } from "@/lib/domain/gold";
 import { HoldingsEditor, HoldingsList, HoldingsSummary } from "@/components/goldHoldings";
 import { AdjustBalanceModal } from "@/components/adjustBalanceModal";
 import { CURRENCIES, CURRENCY_META, Currency, formatAmount } from "@/lib/domain/currencies";
-import { convert } from "@/lib/domain/fx";
+import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
@@ -38,7 +48,29 @@ function ordinal(day: number, locale: string): string {
 }
 
 function PortfolioPage() {
+  // useSearchParams needs a Suspense boundary on a prerendered page
+  return (
+    <Suspense fallback={<Spinner />}>
+      <PortfolioScreen />
+    </Suspense>
+  );
+}
+
+/**
+ * The Portfolio: what you hold and what you owe, in three views — All,
+ * Assets (cash, crypto and gold) and Debts (what each card owes and the
+ * tracked loans, under a strip with the total, the debt-free date and what
+ * to pay first). The view lives in the URL (?view=assets|debts; All is
+ * none), as does an open loan (&loan=<id>, lib/ui/portfolioUrl.ts), so
+ * /loans can redirect here and a link opens a loan; switching replaces the
+ * query in place. An account opened in the right-hand pane stays this
+ * screen's own state.
+ */
+function PortfolioScreen() {
   const { t, locale } = useI18n();
+  const params = useSearchParams();
+  const query = readPortfolioQuery(params);
+  const seg: PortfolioSegment = query.view ?? "all";
   const fmtDate = useFormatDate();
   const repo = useRepo();
   const { displayCurrency } = useApp();
@@ -46,6 +78,7 @@ function PortfolioPage() {
   const transactions = useTransactions();
   const categories = useCategories();
   const rates = useRates();
+  const loans = useLoans();
   const [modalOpen, setModalOpen] = useState(false);
   const { columns, setColumns } = useColumns("renovator-cols-portfolio");
   // shape is how each holding is drawn; `columns` above is the page's own
@@ -72,18 +105,70 @@ function PortfolioPage() {
     [accounts.data, transactions.data, rates.data]
   );
 
+  const today = todayISO();
+  const usdPer = rates.data?.usdPer;
+  // the cards and loans as Pocket's Portfolio counts them (lib/ui/pocket/portfolioSections.ts):
+  // a card at what it owes, never its ledger balance; a loan at what's left of it
+  const debts = useMemo(() => {
+    if (!accounts.data || !transactions.data) return null;
+    const book = buildCardBook(accounts.data, transactions.data);
+    const overview = loans.data
+      ? computeDebtOverview({
+          loans: loans.data,
+          accounts: accounts.data,
+          balances,
+          transactions: transactions.data,
+          usdPer: usdPer ?? ({} as UsdPerMap),
+          display: displayCurrency,
+          today,
+        })
+      : null;
+    const s = buildSections({
+      accounts: accounts.data,
+      balances,
+      book,
+      debt: overview,
+      usdPer,
+      display: displayCurrency,
+      hideEmpty: false,
+      today,
+    });
+    return { overview: usdPer ? overview : null, cards: s.cards.rows, loans: s.loans.rows };
+  }, [accounts.data, transactions.data, loans.data, balances, usdPer, displayCurrency, today]);
+
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
 
+  const showAssets = seg !== "debts";
+  const showDebts = seg !== "assets";
   // an account sitting at zero is noise on a page about what you hold
-  const all = (accounts.data ?? []).filter((a) => !a.archived);
+  const all = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
   const list = hideEmpty.value ? all.filter((a) => Math.abs(balances.get(a.id) ?? 0) > 1e-9) : all;
-  const emptyCount = all.length - list.length;
+  // a card owing nothing is empty too, where cards are listed
+  const allCards = showDebts ? (debts?.cards ?? []) : [];
+  const emptyCount =
+    (showAssets ? all.filter((a) => Math.abs(balances.get(a.id) ?? 0) <= 1e-9).length : 0) + allCards.filter((l) => l.empty).length;
   const archived = (accounts.data ?? []).filter((a) => a.archived);
-  const sections: Array<{ key: string; title: string; items: Account[] }> = [
-    { key: "accounts", title: t("portfolio.accounts"), items: list.filter((a) => a.kind === "fiat") },
-    { key: "assets", title: t("portfolio.assets"), items: list.filter((a) => a.kind === "crypto" || a.kind === "gold") },
-  ];
-  const selected = (accounts.data ?? []).find((a) => a.id === selectedId) ?? null;
+  const sections: Array<{ key: string; title: string; items: Account[] }> = showAssets
+    ? [
+        { key: "accounts", title: t("portfolio.accounts"), items: list.filter((a) => a.kind === "fiat") },
+        { key: "assets", title: t("portfolio.assets"), items: list.filter((a) => a.kind === "crypto" || a.kind === "gold") },
+      ]
+    : [];
+  const cardLines = hideEmpty.value ? allCards.filter((l) => !l.empty) : allCards;
+  const loanLines = showDebts ? (debts?.loans ?? []) : [];
+  const openLoan = query.loan ? ((loans.data ?? []).find((l) => l.id === query.loan) ?? null) : null;
+  const selected = openLoan ? null : ((accounts.data ?? []).find((a) => a.id === selectedId) ?? null);
+
+  const chooseView = (v: PortfolioSegment) => replaceQuery(portfolioHref({ view: v }));
+  const chooseLoan = (id: string) => {
+    setSelectedId(null);
+    replaceQuery(portfolioHref({ view: seg, loan: id }));
+  };
+  const chooseAccount = (id: string) => {
+    setSelectedId(id);
+    // an account takes the pane from an open loan
+    if (query.loan) replaceQuery(portfolioHref({ view: seg }));
+  };
   const categoryById = new Map((categories.data ?? []).map((c) => [c.id, c]));
 
   // A gold account holding a mix reads best in lira, with what it holds
@@ -109,7 +194,7 @@ function PortfolioPage() {
     return (
       <button
         key={account.id}
-        onClick={() => setSelectedId(account.id)}
+        onClick={() => chooseAccount(account.id)}
         className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
           active ? "bg-teal-50 ring-1 ring-teal-500/40 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
         }`}
@@ -143,7 +228,7 @@ function PortfolioPage() {
     return (
       <button
         key={account.id}
-        onClick={() => setSelectedId(account.id)}
+        onClick={() => chooseAccount(account.id)}
         className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors ${
           active
             ? "border-teal-500 bg-teal-50 dark:bg-teal-950"
@@ -174,7 +259,7 @@ function PortfolioPage() {
     return (
       <tr
         key={account.id}
-        onClick={() => setSelectedId(account.id)}
+        onClick={() => chooseAccount(account.id)}
         className={`cursor-pointer border-b border-[var(--edge-soft)] ${
           selectedId === account.id ? "bg-teal-50 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
         }`}
@@ -273,6 +358,75 @@ function PortfolioPage() {
     );
   }
 
+  /** A card in the Debts view: what it owes; it opens on the Cards page, where it's paid. */
+  function cardRow(line: AccountLine) {
+    const { account, balance, converted, card } = line;
+    return (
+      <Link
+        key={account.id}
+        href="/cards"
+        data-debt-row={account.name}
+        className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-[var(--edge-soft)]"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-base">💳</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{account.name}</span>
+            <span className="block truncate text-[11px] text-zinc-400">
+              {card?.paymentDay != null ? t("pocket.portfolio.cardDue", { day: ordinal(card.paymentDay, locale) }) : account.currency}
+            </span>
+          </span>
+        </span>
+        <span className="text-right">
+          <span className={`block text-sm font-semibold tabular-nums ${balance < 0 ? "text-red-600" : ""}`}>
+            {formatSigned(balance, account.currency, locale)}
+          </span>
+          {account.currency !== displayCurrency && converted != null ? (
+            <span className="block text-[11px] tabular-nums text-zinc-400">≈ {formatSigned(converted, displayCurrency, locale)}</span>
+          ) : null}
+        </span>
+      </Link>
+    );
+  }
+
+  /** A tracked loan: what's left of it; it opens in the right-hand pane. */
+  function loanRow(line: LoanLine) {
+    const { item, amount, converted } = line;
+    const loan = (loans.data ?? []).find((l) => l.id === item.id);
+    const active = openLoan?.id === item.id;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        data-debt-row={item.name}
+        aria-pressed={active}
+        onClick={() => chooseLoan(item.id)}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
+          active ? "bg-teal-50 ring-1 ring-teal-500/40 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-base">{loan ? loanIcon(loan) : "📄"}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{item.name}</span>
+            <span className="block truncate text-[11px] text-zinc-400">
+              {item.endDate ? `${t("debt.debtFree")}: ${fmtDate(item.endDate)}` : item.currency}
+            </span>
+          </span>
+        </span>
+        <span className="text-right">
+          <span className="block text-sm font-semibold tabular-nums text-red-600">{formatSigned(amount, item.currency, locale)}</span>
+          {item.currency !== displayCurrency && converted != null ? (
+            <span className="block text-[11px] tabular-nums text-zinc-400">≈ {formatSigned(converted, displayCurrency, locale)}</span>
+          ) : null}
+        </span>
+      </button>
+    );
+  }
+
+  const nothingListed =
+    sections.every((section) => section.items.length === 0) && cardLines.length === 0 && loanLines.length === 0;
+
   return (
     <div className={`mx-auto space-y-4 ${columns === 1 ? "max-w-6xl 3xl:max-w-[1700px]" : "max-w-none"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -303,6 +457,22 @@ function PortfolioPage() {
         </div>
       </div>
 
+      <div role="group" aria-label={t("pocket.portfolio.segLabel")} className="flex w-max gap-1 rounded-lg bg-[var(--edge-soft)] p-1">
+        {PORTFOLIO_SEGMENTS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={seg === v}
+            onClick={() => chooseView(v)}
+            className={`rounded-md px-3 py-1 text-sm font-medium ${seg === v ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500"}`}
+          >
+            {v === "all" ? t("common.all") : v === "assets" ? t("pocket.portfolio.segAssets") : t("pocket.portfolio.segDebts")}
+          </button>
+        ))}
+      </div>
+
+      {seg === "debts" ? <DebtSummary overview={debts?.overview ?? null} display={displayCurrency} /> : null}
+
       <div
         className={
           columns === 1
@@ -320,8 +490,22 @@ function PortfolioPage() {
               </Card>
             )
           )}
-          {list.length === 0 ? <EmptyState>{t("accounts.empty")}</EmptyState> : null}
-          {archived.length > 0 ? (
+          {cardLines.length > 0 ? (
+            <Card>
+              <CardHeader title={t("debt.cards")} />
+              <div className="space-y-0.5 p-2">{cardLines.map(cardRow)}</div>
+            </Card>
+          ) : null}
+          {loanLines.length > 0 ? (
+            <Card>
+              <CardHeader title={t("loans.title")} />
+              <div className="space-y-0.5 p-2">{loanLines.map(loanRow)}</div>
+            </Card>
+          ) : null}
+          {nothingListed ? (
+            <EmptyState>{seg === "debts" ? t("pages.noDebts") : t("accounts.empty")}</EmptyState>
+          ) : null}
+          {showAssets && archived.length > 0 ? (
             <details>
               <summary className="cursor-pointer text-sm text-zinc-500">
                 {t("accounts.archived")} ({archived.length})
@@ -335,8 +519,20 @@ function PortfolioPage() {
 
         {/* right: detail + history */}
         <Card className="lg:sticky lg:top-16">
-          {!selected ? (
-            <div className="p-8 text-center text-sm text-zinc-400">{t("portfolio.selectHint")}</div>
+          {openLoan ? (
+            <LoanPane
+              key={openLoan.id}
+              loan={openLoan}
+              display={displayCurrency}
+              usdPer={usdPer}
+              onDeleted={() => replaceQuery(portfolioHref({ view: seg }))}
+            />
+          ) : query.loan && !loans.isLoading ? (
+            <div className="p-8 text-center text-sm text-zinc-400">{t("pages.loanNotFound")}</div>
+          ) : !selected ? (
+            <div className="p-8 text-center text-sm text-zinc-400">
+              {seg === "debts" ? t("pages.selectLoanHint") : t("portfolio.selectHint")}
+            </div>
           ) : (
             <>
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--edge-soft)] p-4">

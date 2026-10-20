@@ -604,6 +604,7 @@ export class DemoRepo implements Repo {
       dateFormat: null,
       showQuickAdd: null,
       showRateTicker: null,
+      victvsForecast: null,
     };
     return copy({ ...defaults, ...(this.store.settings as Partial<UserSettings>) });
   }
