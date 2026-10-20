@@ -60,6 +60,10 @@ export const en = {
   groupCryptoGold: "Crypto & gold",
   groupCards: "Cards",
   customise: "Customise",
+  // Upcoming (components/dashboardUpcoming.tsx)
+  statementDue: "Card statement",
+  seeAllN: "See all ({count})",
+  nothingDueN: "Nothing due in the next {count} days.",
 };
 
 export const tr: typeof en = {
@@ -110,4 +114,7 @@ export const tr: typeof en = {
   groupCryptoGold: "Kripto ve altın",
   groupCards: "Kartlar",
   customise: "Özelleştir",
+  statementDue: "Kart ekstresi",
+  seeAllN: "Tümünü gör ({count})",
+  nothingDueN: "Önümüzdeki {count} günde ödenecek bir şey yok.",
 };

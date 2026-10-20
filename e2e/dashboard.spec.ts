@@ -327,3 +327,82 @@ test.describe("Version 2 dashboard", () => {
     expect(Math.abs(width - full)).toBeLessThan(2);
   });
 });
+
+test.describe("Upcoming", () => {
+  /** A planned transfer between two of your own accounts, `days` ahead, as both its legs. */
+  async function seedTransfer(page: Page, days: number) {
+    await page.evaluate(
+      ({ key, days }) => {
+        const store = JSON.parse(localStorage.getItem(key) ?? "{}");
+        const id = (name: string) => store.accounts.find((a: { name: string }) => a.name === name).id;
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        const due = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const leg = {
+          categoryId: null,
+          status: "planned",
+          dueDate: due,
+          completedAt: null,
+          description: "Move to savings",
+          fxSnapshot: null,
+          transferGroupId: "e2e-transfer",
+          transferMarketRate: null,
+          recurringTemplateId: null,
+          loanId: null,
+          victvsPayoutId: null,
+          purchaseId: null,
+          legacy: false,
+          createdAt: new Date().toISOString(),
+        };
+        store.transactions.push(
+          { ...leg, id: "e2e-leg-out", accountId: id("Ziraat TRY"), direction: "expense", amount: 4000 },
+          { ...leg, id: "e2e-leg-in", accountId: id("EUR Savings"), direction: "income", amount: 80 }
+        );
+        // only a week ahead, so the list stays short enough to show it
+        store.settings.dashboardLayout = { order: [], hidden: [], upcomingDays: 7 };
+        localStorage.setItem(key, JSON.stringify(store));
+      },
+      { key: DEMO_KEY, days }
+    );
+    await page.reload();
+    await expect(card(page, "net-worth")).toBeVisible({ timeout: 15_000 });
+  }
+
+  test("Classic lists card statements with Pay, and a transfer once", async ({ page }) => {
+    await enterDemo(page);
+    const upcoming = card(page, "upcoming");
+    const statement = upcoming.locator("[data-upcoming=card]").filter({ hasText: "Bonus Card" });
+    await expect(statement).toBeVisible();
+    // the VICTVS card shows the unpaid sessions, so Upcoming doesn't repeat them
+    await expect(upcoming.locator("[data-upcoming=victvs]")).toHaveCount(0);
+
+    // Pay opens the payment form over the dashboard instead of following the card's link
+    await statement.getByRole("button", { name: "Pay Bonus Card" }).click();
+    const form = page.getByText(/ — Bonus Card$/);
+    await expect(form).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
+
+    await seedTransfer(page, 3);
+    await expect(upcoming.getByText("Move to savings")).toHaveCount(1);
+    await expect(upcoming.getByRole("heading", { name: "Upcoming" })).toBeVisible();
+  });
+
+  test("version 2 lists the same, and the VICTVS row comes back when its card is off", async ({ page }) => {
+    await enterDemo(page);
+    await seedTransfer(page, 3);
+    await page.evaluate(() => localStorage.setItem("renovator-ui-style", "calm"));
+    await page.reload();
+    const upcoming = card(page, "upcoming");
+    await expect(upcoming.locator("[data-upcoming=card]").filter({ hasText: "Bonus Card" })).toBeVisible({ timeout: 15_000 });
+    await expect(upcoming.getByText("Move to savings")).toHaveCount(1);
+    await expect(upcoming.getByRole("button", { name: /Complete/ }).first()).toBeVisible();
+    await expect(upcoming.locator("[data-upcoming=victvs]")).toHaveCount(0);
+
+    await page.goto("/settings?tab=dashboard");
+    await page.getByRole("checkbox", { name: "Show Unpaid VICTVS" }).uncheck();
+    await page.goto("/");
+    await expect(upcoming.locator("[data-upcoming=victvs]")).toContainText(/unpaid session/, { timeout: 15_000 });
+  });
+});

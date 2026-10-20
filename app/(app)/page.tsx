@@ -13,20 +13,20 @@ import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { GoalsCard } from "@/components/goalsCard";
 import { AccountsLeftOut } from "@/components/dashboardParts";
+import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
 import { GoldLensCard } from "@/components/goldLens";
-import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
-import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useRates, useTransactions } from "@/lib/data/queries";
+import { Button, Card, CardHeader, Spinner } from "@/components/ui";
+import { useApp } from "@/lib/data/provider";
+import { useAccounts, useRates, useTransactions } from "@/lib/data/queries";
 import { DashboardV2 } from "@/components/dashboardV2";
 import { pocketable } from "@/components/pocket/pocketable";
 import { formatAmount } from "@/lib/domain/currencies";
-import { snapshotFromTable } from "@/lib/domain/fx";
-import { todayISO } from "@/lib/domain/recurrence";
 import {
   CardId,
   cardsOff,
   cardSpec,
   isCardId,
+  isCardVisible,
   moveCard,
   NormalizedLayout,
   setCardVisible,
@@ -36,7 +36,6 @@ import { dashboardAccountRows } from "@/lib/ui/dashboardAccounts";
 import { formatSigned } from "@/lib/ui/pocket/format";
 import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { useDashboardData } from "@/lib/useDashboardData";
-import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
 const PocketHome = dynamic(() => import("@/components/pocket/home").then((m) => m.PocketHome), {
@@ -55,8 +54,6 @@ const tooltipStyle = {
 
 function DashboardPage() {
   const { t, locale } = useI18n();
-  const fmtDate = useFormatDate();
-  const repo = useRepo();
   const { displayCurrency, uiVersion } = useApp();
   const accounts = useAccounts();
   const transactions = useTransactions();
@@ -67,19 +64,13 @@ function DashboardPage() {
   // Settings (lib/ui/dashboardLayout.ts)
   const { layout, navHrefs, update } = useDashboardLayout();
 
-  const completePlanned = useAppMutation(
-    (id: string) => repo.completeTransaction(id, snapshotFromTable(rates.data!)),
-    [KEYS.transactions, KEYS.accounts]
-  );
-
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  const today = todayISO();
 
   // both dashboards run on the same derivation; only the arrangement differs
   const derived = useDashboardData(displayCurrency);
 
   const unpaidVictvs = derived?.unpaidVictvs ?? 0;
+  const upcoming = useUpcomingItems(derived, layout, layout ? isCardVisible(layout, "victvs", "classic", navHrefs) : false);
 
   // Classic keeps the card grid below; every v2 skin gets the rebuilt layout.
   // Placed after every hook above so the hook order never changes with style.
@@ -87,7 +78,6 @@ function DashboardPage() {
 
   if (!derived || !layout || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
   const activeAccounts = (accounts.data ?? []).filter((a) => !a.archived);
   // the accounts the card lists: hiding one tidies the list, never a total
   const accountRows = dashboardAccountRows(
@@ -192,55 +182,7 @@ function DashboardPage() {
         <AccountsLeftOut hidden={accountRows.hiddenCount} empty={accountRows.emptyHidden} />
       </Card>
     ),
-    upcoming: (
-      <Card className="h-full">
-        <CardHeader
-          title={t("dashboard.upcoming")}
-          action={
-            <Link href="/transactions" className="text-xs text-teal-600 hover:underline">
-              {t("dashboard.seeAll")} →
-            </Link>
-          }
-        />
-        {derived.upcoming.length === 0 ? (
-          <div className="p-4">
-            <EmptyState>{t("dashboard.noUpcoming")}</EmptyState>
-          </div>
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {derived.upcoming.map((tx) => {
-              const account = accountById.get(tx.accountId);
-              if (!account) return null;
-              const overdue = tx.dueDate < today;
-              return (
-                <li key={tx.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{tx.description || "—"}</div>
-                    <div className="text-xs text-zinc-500">
-                      {account.name} · {fmtDate(tx.dueDate)} {overdue ? <Badge tone="red">!</Badge> : null}
-                    </div>
-                  </div>
-                  <span className={`text-sm font-semibold tabular-nums ${tx.direction === "income" ? "text-emerald-600" : ""}`}>
-                    {tx.direction === "income" ? "+" : "−"}
-                    {formatAmount(tx.amount, account.currency, locale)}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    disabled={!rates.data}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      completePlanned.mutate(tx.id);
-                    }}
-                  >
-                    ✓ {t("dashboard.complete")}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-    ),
+    upcoming: upcoming ? <UpcomingCard d={derived} items={upcoming} days={layout.upcomingDays} variant="classic" className="h-full" /> : null,
     "monthly-flow": (
       <Card className="h-full">
         <CardHeader title={`${t("dashboard.monthlyFlow")} (${displayCurrency})`} />
@@ -384,7 +326,8 @@ function SortableCard({
       onKeyDown={
         navigable
           ? (e) => {
-              if (e.key === "Enter") router.push(href!);
+              // Enter on a button inside the card is that button's
+              if (e.key === "Enter" && e.target === e.currentTarget) router.push(href!);
             }
           : undefined
       }

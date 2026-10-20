@@ -7,17 +7,17 @@ import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
 import { AccountsLeftOut } from "@/components/dashboardParts";
+import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
 import { GoalsCard } from "@/components/goalsCard";
 import { GoldLensCard } from "@/components/goldLens";
 import { HoldingsSummary } from "@/components/goldHoldings";
-import { Badge, Card, CardHeader, EmptyState, Figure, Spinner } from "@/components/ui";
+import { Card, CardHeader, EmptyState, Figure, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
 import { formatAmount } from "@/lib/domain/currencies";
 import { useDashboardData } from "@/lib/useDashboardData";
-import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { useRates } from "@/lib/data/queries";
-import { CardId, visibleCards } from "@/lib/ui/dashboardLayout";
+import { CardId, isCardVisible, visibleCards } from "@/lib/ui/dashboardLayout";
 import { dashboardAccountRows } from "@/lib/ui/dashboardAccounts";
 import { isMixedGold } from "@/lib/ui/pocket/portfolioSections";
 import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
@@ -48,11 +48,11 @@ const tooltipStyle = {
  */
 export function DashboardV2() {
   const { t, locale } = useI18n();
-  const fmtDate = useFormatDate();
   const { displayCurrency } = useApp();
   const rates = useRates();
   const d = useDashboardData(displayCurrency);
   const { layout, navHrefs } = useDashboardLayout();
+  const upcoming = useUpcomingItems(d, layout, layout ? isCardVisible(layout, "victvs", "v2", navHrefs) : false);
 
   if (!d || !layout) return <Spinner />;
 
@@ -63,7 +63,6 @@ export function DashboardV2() {
   const positive = d.netWorth.total >= 0;
 
   const live = d.accounts.filter((a) => !a.archived);
-  const accountById = new Map(d.accounts.map((a) => [a.id, a]));
 
   // biggest holding first, cards last: the ledger is for finding a number,
   // not for admiring the order you happened to create accounts in. Every
@@ -143,47 +142,11 @@ export function DashboardV2() {
     </div>
   );
 
-  const upcomingCard = (
+  const upcomingCard = upcoming ? (
     <div data-card="upcoming">
-      <Card className="h-full">
-        <CardHeader
-          title={t("dashboard.upcoming")}
-          action={
-            <Link href="/transactions" className="text-xs text-teal-600 hover:underline dark:text-teal-400">
-              {t("dashboard.seeAll")}
-            </Link>
-          }
-        />
-        {d.upcoming.length === 0 ? (
-          <div className="p-[var(--ui-card-pad-x)]">
-            <EmptyState>{t("dashboard.noUpcoming")}</EmptyState>
-          </div>
-        ) : (
-          <ol className="divide-y divide-[var(--edge-soft)]">
-            {d.upcoming.map((tx) => {
-              const a = accountById.get(tx.accountId);
-              const overdue = tx.dueDate < d.today;
-              return (
-                <li key={tx.id} className="flex items-center justify-between gap-3 px-[var(--ui-card-pad-x)] py-[var(--ui-row-py)]">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm">{tx.description || a?.name || "—"}</div>
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                      <span className="tnum">{fmtDate(tx.dueDate)}</span>
-                      {overdue ? <Badge tone="red">{t("dashboard.overdue")}</Badge> : null}
-                    </div>
-                  </div>
-                  <Figure size="sm" tone={tx.direction === "income" ? "pos" : undefined}>
-                    {tx.direction === "income" ? "+" : "−"}
-                    {a ? formatAmount(tx.amount, a.currency, locale) : tx.amount}
-                  </Figure>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </Card>
+      <UpcomingCard d={d} items={upcoming} days={layout.upcomingDays} variant="v2" className="h-full" />
     </div>
-  );
+  ) : null;
 
   return (
     <div className="space-y-[var(--ui-gap)]">
