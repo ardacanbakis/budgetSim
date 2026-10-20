@@ -1,8 +1,8 @@
 import { Account } from "@/lib/data/types";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
-import { addMonthsClamped } from "@/lib/domain/recurrence";
-import { AccountSeries, balanceAt, compareEvents, TimelineEvent } from "@/lib/domain/timeline";
+import { addDays, addMonthsClamped } from "@/lib/domain/recurrence";
+import { AccountSeries, balanceAt, compareEvents, lowestAhead, LowPoint, TimelineEvent, TimelineMilestone } from "@/lib/domain/timeline";
 
 /**
  * The timeline (lib/domain/timeline.ts) as the screens list it: filtered,
@@ -32,7 +32,25 @@ import { AccountSeries, balanceAt, compareEvents, TimelineEvent } from "@/lib/do
  *   on one account, walked in the order the series walks them.
  * - monthHighlights(month): for the Month zoom, the three biggest outflows,
  *   the statements and the markers.
+ * - timelineWindow(today, past, ahead, horizon): the stretch a screen shows,
+ *   whole months, `past` before this one and `ahead` from this one on.
+ * - lowestRows(series, today, to): "Lowest point ahead", one line per cash
+ *   account with anything planned before `to`, those going below zero first.
+ * - milestoneHref(milestone): where a marker leads (the loan, the card, the
+ *   recurring item).
+ * - shortDay(date, locale): "14 Nov" / "14 Kas".
  */
+
+/** Device preferences (usePocketPref), shared by both layouts. */
+export const TIMELINE_KEYS = {
+  /** "on" | "off": loan, taksit and recurring-item ends; on by default */
+  milestones: "renovator-timeline-milestones",
+  /** "on" | "off": imported history (legacy rows); off by default */
+  legacy: "renovator-timeline-legacy",
+} as const;
+
+/** Months the list grows by, either way. */
+export const TIMELINE_PAGE_MONTHS = 3;
 
 export interface TimelineFilters {
   accountId: string | null;
@@ -242,4 +260,44 @@ export function monthHighlights(month: TimelineMonth, options: BucketOptions): M
     statements: all.filter((e) => e.kind === "statement"),
     markers: all.filter((e) => e.kind === "milestone"),
   };
+}
+
+const monthStart = (today: string, offset: number) => addMonthsClamped(`${today.slice(0, 7)}-01`, offset);
+
+export function timelineWindow(today: string, past: number, ahead: number, horizon: string): { from: string; to: string } {
+  const from = monthStart(today, -past);
+  const end = addDays(monthStart(today, ahead), -1);
+  return { from, to: end < horizon ? end : horizon };
+}
+
+export interface LowestRow {
+  account: Account;
+  /** today's balance */
+  now: number;
+  low: LowPoint;
+  approx: boolean;
+}
+
+export function lowestRows(series: ReadonlyMap<string, AccountSeries>, today: string, to: string): LowestRow[] {
+  const rows: LowestRow[] = [];
+  for (const s of series.values()) {
+    const moves = s.points.some((p) => p.date > today && p.date <= to) || balanceAt(s.points, today) !== s.now;
+    if (!moves) continue;
+    const low = lowestAhead(s.points, today, to);
+    if (low) rows.push({ account: s.account, now: s.now, low, approx: s.approx });
+  }
+  return rows.sort((a, b) => Number(b.low.belowZeroOn != null) - Number(a.low.belowZeroOn != null));
+}
+
+export function milestoneHref(milestone: TimelineMilestone): string {
+  if (milestone.what === "loan") return "/loans";
+  if (milestone.what === "purchase") return "/cards";
+  return "/transactions?tab=recurring";
+}
+
+export function shortDay(date: string, locale: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, d))
+  );
 }

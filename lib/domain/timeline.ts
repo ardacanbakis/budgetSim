@@ -360,12 +360,14 @@ export interface TimelineInput {
 /**
  * Every event from `from` (or the beginning) to `to`, sorted. Overdue rows
  * and statements are kept whatever their date: they still have to happen.
+ * Milestones reach past `to`: a loan's last payment years away is still worth
+ * seeing, and a marker costs nothing.
  */
 export function buildTimeline(input: TimelineInput, o: { from?: string; to: string; today: string }): TimelineEvent[] {
   const { accounts, transactions, book } = input;
   const accountsById = new Map(accounts.map((a) => [a.id, a] as const));
   const inWindow = (e: TimelineEvent) =>
-    e.date <= o.to && (e.status === "overdue" || o.from == null || e.date >= o.from);
+    (e.date <= o.to || e.kind === "milestone") && (e.status === "overdue" || o.from == null || e.date >= o.from);
   const events = [
     ...ledgerEvents(transactions, book, accountsById, o.today),
     ...statementEvents(book, accounts, o.today, o.to.slice(0, 7), input.usdPer),

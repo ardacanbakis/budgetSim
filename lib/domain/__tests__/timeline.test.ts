@@ -365,6 +365,26 @@ describe("buildTimeline", () => {
     expect(all.map((e) => e.key)).toEqual([late.id, old.id, soon.id]);
   });
 
+  it("lets milestones reach past the horizon, and nothing else", () => {
+    const template: RecurringTemplate = {
+      id: "gym",
+      name: "Gym",
+      accountId: "bank",
+      direction: "expense",
+      categoryId: null,
+      amount: 900,
+      frequency: "monthly",
+      startDate: "2026-01-10",
+      endDate: "2029-01-10",
+      autoComplete: false,
+      loanId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const far = tx("bank", "2028-05-01", 10);
+    const events = timelineOf([far], { templates: [template] }, "2027-10-19");
+    expect(events.map((e) => e.key)).toEqual(["end:template:gym"]);
+  });
+
   it("covers what comingUp lists over the next seven days (the demo)", () => {
     const seed = buildDemoSeed();
     const now = todayISO();
