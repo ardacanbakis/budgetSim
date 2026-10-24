@@ -193,3 +193,48 @@ export function effectiveAnnualPct(input: ScheduleInput): number {
   const monthly = effectiveMonthlyRate(input.monthlyRatePct, input.kkdfPct, input.bsmvPct) / 100;
   return (Math.pow(1 + monthly, 12) - 1) * 100;
 }
+
+/**
+ * The monthly rate a bank's installment implies.
+ *
+ * A quoted installment often isn't what the calculator gets from the quoted
+ * rate: insurance, a file fee or a different day count end up folded into
+ * it. Working back from the installment gives the rate the loan actually
+ * costs, which is also what lets its schedule land on zero. It comes out
+ * before KKDF and BSMV, so it's quoted the same way as the rate it replaces.
+ * null when the payments don't even repay the principal.
+ */
+export function impliedMonthlyRatePct(
+  input: Pick<ScheduleInput, "principal" | "termMonths" | "kkdfPct" | "bsmvPct">,
+  installment: number
+): number | null {
+  const n = Math.floor(input.termMonths);
+  if (!(input.principal > 0) || !(installment > 0) || n <= 0) return null;
+  if (installment * n < input.principal - 1e-9) return null;
+  if (Math.abs(installment * n - input.principal) < 1e-9) return 0;
+  // the installment rises with the rate, so narrow the gap until it's found
+  let lo = 0;
+  let hi = 1;
+  while (monthlyInstallment(input.principal, hi * 100, n) < installment && hi < 1e6) hi *= 2;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    if (monthlyInstallment(input.principal, mid * 100, n) < installment) lo = mid;
+    else hi = mid;
+  }
+  return (((lo + hi) / 2) * 100) / taxMultiplier(input.kkdfPct, input.bsmvPct);
+}
+
+/**
+ * A loan tracked at the installment the bank quoted: an annuity at the rate
+ * that installment implies, so every payment is the bank's figure and the
+ * balance still lands on zero. The rate isn't rounded here: the database
+ * keeps four places (loans.monthly_rate_pct), which moves the installment
+ * rebuilt from it by well under one lira, while the payments posted when
+ * tracking starts are worked out from this exact rate. null when the
+ * installment doesn't repay the principal.
+ */
+export function scheduleForInstallment(input: ScheduleInput, installment: number): ScheduleInput | null {
+  const rate = impliedMonthlyRatePct(input, installment);
+  if (rate == null) return null;
+  return { ...input, kind: "annuity", monthlyRatePct: rate, customInstalments: undefined };
+}

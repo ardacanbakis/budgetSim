@@ -2063,27 +2063,61 @@ test("loans: a custom schedule posts its own payments into future months", async
   await page.screenshot({ path: "e2e/screenshots/loans-custom-schedule.png" });
 });
 
-test("loans: Turkish levies are on by default and move the installment", async ({ page }) => {
+test("loans: Turkish levies stay hidden until asked for, and move the installment", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await enterDemo(page);
   await page.goto("/planner?tab=loan");
   await page.waitForTimeout(1800);
 
+  // off and out of sight by default
+  await expect(num(page, "KKDF %")).toHaveCount(0);
+  await expect(page.getByText("KKDF + BSMV")).toHaveCount(0);
+
+  const money = async () =>
+    Number((await tile(page, "Installment").innerText()).replace(/[^\d,.]/g, "").replace(/,/g, ""));
+  const plain = await money();
+
   // consumer credit pays KKDF 15 and BSMV 10, which is why a bank's quote
   // never matches a plain annuity calculator
+  await page.getByRole("checkbox", { name: /Add KKDF and BSMV/ }).check();
   await expect(num(page, "KKDF %")).toHaveValue("15");
   await expect(num(page, "BSMV %")).toHaveValue("10");
   await expect(page.getByText("KKDF + BSMV")).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(await money()).toBeGreaterThan(plain);
+});
 
-  const money = async () =>
-    Number((await tile(page, "Installment").innerText()).replace(/[^\d,.]/g, "").replace(/\./g, "").replace(",", "."));
-  const taxed = await money();
+test("loans: the installment on a bank's offer replaces the calculator's", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1200 });
+  await enterDemo(page);
+  await page.goto("/planner?tab=loan");
+  await page.waitForTimeout(1800);
 
-  await num(page, "KKDF %").fill("0");
-  await num(page, "BSMV %").fill("0");
-  await page.waitForTimeout(900);
-  expect(await money()).toBeLessThan(taxed);
-  await expect(page.getByText("KKDF + BSMV")).toHaveCount(0);
+  await num(page, "Principal").fill("100000");
+  await num(page, "Term (months)").fill("12");
+  await num(page, "Installment on your offer").fill("10500");
+  await page.waitForTimeout(600);
+  await expect(tile(page, "Installment")).toContainText("10,500.00");
+  await expect(page.getByText(/That installment works out to [\d.]+% a month/)).toBeVisible();
+
+  // too little to ever repay the principal: said so, and not trackable
+  await num(page, "Installment on your offer").fill("8000");
+  await expect(page.getByText(/doesn't repay/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Track this loan" })).toBeDisabled();
+
+  await num(page, "Installment on your offer").fill("10500");
+  await page.getByRole("button", { name: "Track this loan" }).click();
+  await page.getByLabel("Name").fill("Offer loan");
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await page.waitForTimeout(2500);
+
+  // what gets posted is the bank's figure, month after month
+  const amounts: number[] = await page.evaluate(() => {
+    const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5") ?? "{}");
+    const loan = (store.loans ?? []).find((l: { name: string }) => l.name === "Offer loan");
+    return [loan?.installment ?? 0];
+  });
+  expect(amounts[0]).toBe(10500);
 });
 
 test("loans: an interest-free plan charges no interest and no levies", async ({ page }) => {

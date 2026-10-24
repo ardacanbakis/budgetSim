@@ -63,7 +63,7 @@ export function DebtSummary({ overview, display }: { overview: DebtOverview | nu
         <Card className="p-4">
           <div className="text-xs text-zinc-500">{t("debt.avalanche")}</div>
           <div className="mt-1 truncate text-lg font-bold">
-            {target ? `${target.name} (%${target.monthlyRatePct} ${t("debt.perMonth")})` : "—"}
+            {target ? `${target.name} (%${(target.monthlyRatePct ?? 0).toLocaleString(locale, { maximumFractionDigits: 4 })} ${t("debt.perMonth")})` : "—"}
           </div>
         </Card>
       </div>
@@ -123,7 +123,7 @@ export function LoanPane({
             <div className="text-sm tabular-nums text-zinc-400">≈ −{formatAmount(converted, display, locale)}</div>
           ) : null}
           <div className="mt-1 text-xs text-zinc-500">
-            {money(loan.installment)}/{t("recurring.monthly").toLowerCase()} · %{loan.monthlyRatePct} {t("debt.perMonth")} ·{" "}
+            {money(loan.installment)}/{t("recurring.monthly").toLowerCase()} · %{loan.monthlyRatePct.toLocaleString(locale, { maximumFractionDigits: 4 })} {t("debt.perMonth")} ·{" "}
             {t("planner.runwayMonths", { count: term })}
           </div>
         </div>

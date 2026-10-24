@@ -89,5 +89,8 @@ export const RECURRING_DIRECTION_FILTER_KEY = "renovator-recurring-direction";
 /** Below this many lira, a month's shortfall is rounding rather than trouble. */
 export const SHORT_THRESHOLD_KEY = "renovator-short-threshold";
 
+/** The Debt simulator's KKDF and BSMV: off until you ask for them. */
+export const LOAN_TAXES_KEY = "renovator-loan-taxes";
+
 /** Collapse every year but the current one when a history list first opens. */
 export const COLLAPSE_HISTORY_KEY = "renovator-collapse-history";

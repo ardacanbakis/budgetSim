@@ -15,8 +15,11 @@ import {
   effectiveAnnualPct,
   KKDF_CONSUMER_PCT,
   SCHEDULE_KINDS,
+  ScheduleInput,
   ScheduleKind,
+  scheduleForInstallment,
 } from "@/lib/domain/loanSchedule";
+import { LOAN_TAXES_KEY, useLocalToggle } from "@/lib/prefs";
 import { todayISO } from "@/lib/domain/recurrence";
 import { LoanRatePicker } from "@/components/loanRatePicker";
 import { TrackedLoansCard } from "@/components/debtsPanel";
@@ -47,10 +50,16 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
   const [startDate, setStartDate] = useState(todayISO());
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("annuity");
   // Turkish consumer credit carries both levies; commercial pays BSMV only.
-  // They default on because that is what a personal loan actually costs.
+  // They stay off and out of sight until asked for: a bank's quoted
+  // installment already includes them, and that can be typed in instead.
+  const taxes = useLocalToggle(LOAN_TAXES_KEY, false);
   const [kkdf, setKkdf] = useState(String(KKDF_CONSUMER_PCT));
   const [bsmv, setBsmv] = useState(String(BSMV_CONSUMER_PCT));
+  const kkdfPct = taxes.value ? Number(kkdf) || 0 : 0;
+  const bsmvPct = taxes.value ? Number(bsmv) || 0 : 0;
   const [customText, setCustomText] = useState("");
+  // the installment on the bank's offer, when it isn't what the calculator says
+  const [offerText, setOfferText] = useState("");
 
   const createLoan = useAppMutation((input: NewLoan) => repo.createLoan(input), [
     KEYS.loans,
@@ -68,38 +77,48 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
     [customText]
   );
 
-  const sim = useMemo(() => {
+  // what the calculator makes of the inputs
+  const calculatorInput = useMemo<ScheduleInput | null>(() => {
     const p = Number(principal);
     const r = Number(rate);
     const n = scheduleKind === "custom" ? customInstalments.length : Math.floor(Number(term));
     if (!(p > 0) || !(r >= 0) || !(n > 0) || n > 600) return null;
-    return buildSchedule({
+    return {
       kind: scheduleKind,
       principal: p,
       monthlyRatePct: r,
       termMonths: n,
       startDate,
       currency,
-      kkdfPct: Number(kkdf) || 0,
-      bsmvPct: Number(bsmv) || 0,
+      kkdfPct,
+      bsmvPct,
       customInstalments,
-    });
-  }, [principal, rate, term, startDate, currency, scheduleKind, kkdf, bsmv, customInstalments]);
+    };
+  }, [principal, rate, term, startDate, currency, scheduleKind, kkdfPct, bsmvPct, customInstalments]);
+  const calculated = useMemo(() => (calculatorInput ? buildSchedule(calculatorInput) : null), [calculatorInput]);
 
-  const effectiveApr = useMemo(
-    () =>
-      effectiveAnnualPct({
-        kind: scheduleKind,
-        principal: Number(principal) || 0,
-        monthlyRatePct: Number(rate) || 0,
-        termMonths: Math.floor(Number(term)) || 0,
-        startDate,
-        currency,
-        kkdfPct: Number(kkdf) || 0,
-        bsmvPct: Number(bsmv) || 0,
-      }),
-    [scheduleKind, principal, rate, term, startDate, currency, kkdf, bsmv]
+  // A bank's installment replaces the calculator's: the loan is simulated and
+  // tracked at the rate that installment implies (lib/domain/loanSchedule.ts).
+  const offer = Number(offerText);
+  const usesOffer = scheduleKind === "annuity" && offerText.trim() !== "" && offer > 0;
+  const offerInput = useMemo(
+    () => (usesOffer && calculatorInput ? scheduleForInstallment(calculatorInput, offer) : null),
+    [usesOffer, calculatorInput, offer]
   );
+  const offerInvalid = usesOffer && calculatorInput != null && offerInput == null;
+  const input = offerInput ?? calculatorInput;
+  const sim = useMemo(() => (offerInput ? buildSchedule(offerInput) : calculated), [offerInput, calculated]);
+  const effectiveApr = input ? effectiveAnnualPct(input) : 0;
+  const fmtRate = (pct: number) => pct.toLocaleString(locale, { maximumFractionDigits: 4 });
+
+  /** Turn whatever the schedule is now into a custom one, one line per payment, to edit any of them. */
+  const editEachInstallment = () => {
+    if (!sim || !input) return;
+    setRate(String(Number(input.monthlyRatePct.toFixed(8))));
+    setCustomText(sim.rows.map((row) => row.payment).join("\n"));
+    setScheduleKind("custom");
+    setOfferText("");
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1600px]">
@@ -146,7 +165,10 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
               currency={currency}
               amount={Number(principal) || 0}
               termMonths={Math.floor(Number(term)) || 0}
-              onPick={(offer) => setRate(offer.monthlyRatePct.toFixed(2))}
+              onPick={(picked) => {
+                setRate(picked.monthlyRatePct.toFixed(2));
+                setOfferText("");
+              }}
             />
 
             <Field label={t("loans.scheduleKind")} hint={t(`loans.kindHint_${scheduleKind}`)}>
@@ -177,14 +199,57 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
                 annuity calculator; they are editable because commercial
                 credit pays BSMV only, and the statutory rates move */}
             {scheduleKind !== "zeroInterest" ? (
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t("loans.kkdf")} hint={t("loans.kkdfHint")}>
-                  <Input type="number" step="0.5" min="0" max="100" value={kkdf} onChange={(e) => setKkdf(e.target.value)} />
-                </Field>
-                <Field label={t("loans.bsmv")} hint={t("loans.bsmvHint")}>
-                  <Input type="number" step="0.5" min="0" max="100" value={bsmv} onChange={(e) => setBsmv(e.target.value)} />
-                </Field>
-              </div>
+              <>
+                <label className="flex items-start gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                  <input
+                    type="checkbox"
+                    checked={taxes.value}
+                    onChange={(e) => taxes.setValue(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-teal-600"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">{t("loans.taxesToggle")}</span>
+                    <span className="block text-xs text-zinc-500">{t("loans.taxesToggleHint")}</span>
+                  </span>
+                </label>
+                {taxes.value ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label={t("loans.kkdf")} hint={t("loans.kkdfHint")}>
+                      <Input type="number" step="0.5" min="0" max="100" value={kkdf} onChange={(e) => setKkdf(e.target.value)} />
+                    </Field>
+                    <Field label={t("loans.bsmv")} hint={t("loans.bsmvHint")}>
+                      <Input type="number" step="0.5" min="0" max="100" value={bsmv} onChange={(e) => setBsmv(e.target.value)} />
+                    </Field>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {scheduleKind === "annuity" ? (
+              <Field
+                label={t("loans.offerInstallment")}
+                hint={
+                  offerInvalid
+                    ? t("loans.offerTooLow", {
+                        amount: formatAmount(Number(principal), currency, locale),
+                        count: calculatorInput?.termMonths ?? 0,
+                      })
+                    : offerInput
+                      ? t("loans.offerImplied", { rate: fmtRate(offerInput.monthlyRatePct), quoted: fmtRate(Number(rate)) })
+                      : t("loans.offerHint")
+                }
+              >
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  inputMode="decimal"
+                  value={offerText}
+                  placeholder={calculated ? String(calculated.installment) : ""}
+                  onChange={(e) => setOfferText(e.target.value)}
+                  aria-invalid={offerInvalid || undefined}
+                />
+              </Field>
             ) : null}
 
             {sim ? (
@@ -225,11 +290,16 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
                     </div>
                   ) : null}
                 </div>
-                <Button variant="primary" className="w-full" onClick={() => setTrackOpen(true)}>
+                <Button variant="primary" className="w-full" disabled={offerInvalid} onClick={() => setTrackOpen(true)}>
                   {t("loans.startTracking")}
                 </Button>
                 <details>
                   <summary className="cursor-pointer text-sm text-zinc-500">{t("loans.schedule")}</summary>
+                  {scheduleKind !== "custom" ? (
+                    <Button variant="ghost" className="mt-2" onClick={editEachInstallment}>
+                      {t("loans.editEachInstallment")}
+                    </Button>
+                  ) : null}
                   <div className="pocket-unscroll mt-2 max-h-64 overflow-y-auto">
                     <table className="stack-sm sticky-head w-full text-xs tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold">
                       <thead className="sticky top-0 bg-white dark:bg-zinc-900">
@@ -282,14 +352,15 @@ export function LoanSimulator({ tabs }: { tabs: ReactNode }) {
           kind,
           currency,
           principal: Number(principal),
-          monthlyRatePct: Number(rate),
-          termMonths: scheduleKind === "custom" ? customInstalments.length : Math.floor(Number(term)),
+          // a bank's installment brings the rate it implies
+          monthlyRatePct: input?.monthlyRatePct ?? Number(rate),
+          termMonths: input?.termMonths ?? Math.floor(Number(term)),
           startDate,
           // the shape you simulated is the shape that gets tracked; dropping
           // it here would quietly file every loan as a plain annuity
           scheduleKind,
-          kkdfPct: Number(kkdf) || 0,
-          bsmvPct: Number(bsmv) || 0,
+          kkdfPct,
+          bsmvPct,
           customInstalments: scheduleKind === "custom" ? customInstalments : null,
         }}
         onConfirm={async (input) => {

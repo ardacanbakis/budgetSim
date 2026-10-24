@@ -5,7 +5,9 @@ import {
   buildSchedule,
   effectiveAnnualPct,
   effectiveMonthlyRate,
+  impliedMonthlyRatePct,
   KKDF_CONSUMER_PCT,
+  scheduleForInstallment,
   ScheduleInput,
   taxMultiplier,
 } from "../loanSchedule";
@@ -182,5 +184,60 @@ describe("degenerate input", () => {
     const s = buildSchedule(base({ monthlyRatePct: 0, termMonths: 4 }));
     expect(s.totalInterest).toBe(0);
     expect(s.totalPaid).toBe(100_000);
+  });
+});
+
+describe("a bank's installment", () => {
+  const taxed = base({ principal: 1_000_000, termMonths: 120, kkdfPct: 15, bsmvPct: 10 });
+  const calculated = buildSchedule(taxed).installment;
+
+  it("gives back the quoted rate when it matches the calculator", () => {
+    expect(impliedMonthlyRatePct(taxed, calculated)).toBeCloseTo(2.89, 4);
+  });
+
+  it("works out a higher rate when the bank asks for more", () => {
+    // insurance or a file fee folded into the installment
+    const rate = impliedMonthlyRatePct(taxed, calculated + 1_000)!;
+    expect(rate).toBeGreaterThan(2.89);
+    // and the rate it finds really does give that installment
+    expect(buildSchedule({ ...taxed, monthlyRatePct: rate }).installment).toBeCloseTo(calculated + 1_000, 0);
+  });
+
+  it("is quoted before KKDF and BSMV, like the rate it replaces", () => {
+    const untaxed = { ...taxed, kkdfPct: 0, bsmvPct: 0 };
+    const withLevies = impliedMonthlyRatePct(taxed, 40_000)!;
+    const without = impliedMonthlyRatePct(untaxed, 40_000)!;
+    expect(withLevies * taxMultiplier(15, 10)).toBeCloseTo(without, 6);
+  });
+
+  it("is zero when the payments only return the principal", () => {
+    expect(impliedMonthlyRatePct(base({ termMonths: 10 }), 10_000)).toBe(0);
+  });
+
+  it("has no answer when the payments don't even repay the principal", () => {
+    expect(impliedMonthlyRatePct(base({ termMonths: 10 }), 9_999)).toBeNull();
+    expect(impliedMonthlyRatePct(base(), 0)).toBeNull();
+    expect(scheduleForInstallment(base({ termMonths: 10 }), 9_000)).toBeNull();
+  });
+
+  it("tracks the loan at the bank's installment and still lands on zero", () => {
+    const offer = calculated + 1_000;
+    const input = scheduleForInstallment(taxed, offer)!;
+    expect(input.kind).toBe("annuity");
+    const s = buildSchedule(input);
+    expect(s.rows).toHaveLength(120);
+    expect(s.installment).toBe(offer);
+    expect(s.rows.slice(0, -1).every((r) => r.payment === offer)).toBe(true);
+    expect(s.rows.at(-1)!.remaining).toBe(0);
+    // the last payment only takes up the cents each month rounded away
+    expect(Math.abs(s.rows.at(-1)!.payment - offer)).toBeLessThan(5);
+  });
+
+  it("stays within a lira of the offer once the rate is stored to four places", () => {
+    // loans.monthly_rate_pct is numeric(8, 4)
+    const offer = calculated + 1_000;
+    const input = scheduleForInstallment(taxed, offer)!;
+    const stored = buildSchedule({ ...input, monthlyRatePct: Math.round(input.monthlyRatePct * 1e4) / 1e4 });
+    expect(Math.abs(stored.installment - offer)).toBeLessThan(1);
   });
 });
