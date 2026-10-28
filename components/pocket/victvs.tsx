@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
-import { AddModal, MarkPaidModal, PasteModal, typeBadgeTone } from "@/app/(app)/victvs/page";
+import { AddModal, MarkPaidModal, PasteModal, sessionPatch, typeBadgeTone } from "@/app/(app)/victvs/page";
 import { EmptyState, Skeleton } from "@/components/ui";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { useRepo } from "@/lib/data/provider";
@@ -15,7 +15,7 @@ import {
   useVictvsPayouts,
   useVictvsSessions,
 } from "@/lib/data/queries";
-import { MarkPaidInput, NewVictvsSession } from "@/lib/data/repo";
+import { MarkPaidInput, NewVictvsSession, VictvsSessionPatch } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, VictvsPayout, VictvsSession } from "@/lib/data/types";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
@@ -182,6 +182,7 @@ function VictvsScreen() {
   const [payOpen, setPayOpen] = useState(false);
   const [rangeMonth, setRangeMonth] = useState<string | null>(null);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [editing, setEditing] = useState<VictvsSession | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [payoutsOpen, setPayoutsOpen] = useState(false);
 
@@ -201,6 +202,10 @@ function VictvsScreen() {
 
   const createSessions = useAppMutation((inputs: NewVictvsSession[]) => repo.createVictvsSessions(inputs), [KEYS.victvsSessions]);
   const deleteSession = useAppMutation((id: string) => repo.deleteVictvsSession(id), [KEYS.victvsSessions]);
+  const updateSession = useAppMutation(
+    ({ id, patch }: { id: string; patch: VictvsSessionPatch }) => repo.updateVictvsSession(id, patch),
+    [KEYS.victvsSessions]
+  );
   const deleteSessions = useAppMutation(
     (ids: string[]) => Promise.all(ids.map((id) => repo.deleteVictvsSession(id))).then(() => undefined),
     [KEYS.victvsSessions]
@@ -450,6 +455,14 @@ function VictvsScreen() {
             : sheetSession.status === "paid"
               ? [
                   {
+                    label: t("victvs.editSession"),
+                    icon: "edit",
+                    onSelect: () => {
+                      setEditing(sheetSession);
+                      setSheetFor(null);
+                    },
+                  },
+                  {
                     label: t("victvs.markUnpaid"),
                     icon: "undo",
                     tone: "primary",
@@ -467,6 +480,14 @@ function VictvsScreen() {
                     tone: "primary",
                     onSelect: () => {
                       toggle(sheetSession.id);
+                      setSheetFor(null);
+                    },
+                  },
+                  {
+                    label: t("victvs.editSession"),
+                    icon: "edit",
+                    onSelect: () => {
+                      setEditing(sheetSession);
                       setSheetFor(null);
                     },
                   },
@@ -548,6 +569,20 @@ function VictvsScreen() {
           setAddOpen(false);
         }}
       />
+
+      {editing ? (
+        <AddModal
+          key={editing.id}
+          open
+          defaults={defaults}
+          session={editing}
+          onClose={() => setEditing(null)}
+          onSave={async (input) => {
+            await updateSession.mutateAsync({ id: editing.id, patch: sessionPatch(editing, input) });
+            setEditing(null);
+          }}
+        />
+      ) : null}
 
       <MarkPaidModal
         open={payOpen}

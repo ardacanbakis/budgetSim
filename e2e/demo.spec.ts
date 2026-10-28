@@ -430,6 +430,32 @@ test("victvs v2: month groups, half-month select, new paste formats", async ({ p
   await page.screenshot({ path: "e2e/screenshots/victvs-paste-preview.png" });
 });
 
+test("victvs: a session can be edited after it's created", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  await page.goto("/victvs");
+
+  // an unpaid session: number and amount both change
+  await page.getByRole("button", { name: /all|tümü/i }).first().click();
+  const unpaidRow = page.locator("li").filter({ hasText: /Unpaid|Ödenmedi/ }).first();
+  await unpaidRow.getByRole("button", { name: /edit session|seansı düzenle/i }).click();
+  const dialog = page.locator("form").filter({ has: page.getByLabel(/session no|seans no/i) });
+  await dialog.getByLabel(/session no|seans no/i).fill("99999");
+  await dialog.getByLabel(/amount|tutar/i).fill("123.45");
+  await dialog.getByRole("button", { name: /save|kaydet/i }).click();
+  await expect(dialog).toBeHidden();
+  const edited = page.locator("li").filter({ hasText: "#99999" });
+  await expect(edited).toContainText("123.45");
+
+  // a paid session: its amount is part of a payout, so it's locked
+  const paidRow = page.locator("li").filter({ hasText: /\bPaid\b|\bÖdendi\b/ }).first();
+  if (await paidRow.count()) {
+    await paidRow.getByRole("button", { name: /edit session|seansı düzenle/i }).click();
+    await expect(dialog.getByLabel(/amount|tutar/i)).toBeDisabled();
+    await dialog.getByRole("button", { name: /cancel|iptal/i }).click();
+  }
+});
+
 test("wave10: date format, dashboard nav, quick-add toggle, card payment day", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);

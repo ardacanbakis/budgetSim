@@ -220,6 +220,18 @@ describe("totalDrawn", () => {
   });
 });
 
+describe("selling a fraction of a gram", () => {
+  it("covers the bill in full instead of rounding the gold down to 0.01 g", () => {
+    // ₺1,210 at ₺4,000/g is 0.3025 g; rounding that to 0.30 g once left ₺10
+    // unpaid with 49.7 g still unsold
+    const r = run([account("lira", "TRY", 0), account("gold", "XAU_G", 50)], [rent("lira", 1_210)], 1, {
+      order: ["gold"],
+    });
+    expect(r.months[0].uncovered).toBe(0);
+    expect(r.months[0].sourceBalances.gold).toBeCloseTo(50 - 0.3025, 9);
+  });
+});
+
 describe("routine accounts", () => {
   const lira = account("lira", "TRY", 0);
   const usd = account("usd", "USD", 10_000);
