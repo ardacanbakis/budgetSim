@@ -737,7 +737,7 @@ export const en = {
     net: "Net",
     realTry: "Real TRY (inflation-adjusted)",
     includeLegacy: "Include imported history",
-    includeLegacyHint: "Legacy records carry the date you imported them, not when the money moved — including them piles a whole backlog onto one month.",
+    includeLegacyHint: "Legacy records don't change your balances, but they're money that came in and went out on their dates — count them in the monthly figures here and on the dashboard.",
   },
   debt: {
     totalDebt: "Total debt",
@@ -1760,7 +1760,7 @@ export const tr: Dictionary = {
     net: "Net",
     realTry: "Reel TL (enflasyon düzeltmeli)",
     includeLegacy: "İçe aktarılan geçmişi dahil et",
-    includeLegacyHint: "Geçmiş kayıtlar paranın hareket ettiği tarihi değil, içe aktardığın tarihi taşır — dahil etmek tüm birikimi tek aya yığar.",
+    includeLegacyHint: "Geçmiş kayıtlar bakiyelerini değiştirmez, ama kendi tarihlerinde gelen ve giden paradır — onları burada ve panodaki aylık rakamlarda say.",
   },
   debt: {
     totalDebt: "Toplam borç",

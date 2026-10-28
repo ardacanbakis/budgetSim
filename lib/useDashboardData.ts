@@ -11,6 +11,7 @@ import { sumAmounts } from "@/lib/domain/money";
 import { findDueCardPayments } from "@/lib/domain/purchases";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { REPORT_LEGACY_KEY, useLocalToggle } from "@/lib/prefs";
 
 export interface DashboardData {
   balances: Map<string, number>;
@@ -41,6 +42,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const transactions = useTransactions();
   const victvs = useVictvsSessions();
   const rates = useRates();
+  const includeLegacy = useLocalToggle(REPORT_LEGACY_KEY, true).value;
   const today = todayISO();
 
   const unpaidVictvs = sumAmounts(
@@ -76,9 +78,9 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   }
   const currencyOf = new Map(accounts.data.map((a) => [a.id, a.currency] as const));
   for (const tx of transactions.data) {
-    // legacy = imported history, usually stamped with the import date; it
-    // would pile onto whichever month you happened to import in
-    if (tx.status !== "completed" || tx.legacy) continue;
+    // legacy rows stay out of balances but are real money in and out on their
+    // own dates, so the monthly figures count them unless Reports turns it off
+    if (tx.status !== "completed" || (tx.legacy && !includeLegacy)) continue;
     const income = isIncome(tx, book);
     if (!income && !isSpending(tx, book)) continue;
     const bucket = byMonth.get(tx.dueDate.slice(0, 7));

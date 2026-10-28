@@ -35,6 +35,7 @@ import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, useColumns } from "@/components/columns";
+import { REPORT_LEGACY_KEY, useLocalToggle } from "@/lib/prefs";
 
 /** a key for card payments in the category trends: they have no category of their own */
 const CARD_PAYMENTS = "__card_payments__";
@@ -73,7 +74,7 @@ export default function ReportsPage() {
   const rates = useRates();
 
   const [realTry, setRealTry] = useState(false);
-  const [includeLegacy, setIncludeLegacy] = useState(false);
+  const { value: includeLegacy, setValue: setIncludeLegacy } = useLocalToggle(REPORT_LEGACY_KEY, true);
   // reports default to the two-up grid they already shipped with
   const { columns, setColumns } = useColumns("renovator-cols-reports", 2);
   // category filter: empty = everything; otherwise only the picked categories
@@ -156,10 +157,9 @@ export default function ReportsPage() {
     if (tx.status !== "completed") continue;
     const income = isIncome(tx, book);
     if (!income && !isSpending(tx, book)) continue;
-    // Legacy rows are history you imported, and they carry the date you
-    // imported them rather than when the money moved — a year of back-dated
-    // VICTVS payouts all land in one month and swamp the real figures. Off by
-    // default; the toggle is there when you do want the whole record.
+    // Legacy rows are kept out of balances, not out of history: they're money
+    // that came in and went out on their own dates. On by default; the toggle
+    // (remembered, and shared with the dashboard) takes them out.
     if (tx.legacy && !includeLegacy) continue;
     if (selectedCats.size > 0 && !selectedCats.has(tx.categoryId ?? "")) continue;
     const idx = monthIndex.get(tx.dueDate.slice(0, 7));

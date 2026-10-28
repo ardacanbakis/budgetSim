@@ -822,19 +822,18 @@ test("legacy import: shows in history but never moves net worth", async ({ page 
   await expect(netWorthTile).toHaveText(before);
 });
 
-test("legacy imports stay out of reports, stats and the flow chart", async ({ page }) => {
+test("legacy records count in reports by default, and the choice is remembered", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await enterDemo(page);
 
   const incomeSplit = async () => {
-    await page.goto("/reports");
     await page.waitForTimeout(500);
     return (await page.locator("text=Income sources").locator("../..").textContent()) ?? "";
   };
+  await page.goto("/reports");
   const before = await incomeSplit();
 
-  // a big back-dated import, stamped with today's date and marked legacy —
-  // exactly what a year of VICTVS payouts loaded in one go looks like
+  // a legacy income: kept out of balances, but real money that came in
   await page.goto("/settings");
   await page.getByRole("button", { name: /Data$/ }).click();
   const legacySection = page.locator("text=Past incomes & expenses").locator("../..");
@@ -843,15 +842,19 @@ test("legacy imports stay out of reports, stats and the flow chart", async ({ pa
   await legacySection.getByRole("button", { name: /add legacy record/i }).click();
   await page.waitForTimeout(600);
 
-  // the income split is untouched by it
-  expect(await incomeSplit()).toBe(before);
-
-  // but it is still there when you ask for the whole record (no re-navigation:
-  // the toggle is view state, so reloading would reset it)
-  await page.getByText("Include imported history").click();
-  await page.waitForTimeout(400);
-  const withLegacy = (await page.locator("text=Income sources").locator("../..").textContent()) ?? "";
+  // it shows in the monthly figures without asking
+  await page.goto("/reports");
+  const withLegacy = await incomeSplit();
   expect(withLegacy).not.toBe(before);
+
+  // unticking takes it out, and stays unticked after a reload
+  const toggle = page.getByRole("checkbox", { name: "Include imported history" });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  expect(await incomeSplit()).toBe(before);
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: "Include imported history" })).not.toBeChecked();
+  expect(await incomeSplit()).toBe(before);
 });
 
 test("complete as legacy: planned item completes without moving net worth", async ({ page }) => {
