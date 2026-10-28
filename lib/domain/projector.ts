@@ -1,6 +1,6 @@
 import { Account, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { Currency } from "./currencies";
-import { convert, UsdPerMap } from "./fx";
+import { convert, pairRate, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { buildCardBook } from "./cards";
 import { computeMissingOccurrences } from "./materialize";
@@ -363,11 +363,14 @@ export function projectCashflow(params: {
         const available = balance.get(from) ?? 0;
         if (available <= 0) continue;
         const fromCurrency = sourceCurrency.get(from)!;
-        const needed = convert(owed, short, fromCurrency, rates);
-        if (needed == null || needed <= 0) continue;
-        const take = Math.min(available, needed);
-        const bought = convert(take, fromCurrency, short, rates);
-        if (bought == null || bought <= 0) continue;
+        // the exact rate, not convert(): rounding what's needed to the
+        // source's precision (0.01 g of gold is ₺70) would leave the bill a
+        // few lira short with the rest of the gold still sitting there
+        const rate = pairRate(fromCurrency, short, rates);
+        if (rate == null || rate <= 0) continue;
+        const take = Math.min(available, owed / rate);
+        if (take <= 0) continue;
+        const bought = take === available ? take * rate : owed;
 
         balance.set(from, available - take);
         balance.set(id, (balance.get(id) ?? 0) + bought);

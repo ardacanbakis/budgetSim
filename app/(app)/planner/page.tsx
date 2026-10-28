@@ -835,7 +835,15 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                         </td>
                         <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("dashboard.income")}>{fmt(m.income)}</td>
                         <td className="px-2 py-1.5 text-right" data-label={t("dashboard.expense")}>{fmt(m.expense)}</td>
-                        <td className={`px-2 py-1.5 text-right font-medium ${m.net >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("dashboard.net")}>
+                        {/* a minus month you can still pay for — out of what earlier
+                            months left behind — is a warning, not trouble */}
+                        <td
+                          className={`px-2 py-1.5 text-right font-medium ${
+                            m.net >= 0 ? "text-emerald-600" : isShort(m, shortFloor) ? "text-red-600" : "text-amber-600"
+                          }`}
+                          title={m.net < 0 && !isShort(m, shortFloor) ? t("planner.netCoveredTip") : undefined}
+                          data-label={t("dashboard.net")}
+                        >
                           {m.net >= 0 ? "+" : ""}
                           {fmt(m.net)}
                         </td>
