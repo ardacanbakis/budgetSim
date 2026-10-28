@@ -107,6 +107,9 @@ export interface NewVictvsSession {
   status?: "unpaid" | "paid";
 }
 
+/** The parts of a session that can be changed after it's created. */
+export type VictvsSessionPatch = Partial<Pick<VictvsSession, "date" | "sessionType" | "sessionNo" | "amount" | "notes">>;
+
 export interface MarkPaidInput {
   sessionIds: string[];
   accountId: string;
@@ -221,7 +224,7 @@ export interface Repo {
   createVictvsSessions(inputs: NewVictvsSession[]): Promise<number>;
   updateVictvsSession(
     id: string,
-    patch: Partial<Pick<VictvsSession, "date" | "sessionType" | "amount" | "notes">>
+    patch: VictvsSessionPatch
   ): Promise<void>;
   deleteVictvsSession(id: string): Promise<void>;
   /** mark sessions paid: creates a payout + one aggregated income transaction */

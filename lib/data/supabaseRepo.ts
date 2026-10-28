@@ -17,6 +17,7 @@ import {
   NewTransaction,
   NewTransfer,
   NewVictvsSession,
+  VictvsSessionPatch,
   Repo,
   TemplateBackfill,
 } from "./repo";
@@ -637,11 +638,12 @@ export class SupabaseRepo implements Repo {
 
   async updateVictvsSession(
     id: string,
-    patch: Partial<Pick<VictvsSession, "date" | "sessionType" | "amount" | "notes">>
+    patch: VictvsSessionPatch
   ): Promise<void> {
     const row: Row = {};
     if (patch.date != null) row.date = patch.date;
     if (patch.sessionType != null) row.session_type = patch.sessionType;
+    if (patch.sessionNo != null) row.session_no = patch.sessionNo;
     if (patch.amount != null) row.amount = patch.amount;
     if (patch.notes != null) row.notes = patch.notes;
     const { error } = await this.db.from("victvs_sessions").update(row).eq("id", id);

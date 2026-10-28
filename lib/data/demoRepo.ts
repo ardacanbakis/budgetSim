@@ -17,6 +17,7 @@ import {
   NewTransaction,
   NewTransfer,
   NewVictvsSession,
+  VictvsSessionPatch,
   Repo,
   TemplateBackfill,
 } from "./repo";
@@ -479,7 +480,7 @@ export class DemoRepo implements Repo {
 
   async updateVictvsSession(
     id: string,
-    patch: Partial<Pick<VictvsSession, "date" | "sessionType" | "amount" | "notes">>
+    patch: VictvsSessionPatch
   ): Promise<void> {
     const session = this.store.victvsSessions.find((s) => s.id === id);
     if (session) Object.assign(session, patch);

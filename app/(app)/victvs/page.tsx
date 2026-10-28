@@ -14,7 +14,7 @@ import {
   useVictvsPayouts,
   useVictvsSessions,
 } from "@/lib/data/queries";
-import { MarkPaidInput, NewVictvsSession } from "@/lib/data/repo";
+import { MarkPaidInput, NewVictvsSession, VictvsSessionPatch } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, VictvsSession, victvsTypeList } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
@@ -71,10 +71,15 @@ function VictvsPage() {
   const [latestFirst, setLatestFirst] = useState(true);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<VictvsSession | null>(null);
   const [payOpen, setPayOpen] = useState(false);
 
   const createSessions = useAppMutation((inputs: NewVictvsSession[]) => repo.createVictvsSessions(inputs), [KEYS.victvsSessions]);
   const deleteSession = useAppMutation((id: string) => repo.deleteVictvsSession(id), [KEYS.victvsSessions]);
+  const updateSession = useAppMutation(
+    ({ id, patch }: { id: string; patch: VictvsSessionPatch }) => repo.updateVictvsSession(id, patch),
+    [KEYS.victvsSessions]
+  );
   const deleteSessions = useAppMutation(
     (ids: string[]) => Promise.all(ids.map((id) => repo.deleteVictvsSession(id))).then(() => undefined),
     [KEYS.victvsSessions]
@@ -313,7 +318,14 @@ function VictvsPage() {
                         {monthCollapsed ? null : (
                           <ul className="divide-y divide-[var(--edge-soft)]">
                             {items.map((s) => (
-                              <SessionRow key={s.id} session={s} selected={selected.has(s.id)} onToggle={() => toggle(s.id)} onDelete={() => deleteSession.mutate(s.id)} />
+                              <SessionRow
+                                key={s.id}
+                                session={s}
+                                selected={selected.has(s.id)}
+                                onToggle={() => toggle(s.id)}
+                                onEdit={() => setEditing(s)}
+                                onDelete={() => deleteSession.mutate(s.id)}
+                              />
                             ))}
                           </ul>
                         )}
@@ -404,6 +416,20 @@ function VictvsPage() {
         }}
       />
 
+      {editing ? (
+        <AddModal
+          key={editing.id}
+          open
+          defaults={defaults}
+          session={editing}
+          onClose={() => setEditing(null)}
+          onSave={async (input) => {
+            await updateSession.mutateAsync({ id: editing.id, patch: sessionPatch(editing, input) });
+            setEditing(null);
+          }}
+        />
+      ) : null}
+
       <MarkPaidModal
         open={payOpen}
         onClose={() => setPayOpen(false)}
@@ -432,11 +458,13 @@ function SessionRow({
   session,
   selected,
   onToggle,
+  onEdit,
   onDelete,
 }: {
   session: VictvsSession;
   selected: boolean;
   onToggle: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const { t, locale } = useI18n();
@@ -454,6 +482,9 @@ function SessionRow({
         <div className="mt-0.5 text-xs text-zinc-500">{fmtDate(session.date)}</div>
       </div>
       <div className="text-sm font-semibold text-green-600 tabular-nums">{formatAmount(session.amount, "USD", locale)}</div>
+      <Button variant="ghost" aria-label={t("victvs.editSession")} onClick={onEdit}>
+        ✎
+      </Button>
       {unpaid ? (
         <Button variant="ghost" aria-label={t("common.delete")} onClick={() => window.confirm(t("common.confirmDelete")) && onDelete()}>
           ✕
@@ -615,28 +646,49 @@ export function PasteModal({
   );
 }
 
+/** What an edit changed — a paid session keeps the amount its payout was made of. */
+export function sessionPatch(session: VictvsSession, input: NewVictvsSession): VictvsSessionPatch {
+  return {
+    date: input.date,
+    sessionType: input.sessionType,
+    sessionNo: input.sessionNo ?? "",
+    ...(session.status === "paid" ? {} : { amount: input.amount }),
+  };
+}
+
+/**
+ * Adds a session, or — given `session` — edits one. A paid session's amount
+ * is locked: it's already part of a payout that landed in an account, so
+ * changing it means marking it unpaid first. Remount it (key) per session so
+ * the fields start from that session.
+ */
 export function AddModal({
   open,
   defaults,
+  session,
   onClose,
   onSave,
 }: {
   open: boolean;
   defaults: Record<string, number>;
+  session?: VictvsSession;
   onClose: () => void;
   onSave: (input: NewVictvsSession) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [date, setDate] = useState(todayISO());
-  const [sessionType, setSessionType] = useState<string>("IWCF");
-  const [sessionNo, setSessionNo] = useState("");
-  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(session?.date ?? todayISO());
+  const [sessionType, setSessionType] = useState<string>(session?.sessionType ?? "IWCF");
+  const [sessionNo, setSessionNo] = useState(session?.sessionNo ?? "");
+  const [amount, setAmount] = useState(session ? String(session.amount) : "");
   const [saving, setSaving] = useState(false);
+  const amountLocked = session?.status === "paid";
 
   const effectiveAmount = amount === "" ? String(defaults[sessionType] ?? "") : amount;
+  const types = victvsTypeList(defaults);
+  if (session && session.sessionType && !types.includes(session.sessionType)) types.push(session.sessionType);
 
   return (
-    <Modal open={open} onClose={onClose} title={t("victvs.addSession")}>
+    <Modal open={open} onClose={onClose} title={session ? t("victvs.editSession") : t("victvs.addSession")}>
       <form
         className="space-y-3"
         onSubmit={async (e) => {
@@ -644,9 +696,11 @@ export function AddModal({
           if (saving) return; // double-Enter guard
           setSaving(true);
           try {
-            await onSave({ date, sessionType, sessionNo, amount: Number(effectiveAmount), source: "manual" });
-            setSessionNo("");
-            setAmount("");
+            await onSave({ date, sessionType, sessionNo, amount: Number(effectiveAmount), source: session?.source ?? "manual" });
+            if (!session) {
+              setSessionNo("");
+              setAmount("");
+            }
           } finally {
             setSaving(false);
           }
@@ -661,10 +715,10 @@ export function AddModal({
               value={sessionType}
               onChange={(e) => {
                 setSessionType(e.target.value);
-                setAmount("");
+                if (!amountLocked) setAmount("");
               }}
             >
-              {victvsTypeList(defaults).map((type) => (
+              {types.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
@@ -676,8 +730,17 @@ export function AddModal({
           <Field label={t("victvs.sessionNo")}>
             <Input value={sessionNo} onChange={(e) => setSessionNo(e.target.value)} placeholder="37324" className="font-mono" />
           </Field>
-          <Field label={`${t("common.amount")} (USD)`}>
-            <Input type="number" step="any" min="0" required inputMode="decimal" value={effectiveAmount} onChange={(e) => setAmount(e.target.value)} />
+          <Field label={`${t("common.amount")} (USD)`} hint={amountLocked ? t("victvs.paidAmountLocked") : undefined}>
+            <Input
+              type="number"
+              step="any"
+              min="0"
+              required
+              inputMode="decimal"
+              value={effectiveAmount}
+              disabled={amountLocked}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </Field>
         </div>
         <div className="flex justify-end gap-2">
