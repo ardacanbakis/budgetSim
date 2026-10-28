@@ -223,7 +223,9 @@ test.describe("Pocket: swiping a row", () => {
 
   /** a sideways drag across a row, starting `from` px in from its left edge; the finger stays down */
   async function dragRow(page: Page, row: ReturnType<Page["locator"]>, from: number, dx: number) {
-    await row.scrollIntoViewIfNeeded();
+    // to the middle, not just "in view": a row at the bottom edge sits under
+    // the fixed tab bar, and the swipe would land on the bar instead
+    await row.evaluate((el) => el.scrollIntoView({ block: "center" }));
     const box = (await row.boundingBox())!;
     const f = await finger(page);
     await f.drag(box.x + from, box.y + box.height / 2, dx, 0, 10);

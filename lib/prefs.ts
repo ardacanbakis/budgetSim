@@ -89,5 +89,12 @@ export const RECURRING_DIRECTION_FILTER_KEY = "renovator-recurring-direction";
 /** Below this many lira, a month's shortfall is rounding rather than trouble. */
 export const SHORT_THRESHOLD_KEY = "renovator-short-threshold";
 
+/**
+ * Count legacy rows in the monthly figures (Reports, the dashboard's monthly
+ * cashflow). They never touch balances, but they're money that really came in
+ * and went out on those dates, so reading the past includes them by default.
+ */
+export const REPORT_LEGACY_KEY = "renovator-report-legacy";
+
 /** Collapse every year but the current one when a history list first opens. */
 export const COLLAPSE_HISTORY_KEY = "renovator-collapse-history";

@@ -835,13 +835,26 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                         </td>
                         <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("dashboard.income")}>{fmt(m.income)}</td>
                         <td className="px-2 py-1.5 text-right" data-label={t("dashboard.expense")}>{fmt(m.expense)}</td>
-                        {/* a minus month you can still pay for — out of what earlier
-                            months left behind — is a warning, not trouble */}
+                        {/* a minus month paid out of routine accounts — what earlier
+                            months left behind — is a warning; one that goes unpaid or
+                            dips into savings you didn't mark routine is trouble */}
                         <td
                           className={`px-2 py-1.5 text-right font-medium ${
-                            m.net >= 0 ? "text-emerald-600" : isShort(m, shortFloor) ? "text-red-600" : "text-amber-600"
+                            m.net >= 0
+                              ? "text-emerald-600"
+                              : isShort(m, shortFloor) || soldFromReserve(m)
+                                ? "text-red-600"
+                                : "text-amber-600"
                           }`}
-                          title={m.net < 0 && !isShort(m, shortFloor) ? t("planner.netCoveredTip") : undefined}
+                          title={
+                            m.net >= 0
+                              ? undefined
+                              : isShort(m, shortFloor)
+                                ? t("planner.shortTip")
+                                : soldFromReserve(m)
+                                  ? t("planner.netReserveTip")
+                                  : t("planner.netCoveredTip")
+                          }
                           data-label={t("dashboard.net")}
                         >
                           {m.net >= 0 ? "+" : ""}

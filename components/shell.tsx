@@ -223,8 +223,19 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
     });
   }
 
+  // the shortcut handler is registered once, so it reads the current sidebar
+  // order (which Settings can change) through a ref
+  const navHrefs = useRef<string[]>([]);
+  const paletteOpenRef = useRef(false);
+  const navKey = nav.map((item) => item.href).join(" ");
+  useEffect(() => {
+    navHrefs.current = navKey.split(" ");
+    paletteOpenRef.current = paletteOpen;
+  }, [navKey, paletteOpen]);
+
   // desktop shortcuts: ⌘K/Ctrl-K opens the quick jump from anywhere (including
-  // mid-field, which is the point of it); n = new transaction, t = transfer
+  // mid-field, which is the point of it); n = new transaction, t = transfer,
+  // 1–9 = the sidebar's pages in its order, [ = collapse/expand the sidebar
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -235,17 +246,28 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      // not while a form or the quick jump is open over the page
+      if (paletteOpenRef.current || document.querySelector("[data-modal]")) return;
       if (e.key === "n") {
         e.preventDefault();
         setQuickTx(true);
       } else if (e.key === "t") {
         e.preventDefault();
         setQuickTransfer(true);
+      } else if (e.key === "[") {
+        e.preventDefault();
+        toggleRail();
+      } else if (/^[1-9]$/.test(e.key)) {
+        const href = navHrefs.current[Number(e.key) - 1];
+        if (href) {
+          e.preventDefault();
+          router.push(href);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [router]);
 
   const isDemo = session.status === "ready" && session.repo.mode === "demo";
   // floating quick-add is shown unless the user turned it off in Settings (null = shown)
@@ -268,11 +290,28 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
 
       <div className="flex w-full">
         {/* sidebar — desktop & ultrawide */}
+        {/* a click on any empty part of the sidebar collapses or expands it */}
         <aside
-          className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[var(--edge)] py-4 md:flex ${
+          data-sidebar
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest("a, button")) return;
+            toggleRail();
+          }}
+          className={`sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-[var(--edge)] py-4 md:flex ${
             railed ? "w-16 px-2" : "w-56 px-3"
           }`}
         >
+          {/* the collapse handle sits on the edge, halfway down, where the
+              pointer already is whichever page you're on */}
+          <button
+            onClick={toggleRail}
+            aria-label={railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+            aria-expanded={!railed}
+            title={`${railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")} ([)`}
+            className="absolute top-1/2 -right-3 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--edge)] bg-[var(--surface)] text-xs text-zinc-500 shadow-sm hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            {railed ? "›" : "‹"}
+          </button>
           <Link
             href="/welcome"
             className={`mb-6 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400 ${
@@ -283,18 +322,20 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             {railed ? "B" : "BudgetSim"}
           </Link>
           <nav className="flex flex-1 flex-col gap-1">
-            {nav.map((item) => {
+            {nav.map((item, i) => {
               const active = pathname === item.href;
+              // the first nine have a number key, shown on hover
+              const key = i < 9 ? String(i + 1) : null;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  title={railed ? t(item.key) : undefined}
+                  title={railed ? (key ? `${t(item.key)} (${key})` : t(item.key)) : undefined}
                   className={`flex items-center rounded-lg text-sm font-medium transition-colors ${
                     // v2 pays the nav from the same density token as everything
                     // else, so Terminal's rows are tight and Calm's are roomy
                     v2 ? "py-[var(--ui-row-py)]" : "py-2"
-                  } ${railed ? "justify-center px-0" : "gap-2.5 px-2.5"} ${
+                  } group ${railed ? "justify-center px-0" : "gap-2.5 px-2.5"} ${
                     active
                       ? v2
                         ? "bg-teal-50 text-teal-700 shadow-[inset_2px_0_0_0_var(--color-teal-600)] dark:bg-teal-950 dark:text-teal-300"
@@ -304,20 +345,18 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                 >
                   <span className="w-4 text-center">{item.icon}</span>
                   {railed ? <span className="sr-only">{t(item.key)}</span> : t(item.key)}
+                  {!railed && key ? (
+                    <kbd
+                      aria-hidden
+                      className="ml-auto rounded border border-[var(--edge)] px-1 font-sans text-[10px] leading-4 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      {key}
+                    </kbd>
+                  ) : null}
                 </Link>
               );
             })}
           </nav>
-          <button
-            onClick={toggleRail}
-            aria-label={railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
-            title={railed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
-            className={`rounded-lg py-2 text-sm text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-              railed ? "text-center" : "px-2.5 text-left"
-            }`}
-          >
-            {railed ? "»" : `« ${t("nav.collapseSidebar")}`}
-          </button>
           <button
             onClick={() => signOut().then(() => router.replace("/login"))}
             title={railed ? t("nav.logout") : undefined}
