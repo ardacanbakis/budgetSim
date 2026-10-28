@@ -68,7 +68,7 @@ export const en = {
     settings: "Settings",
     logout: "Log out",
     more: "More",
-    collapseSidebar: "Collapse",
+    collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
   },
   welcome: {
@@ -1091,7 +1091,7 @@ export const tr: Dictionary = {
     settings: "Ayarlar",
     logout: "Çıkış",
     more: "Daha",
-    collapseSidebar: "Daralt",
+    collapseSidebar: "Kenar çubuğunu daralt",
     expandSidebar: "Kenar çubuğunu genişlet",
   },
   welcome: {

@@ -2214,3 +2214,39 @@ test("dates: a date field takes typed days and month names, and still has a cale
   });
   expect(saved).toBe(`${year}-10-17`);
 });
+
+test("sidebar: middle handle, empty-space click and number-key shortcuts", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enterDemo(page);
+  const sidebar = page.locator("aside[data-sidebar]");
+  const width = async () => (await sidebar.boundingBox())!.width;
+  const wide = await width();
+
+  // the handle sits halfway down the sidebar's edge
+  const handle = sidebar.getByRole("button", { name: /collapse sidebar|kenar çubuğunu daralt/i });
+  const hb = (await handle.boundingBox())!;
+  const sb = (await sidebar.boundingBox())!;
+  expect(Math.abs(hb.y + hb.height / 2 - (sb.y + sb.height / 2))).toBeLessThan(4);
+  await handle.click();
+  await expect.poll(width).toBeLessThan(wide);
+
+  // a click on empty space below the links expands it again
+  await page.mouse.click(sb.x + 20, sb.y + sb.height - 80);
+  await expect.poll(width).toBe(wide);
+
+  // [ toggles, and the number keys follow the sidebar's order
+  await page.keyboard.press("[");
+  await expect.poll(width).toBeLessThan(wide);
+  await page.keyboard.press("[");
+  await expect.poll(width).toBe(wide);
+  const hrefs = await sidebar.locator("nav a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  await page.keyboard.press("2");
+  await expect(page).toHaveURL(new RegExp(`${hrefs[1]}$`));
+  await page.keyboard.press("1");
+  await expect(page).toHaveURL(new RegExp(`${hrefs[0] === "/" ? "/" : hrefs[0]}$`));
+
+  // typing into a field never navigates
+  await page.keyboard.press("n");
+  await page.keyboard.press("3");
+  await expect(page).toHaveURL(new RegExp(`${hrefs[0] === "/" ? "/" : hrefs[0]}$`));
+});
