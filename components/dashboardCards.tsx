@@ -7,8 +7,9 @@ import { Money, Section } from "@/components/pocket/kit";
 import { AmountPhrase, PaceBar } from "@/components/pocket/paceBar";
 import { Card, CardHeader, Spinner } from "@/components/ui";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
+import { ChangeLine } from "@/components/history";
 import { useApp } from "@/lib/data/provider";
-import { useLoans, useRates, useSnapshots, useTemplates } from "@/lib/data/queries";
+import { useActivity, useLoans, useRates, useSnapshots, useTemplates } from "@/lib/data/queries";
 import { Account } from "@/lib/data/types";
 import { chargeAmount } from "@/lib/domain/cards";
 import { computeDebtOverview } from "@/lib/domain/debt";
@@ -39,7 +40,7 @@ import { useFormatDate } from "@/lib/useFormatDate";
 
 export type OptionalCardId = Extract<
   CardId,
-  "this-month" | "card-statements" | "trend" | "debt" | "commitments" | "recent" | "victvs-outlook"
+  "this-month" | "card-statements" | "trend" | "debt" | "commitments" | "recent" | "changes" | "victvs-outlook"
 >;
 
 export const OPTIONAL_CARDS: readonly OptionalCardId[] = [
@@ -49,6 +50,7 @@ export const OPTIONAL_CARDS: readonly OptionalCardId[] = [
   "debt",
   "commitments",
   "recent",
+  "changes",
   "victvs-outlook",
 ];
 
@@ -83,6 +85,8 @@ export function OptionalCard({
         return <CommitmentsBody d={d} />;
       case "recent":
         return <RecentBody d={d} />;
+      case "changes":
+        return <ChangesBody />;
       case "victvs-outlook":
         return <VictvsOutlookBody />;
     }
@@ -433,6 +437,23 @@ function CommitmentsBody({ d }: { d: DashboardData }) {
 }
 
 /* ---------------------------------------------------------------- recent */
+
+/** The last five changes to anything (lib/data/activityLog.ts). */
+function ChangesBody() {
+  const { t } = useI18n();
+  const activity = useActivity();
+  const entries = (activity.data ?? []).slice(0, 5);
+  if (entries.length === 0) return <p className="text-sm text-zinc-500">{t("history.empty")}</p>;
+  return (
+    <ul className="space-y-2">
+      {entries.map((e) => (
+        <li key={e.id}>
+          <ChangeLine entry={e} />
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function RecentBody({ d }: { d: DashboardData }) {
   const { t, locale } = useI18n();

@@ -201,6 +201,44 @@ export interface Goal {
   createdAt: string;
 }
 
+export type ActivityEntity = "account" | "transaction" | "template" | "purchase" | "loan" | "victvs" | "backup";
+
+export type ActivityAction =
+  | "created"
+  | "edited"
+  | "deleted"
+  | "completed"
+  | "autoCompleted"
+  | "reopened"
+  | "legacy"
+  | "unlegacy"
+  | "archived"
+  | "restored"
+  | "adjusted"
+  | "paid"
+  | "unpaid"
+  | "reflected"
+  | "unreflected";
+
+/**
+ * One change to your data: what it was about, what was done, and the fields
+ * it changed as [before, after]. Money movements tell their own story; this
+ * is everything else (an edit, a delete, holdings changed, a payment done).
+ */
+export interface ActivityEntry {
+  id: string;
+  /** ISO timestamp */
+  at: string;
+  entityType: ActivityEntity;
+  entityId: string;
+  /** the account it touched, so an account's history can show it */
+  accountId: string | null;
+  action: ActivityAction;
+  /** the item's name or description at the time */
+  summary: string;
+  changes: Record<string, [unknown, unknown]>;
+}
+
 export interface NetWorthSnapshot {
   id: string;
   /** yyyy-mm-dd; unique per month per user */

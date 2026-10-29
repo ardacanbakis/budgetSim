@@ -37,6 +37,7 @@ import {
 } from "@/lib/ui/style";
 import { AuthIdentity, authChange } from "./authSession";
 import { DemoRepo } from "./demoRepo";
+import { withActivityLog } from "./activityLog";
 import { Repo } from "./repo";
 import { SupabaseRepo } from "./supabaseRepo";
 
@@ -177,7 +178,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     const inDemo = () => window.localStorage.getItem(MODE_KEY) === "demo";
-    if (inDemo()) queueMicrotask(() => setSession({ status: "ready", repo: new DemoRepo(), email: null }));
+    if (inDemo()) queueMicrotask(() => setSession({ status: "ready", repo: withActivityLog(new DemoRepo()), email: null }));
     if (!supabaseConfigured()) {
       if (!inDemo()) queueMicrotask(() => setSession({ status: "signedOut", supabaseAvailable: false }));
       return;
@@ -199,7 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!first) queryClient.clear();
       setSession(
         next.userId
-          ? { status: "ready", repo: new SupabaseRepo(supabase, next.userId), email }
+          ? { status: "ready", repo: withActivityLog(new SupabaseRepo(supabase, next.userId)), email }
           : { status: "signedOut", supabaseAvailable: true }
       );
     };
@@ -218,7 +219,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const enterDemo = useCallback(() => {
     window.localStorage.setItem(MODE_KEY, "demo");
-    setSession({ status: "ready", repo: new DemoRepo(), email: null });
+    setSession({ status: "ready", repo: withActivityLog(new DemoRepo()), email: null });
     queryClient.clear();
   }, [queryClient]);
 
@@ -236,7 +237,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (session.status === "ready" && session.repo.mode === "demo") {
       await session.repo.deleteAllData();
       queryClient.clear();
-      setSession({ status: "ready", repo: new DemoRepo(), email: null });
+      setSession({ status: "ready", repo: withActivityLog(new DemoRepo()), email: null });
     }
   }, [session, queryClient]);
 

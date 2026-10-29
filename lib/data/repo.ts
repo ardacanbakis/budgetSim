@@ -3,6 +3,7 @@ import { FxSnapshot } from "@/lib/domain/fx";
 import { BackfillMode } from "@/lib/domain/materialize";
 import {
   Account,
+  ActivityEntry,
   AccountKind,
   Budget,
   Category,
@@ -263,6 +264,11 @@ export interface Repo {
   createLoan(input: NewLoan): Promise<Loan>;
   deleteLoan(id: string): Promise<void>;
 
+  /** what changed and when, newest first (see ActivityEntry) */
+  listActivity(): Promise<ActivityEntry[]>;
+  /** record changes; the logging layer (lib/data/activityLog.ts) calls this */
+  appendActivity(entries: Omit<ActivityEntry, "id">[]): Promise<void>;
+
   /** wipe all data for this user/sandbox (demo reset & "delete my data") */
   deleteAllData(): Promise<void>;
 
@@ -287,6 +293,8 @@ export interface BackupFile {
   budgets: Budget[];
   goals: Goal[];
   snapshots: NetWorthSnapshot[];
+  /** the change history; absent in backups made before it existed */
+  activity?: ActivityEntry[];
 }
 
 export function isBackupFile(data: unknown): data is BackupFile {

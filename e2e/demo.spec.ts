@@ -2506,3 +2506,37 @@ test("big purchases: details edit the name, and the grid takes one, two or three
   await columns.getByRole("button", { name: "1", exact: true }).click();
   await expect(grid).not.toHaveClass(/grid-cols-2/);
 });
+
+test("history: an account's edits and deletions show where they happened, and in Settings → History", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+
+  // money rows say the balance they left
+  const recent = page.locator("[data-recent-changes]");
+  await expect(recent.locator("[data-money-row]").first()).toContainText(/balance ₺/);
+
+  // an edit to the opening balance is recorded with before → after
+  await page.getByRole("button", { name: /^edit$|^düzenle$/i }).first().click();
+  const opening = page.getByLabel(/opening balance|açılış bakiyesi/i);
+  const before = await opening.inputValue();
+  await opening.fill(String(Number(before) + 1000));
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect(recent.locator("[data-change=edited]").first()).toContainText("Edited · Ziraat TRY");
+  await expect(recent.locator("[data-change=edited]").first()).toContainText("Opening balance");
+  await expect(page.locator("[data-last-change]").first()).toBeVisible();
+
+  // deleting a row from the account's own history is recorded too
+  const row = page.locator("li").filter({ hasText: "Weekly market" }).filter({ has: page.getByRole("button", { name: "Delete" }) }).first();
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Delete" }).click();
+  await expect(recent.locator("[data-change=deleted]").first()).toContainText("Deleted · Weekly market");
+
+  await page.goto("/settings?tab=history");
+  const list = page.locator("[data-history-list]");
+  await expect(list).toContainText("Edited · Ziraat TRY");
+  await expect(list).toContainText("Deleted · Weekly market");
+  await page.getByLabel("Type").selectOption("account");
+  await expect(list).not.toContainText("Weekly market");
+});

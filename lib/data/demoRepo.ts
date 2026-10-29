@@ -27,6 +27,7 @@ import { buildDemoSeed, DemoStore } from "./demoSeed";
 import { buildSchedule } from "@/lib/domain/loanSchedule";
 import {
   Account,
+  ActivityEntry,
   Budget,
   Category,
   Goal,
@@ -783,6 +784,17 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
+  async listActivity(): Promise<ActivityEntry[]> {
+    return copy([...(this.store.activity ?? [])].reverse());
+  }
+
+  async appendActivity(entries: Omit<ActivityEntry, "id">[]): Promise<void> {
+    if (entries.length === 0) return;
+    // a sandbox in localStorage: the latest thousand are plenty
+    this.store.activity = [...(this.store.activity ?? []), ...entries.map((e) => ({ ...e, id: uuid() }))].slice(-1000);
+    this.save();
+  }
+
   async deleteAllData(): Promise<void> {
     if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
     this.store = load();
@@ -804,6 +816,7 @@ export class DemoRepo implements Repo {
       budgets: this.store.budgets,
       goals: this.store.goals,
       snapshots: this.store.snapshots,
+      activity: this.store.activity ?? [],
     };
   }
 
@@ -821,6 +834,8 @@ export class DemoRepo implements Repo {
       goals: backup.goals ?? [],
       snapshots: backup.snapshots ?? [],
       settings: this.store.settings,
+      // the backup lists it newest first, as listActivity does; kept oldest first here
+      activity: [...(backup.activity ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
     };
     this.save();
   }

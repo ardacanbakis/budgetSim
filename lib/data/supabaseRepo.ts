@@ -23,6 +23,7 @@ import {
 } from "./repo";
 import {
   Account,
+  ActivityEntry,
   Budget,
   Category,
   Goal,
@@ -1061,16 +1062,51 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  async listActivity(): Promise<ActivityEntry[]> {
+    const { data, error } = await this.db.from("activity_log").select("*").order("at", { ascending: false }).limit(2000);
+    // migration 0018 not run yet: no history, and nothing else depends on it
+    if (error) return [];
+    return (data ?? []).map((r) => ({
+      id: r.id,
+      at: r.at,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      accountId: r.account_id ?? null,
+      action: r.action,
+      summary: r.summary ?? "",
+      changes: r.changes ?? {},
+    }));
+  }
+
+  async appendActivity(entries: Omit<ActivityEntry, "id">[]): Promise<void> {
+    if (!entries.length) return;
+    const { error } = await this.db.from("activity_log").insert(
+      entries.map((e) => ({
+        user_id: this.userId,
+        at: e.at,
+        entity_type: e.entityType,
+        entity_id: e.entityId,
+        account_id: e.accountId,
+        action: e.action,
+        summary: e.summary,
+        changes: e.changes,
+      }))
+    );
+    throwIf(error);
+  }
+
   async deleteAllData(): Promise<void> {
     // FK cascades wipe dependents when accounts go; clear the rest explicitly.
     for (const table of ["transactions", "purchases", "budgets", "goals", "net_worth_snapshots", "victvs_sessions", "victvs_payouts", "loans", "recurring_templates", "accounts", "categories", "user_settings"]) {
       const { error } = await this.db.from(table).delete().eq("user_id", this.userId);
       throwIf(error);
     }
+    // the history goes too; a database without migration 0018 has none to clear
+    await this.db.from("activity_log").delete().eq("user_id", this.userId);
   }
 
   async exportAll(): Promise<BackupFile> {
-    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots] =
+    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity] =
       await Promise.all([
         this.listAccounts(),
         this.listCategories(),
@@ -1083,6 +1119,7 @@ export class SupabaseRepo implements Repo {
         this.listBudgets(),
         this.listGoals(),
         this.listSnapshots(),
+        this.listActivity(),
       ]);
     return {
       app: "renovator",
@@ -1099,6 +1136,7 @@ export class SupabaseRepo implements Repo {
       budgets,
       goals,
       snapshots,
+      activity,
     };
   }
 
@@ -1189,5 +1227,14 @@ export class SupabaseRepo implements Repo {
     await insert("budgets", backup.budgets.map((b) => ({ id: b.id, user_id: u, category_id: b.categoryId, monthly_limit: b.monthlyLimit, currency: b.currency })));
     await insert("goals", backup.goals.map((g) => ({ id: g.id, user_id: u, name: g.name, account_id: g.accountId, target_amount: g.targetAmount, target_date: g.targetDate, created_at: g.createdAt })));
     await insert("net_worth_snapshots", backup.snapshots.map((s) => ({ id: s.id, user_id: u, snapshot_date: s.snapshotDate, balances: s.balances, usd_per: s.usdPer, total_usd: s.totalUsd })));
+    // history last, and best effort: a database without migration 0018 restores everything else
+    if (backup.activity?.length) {
+      await this.db.from("activity_log").insert(
+        backup.activity.map((e) => ({
+          id: e.id, user_id: u, at: e.at, entity_type: e.entityType, entity_id: e.entityId,
+          account_id: e.accountId, action: e.action, summary: e.summary, changes: e.changes,
+        }))
+      );
+    }
   }
 }

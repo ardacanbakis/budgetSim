@@ -30,6 +30,9 @@ import { ViewSwitcher } from "@/components/viewSwitcher";
 import { useSurfaceView } from "@/lib/ui/useViews";
 import { useLocalToggle } from "@/lib/prefs";
 import { pocketable } from "@/components/pocket/pocketable";
+import { RecentChanges, useLastChange } from "@/components/history";
+import { CompleteModal, EditModal } from "@/components/txModals";
+import { snapshotFromTable } from "@/lib/domain/fx";
 
 const PocketPortfolio = dynamic(() => import("@/components/pocket/portfolio").then((m) => m.PocketPortfolio), {
   ssr: false,
@@ -89,6 +92,10 @@ function PortfolioScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [latestFirst, setLatestFirst] = useState(true);
   const [adjusting, setAdjusting] = useState(false);
+  // a row of the account's history being edited or completed
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [completingTx, setCompletingTx] = useState<Transaction | null>(null);
+  const lastChangeOf = useLastChange();
 
   const createAccount = useAppMutation((input: NewAccount) => repo.createAccount(input), [KEYS.accounts]);
   const updateAccount = useAppMutation(
@@ -96,6 +103,17 @@ function PortfolioScreen() {
     [KEYS.accounts, KEYS.transactions]
   );
   const deleteAccount = useAppMutation((id: string) => repo.deleteAccount(id), [KEYS.accounts, KEYS.transactions]);
+  const txKeys = [KEYS.transactions, KEYS.accounts];
+  const updateTx = useAppMutation(
+    (v: { id: string; patch: Parameters<typeof repo.updateTransaction>[1] }) => repo.updateTransaction(v.id, v.patch),
+    txKeys
+  );
+  const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), txKeys);
+  const completeTx = useAppMutation(
+    (v: { id: string; amount?: number; legacy?: boolean }) =>
+      repo.completeTransaction(v.id, snapshotFromTable(rates.data!), v.amount, v.legacy),
+    txKeys
+  );
 
   const balances = useMemo(
     () =>
@@ -199,11 +217,20 @@ function PortfolioScreen() {
           active ? "bg-teal-50 ring-1 ring-teal-500/40 dark:bg-teal-950" : "hover:bg-[var(--edge-soft)]"
         }`}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-2">
           <span className="text-base">{isCard ? "💳" : account.kind === "crypto" ? "₿" : account.kind === "gold" ? "🪙" : "🏦"}</span>
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{account.name}</span>
             <span className="block truncate text-[11px] text-zinc-400">{unitLabel(account)}</span>
+            {(() => {
+              const last = lastChangeOf(account, balance);
+              // w-0 + min-w-full: as wide as the row allows, never wider (a long line can't stretch the page)
+              return last ? (
+                <span className="block w-0 min-w-full truncate text-[11px] text-zinc-400" data-last-change>
+                  {last}
+                </span>
+              ) : null;
+            })()}
           </span>
         </span>
         <span className="text-right">
@@ -339,7 +366,7 @@ function PortfolioScreen() {
     const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
     const income = tx.direction === "income";
     return (
-      <li key={tx.id} className={`flex items-center gap-3 px-4 py-2 ${tx.status === "planned" ? "opacity-70" : ""}`}>
+      <li key={tx.id} className={`flex flex-wrap items-center gap-x-3 px-4 py-2 sm:flex-nowrap ${tx.status === "planned" ? "opacity-70" : ""}`}>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm">{tx.description || category?.name || (tx.transferGroupId ? t("tx.transfer") : "—")}</span>
@@ -353,6 +380,26 @@ function PortfolioScreen() {
         <span className={`text-sm font-semibold tabular-nums ${income ? "text-green-600" : "text-red-600"}`}>
           {income ? "+" : "−"}
           {formatAmount(tx.amount, selected.currency, locale)}
+        </span>
+        {/* not read-only any more: what's wrong in an account's history is fixed where it's seen */}
+        <span className="flex w-full shrink-0 justify-end gap-0.5 sm:w-auto">
+          {tx.status === "planned" ? (
+            <Button variant="ghost" title={t("tx.complete")} aria-label={t("tx.complete")} disabled={!rates.data} onClick={() => setCompletingTx(tx)}>
+              ✓
+            </Button>
+          ) : null}
+          {!tx.transferGroupId ? (
+            <Button variant="ghost" title={t("tx.editTitle")} aria-label={t("tx.editTitle")} onClick={() => setEditingTx(tx)}>
+              ✎
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            aria-label={t("common.delete")}
+            onClick={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(tx.id)}
+          >
+            ✕
+          </Button>
         </span>
       </li>
     );
@@ -590,6 +637,8 @@ function PortfolioScreen() {
                 </div>
               ) : null}
 
+              <RecentChanges account={selected} balanceNow={balances.get(selected.id) ?? 0} />
+
               <div className="flex items-center justify-between px-4 pt-3">
                 <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{t("portfolio.history")}</h3>
                 <button
@@ -629,6 +678,26 @@ function PortfolioScreen() {
           )}
         </Card>
       </div>
+
+      <EditModal
+        tx={editingTx}
+        accounts={(accounts.data ?? []).filter((a) => !a.archived && !(editingTx?.adjustment && a.kind === "credit_card"))}
+        categories={categories.data ?? []}
+        onClose={() => setEditingTx(null)}
+        onSave={async (patch) => {
+          if (editingTx) await updateTx.mutateAsync({ id: editingTx.id, patch });
+          setEditingTx(null);
+        }}
+      />
+      <CompleteModal
+        tx={completingTx}
+        accountCurrency={completingTx ? accounts.data?.find((a) => a.id === completingTx.accountId)?.currency : undefined}
+        onClose={() => setCompletingTx(null)}
+        onConfirm={async (amount, legacy) => {
+          if (completingTx) await completeTx.mutateAsync({ id: completingTx.id, amount, legacy });
+          setCompletingTx(null);
+        }}
+      />
 
       <AdjustBalanceModal
         open={adjusting && selected != null}

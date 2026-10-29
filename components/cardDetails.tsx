@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { EditModal } from "@/components/txModals";
+import { EntityChanges, RecentChanges } from "@/components/history";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates } from "@/lib/data/queries";
 import type { Account, Purchase, Transaction } from "@/lib/data/types";
@@ -163,6 +164,9 @@ export function CardDetailsModal({
             </button>
           ) : null}
         </section>
+
+        {/* what's been changed on this card: edits, deletions, payments done or undone */}
+        <RecentChanges account={card} balanceNow={0} limit={8} className="rounded-lg border border-[var(--edge)] px-3 py-2" />
 
         {own.length > 0 ? (
           <section className="space-y-2">
@@ -335,6 +339,8 @@ export function PurchaseDetailsModal({
             </table>
           </section>
         ) : null}
+
+        <EntityChanges entityType="purchase" entityId={purchase.id} />
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--edge-soft)] pt-3">
           <label className="flex cursor-pointer items-center gap-2 text-sm">

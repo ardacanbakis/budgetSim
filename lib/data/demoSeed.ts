@@ -4,6 +4,7 @@ import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { FALLBACK_USD_PER } from "@/lib/rates/fallback";
 import {
   Account,
+  ActivityEntry,
   Budget,
   Category,
   Goal,
@@ -34,6 +35,8 @@ export interface DemoStore {
   /** saved planner scenarios (absent in older sandboxes) */
   plans?: PlanRecord[];
   savingsPlans?: PlanRecord[];
+  /** the change history, newest last (absent in older sandboxes) */
+  activity?: ActivityEntry[];
 }
 
 const uuid = () =>
