@@ -424,7 +424,21 @@ export class SupabaseRepo implements Repo {
       const { error } = await this.db.from("transactions").update({ amount }).eq("id", id);
       throwIf(error);
     }
-    await this.updateWithLegs(id, row);
+    const { data, error: readError } = await this.db.from("transactions").select("transfer_group_id").eq("id", id).single();
+    throwIf(readError);
+    const { error } = await this.db.from("transactions").update(row).eq("id", id);
+    throwIf(error);
+    // the other leg only while it's still planned: one already done keeps
+    // when it was done and at what rates
+    if (data?.transfer_group_id) {
+      const { error: legError } = await this.db
+        .from("transactions")
+        .update(row)
+        .eq("transfer_group_id", data.transfer_group_id)
+        .neq("id", id)
+        .eq("status", "planned");
+      throwIf(legError);
+    }
   }
 
   async reopenTransaction(id: string): Promise<void> {

@@ -267,6 +267,8 @@ export class DemoRepo implements Repo {
   async completeTransaction(id: string, fxSnapshot: FxSnapshot, amount?: number, legacy?: boolean): Promise<void> {
     const now = new Date().toISOString();
     for (const tx of this.withLegs(id)) {
+      // the other leg, already done, keeps when it was done and at what rates
+      if (tx.id !== id && tx.status === "completed") continue;
       tx.status = "completed";
       tx.completedAt = now;
       tx.fxSnapshot = fxSnapshot;
