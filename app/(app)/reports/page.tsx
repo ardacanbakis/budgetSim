@@ -33,6 +33,7 @@ import { buildCardBook, isIncome, isSpending, netWorthNow } from "@/lib/domain/c
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
 import { computeFxInsights } from "@/lib/domain/fxInsights";
+import { middlemanCuts } from "@/lib/domain/convertedIncome";
 import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
@@ -537,6 +538,18 @@ function ReportBody({ report, picker }: { report: Exclude<Report, "timeline">; p
             </div>
           ) : (
             <div className="space-y-3 p-4">
+              {middlemanCuts(fx.conversions, thisYear).map((m) => (
+                <p key={`${m.from}>${m.to}`} className="text-sm" data-middleman={`${m.from}>${m.to}`}>
+                  <span className="font-medium">{t("converted.middleman", { from: m.from, to: m.to })}</span>
+                  <span className="text-zinc-500">
+                    {" · "}
+                    {t("converted.middlemanLine", {
+                      pct: `${m.avgPct.toLocaleString(locale === "tr" ? "tr-TR" : "en-GB", { maximumFractionDigits: 2 })}%`,
+                      amount: formatAmount(m.cost, m.to, locale),
+                    })}
+                  </span>
+                </p>
+              ))}
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
                   <div className="text-xs text-zinc-500">{t("reports.avgSpread")}</div>

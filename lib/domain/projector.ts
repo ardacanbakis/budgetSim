@@ -3,6 +3,7 @@ import { Currency } from "./currencies";
 import { convert, pairRate, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { buildCardBook } from "./cards";
+import { conversionFor } from "./convertedIncome";
 import { computeMissingOccurrences } from "./materialize";
 import { GoldRatios } from "./gold";
 import { addMonthsClamped } from "./recurrence";
@@ -70,6 +71,8 @@ interface FlowItem {
   categoryId: string;
   /** human name for the expandable breakdown */
   label: string;
+  /** a converted payday: it lands here instead, at the month's rate less the cut */
+  convertTo?: { accountId: string; currency: Currency; cut: number };
 }
 
 /** A hypothetical flow the planner injects, already scheduled and priced. */
@@ -130,6 +133,13 @@ export function projectCashflow(params: {
     /** accounts whose draws are routine conversions, not raids on savings */
     routine?: string[];
   };
+  /**
+   * What a middleman keeps converting `from` into `to` (lib/domain
+   * /convertedIncome.ts conversionCut): a converted income's paydays land
+   * in the account it's converted into, at each month's rate less this.
+   * Without it they still land there, at the market rate.
+   */
+  conversionCut?: (from: Currency, to: Currency) => number;
 }): ProjectionResult {
   const {
     accounts,
@@ -145,6 +155,7 @@ export function projectCashflow(params: {
     replaceCategories,
     dropIncomeCategories,
     funding,
+    conversionCut,
   } = params;
   const ratesAt = ratePath ?? (() => usdPer);
   const horizonEnd = addMonthsClamped(fromDate, months);
@@ -159,6 +170,11 @@ export function projectCashflow(params: {
   );
 
   const flows: FlowItem[] = [];
+  /** where a payday of a converted income lands (lib/domain/convertedIncome.ts) */
+  const convertTo = (row: Parameters<typeof conversionFor>[0]): FlowItem["convertTo"] => {
+    const c = conversionFor(row, templates, accounts);
+    return c ? { accountId: c.to.id, currency: c.to.currency, cut: conversionCut?.(c.from.currency, c.to.currency) ?? 0 } : undefined;
+  };
 
   // Cards (lib/domain/cards.ts): money leaves your account when a card is
   // paid. A recorded payment is that flow. A charge no payment covers yet
@@ -197,6 +213,7 @@ export function projectCashflow(params: {
       isTransfer: role === "transfer",
       categoryId: t.categoryId ?? "",
       label: t.description,
+      convertTo: convertTo(t),
     });
   }
 
@@ -223,6 +240,7 @@ export function projectCashflow(params: {
       isTransfer: false,
       categoryId: tpl.categoryId ?? "",
       label: tpl.name,
+      convertTo: convertTo({ direction: tpl.direction, recurringTemplateId: tpl.id, accountId: tpl.accountId, dueDate: date, legacy: false }),
     });
   }
 
@@ -320,7 +338,13 @@ export function projectCashflow(params: {
     // several occurrences of the same thing read better as one line
     const byLabel = new Map<string, ProjectionLine>();
 
-    for (const f of buckets.get(month) ?? []) {
+    for (const flow of buckets.get(month) ?? []) {
+      // a converted payday is what arrives where it's converted into
+      const rate = flow.convertTo && balance.has(flow.convertTo.accountId) ? pairRate(flow.currency, flow.convertTo.currency, rates) : null;
+      const f =
+        flow.convertTo && rate != null
+          ? { ...flow, accountId: flow.convertTo.accountId, currency: flow.convertTo.currency, amount: flow.amount * rate * (1 - flow.convertTo.cut) }
+          : flow;
       const converted = convert(f.amount, f.currency, display, rates);
       if (converted == null) continue;
       const signed = f.direction === "income" ? f.amount : -f.amount;

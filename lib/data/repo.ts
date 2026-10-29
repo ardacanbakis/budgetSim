@@ -78,6 +78,8 @@ export interface NewTransfer {
   description: string;
   marketRate: number | null;
   fxSnapshot: FxSnapshot | null;
+  /** the payday this transfer converts (Transaction.convertsId) */
+  convertsId?: string | null;
 }
 
 export interface NewTemplate {
@@ -93,6 +95,9 @@ export interface NewTemplate {
   loanId?: string | null;
   /** the income it continues (RecurringTemplate.series) */
   series?: string | null;
+  /** converted into this account from convertFrom on (RecurringTemplate.convertToAccountId) */
+  convertToAccountId?: string | null;
+  convertFrom?: string | null;
 }
 
 /** How a new template treats the dates its schedule has already passed (see planBackfill). */

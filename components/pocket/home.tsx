@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, ReactNode, useId, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { PendingConversions } from "@/components/convertedIncome";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { OptionalCard } from "@/components/dashboardCards";
 import { GoalsCard } from "@/components/goalsCard";
@@ -237,6 +238,7 @@ export function PocketHome() {
   return (
     <PocketPage title={t("nav.dashboard")} condensed={condensed} action={action}>
       <Hero lead={lead} hero={hero === "safe" ? "safe" : "net"} derived={derived} loading={loading} />
+      <PendingConversions />
       {sections.map((id) => (
         <Fragment key={id}>{render(id)}</Fragment>
       ))}

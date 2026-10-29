@@ -445,6 +445,7 @@ export function TemplateModal({
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState("");
   const [autoComplete, setAutoComplete] = useState(false);
+  const [convertTo, setConvertTo] = useState("");
   const [backfill, setBackfill] = useState<BackfillMode>("confirm");
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState<string | null>(null);
@@ -464,11 +465,26 @@ export function TemplateModal({
     setStartDate(initial?.startDate ?? todayISO());
     setEndDate(initial?.endDate ?? "");
     setAutoComplete(initial?.autoComplete ?? false);
+    setConvertTo(initial?.convertToAccountId ?? "");
     setBackfill("confirm");
   }
 
   const active = (accounts.data ?? []).filter((a) => !a.archived);
   const effectiveAccount = accountId || active[0]?.id || "";
+  // an income paid in one currency, converted into an account in another (lib/domain/convertedIncome.ts)
+  const paidIn = active.find((a) => a.id === effectiveAccount);
+  const convertible = active.filter((a) => a.kind !== "credit_card" && a.currency !== paidIn?.currency);
+  const convertTarget = direction === "income" && convertible.some((a) => a.id === convertTo) ? convertTo : "";
+  const wasConverted = initial?.convertToAccountId ?? "";
+  // sent only when it changes, so an edit needs no newer database than the item does; converted
+  // from today when it's turned on, from when it was when only the account changes
+  const convertPatch =
+    convertTarget === wasConverted
+      ? {}
+      : {
+          convertToAccountId: convertTarget || null,
+          convertFrom: convertTarget ? (wasConverted ? (initial?.convertFrom ?? todayISO()) : todayISO()) : null,
+        };
   const dirCategories = (categories.data ?? []).filter((c) => c.direction === direction);
 
   // Only a new item asks about the dates its schedule has already passed: an
@@ -506,6 +522,7 @@ export function TemplateModal({
               startDate,
               endDate: endDate || null,
               autoComplete,
+              ...convertPatch,
             }, past.length ? backfillMode : null);
           } finally {
             setSaving(false);
@@ -584,6 +601,18 @@ export function TemplateModal({
               </label>
             ))}
           </div>
+        ) : null}
+        {direction === "income" && convertible.length > 0 ? (
+          <Field label={t("converted.convertTo")} hint={t("converted.convertHint", { currency: paidIn?.currency ?? "" })}>
+            <Select value={convertTarget} onChange={(e) => setConvertTo(e.target.value)}>
+              <option value="">{t("converted.convertNone")}</option>
+              {convertible.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </Select>
+          </Field>
         ) : null}
         <label className="flex items-start gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
           <input type="checkbox" checked={autoComplete} onChange={(e) => setAutoComplete(e.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-600" />

@@ -8,6 +8,7 @@ import * as pocketTimeline from "./pocket/timeline";
 import * as timeline from "./timeline";
 import * as debts from "./debts";
 import * as income from "./income";
+import * as converted from "./converted";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
@@ -521,6 +522,7 @@ export const en = {
   timeline: timeline.en,
   debts: debts.en,
   income: income.en,
+  converted: converted.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -587,7 +589,7 @@ export const en = {
     depositAccount: "Deposit account",
     paymentDate: "Payment date",
     receivedAmount: "Amount received",
-    receivedHint: "Prefilled from the live rate when the account isn't USD.",
+    receivedHint: "Prefilled from the live rate, less what your recent conversions lost to the middleman, when the account isn't USD.",
     payoutCreated: "One aggregated income transaction will be created.",
     selected: "{count} selected",
     empty: "No sessions yet. Paste them from an email or add manually.",
@@ -1105,6 +1107,7 @@ export const en = {
       depositAccountId: "Money's account",
       payAccountId: "Repaid from",
       payoffDate: "Repay on",
+      convertToAccountId: "Converted into",
     },
   },
   datacheck: {
@@ -1713,6 +1716,7 @@ export const tr: Dictionary = {
   timeline: timeline.tr,
   debts: debts.tr,
   income: income.tr,
+  converted: converted.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",
@@ -1779,7 +1783,7 @@ export const tr: Dictionary = {
     depositAccount: "Yatan hesap",
     paymentDate: "Ödeme tarihi",
     receivedAmount: "Alınan tutar",
-    receivedHint: "Hesap USD değilse canlı kurdan ön doldurulur.",
+    receivedHint: "Hesap USD değilse canlı kurdan, son çevrimlerinde aracıya gidenler düşülerek ön doldurulur.",
     payoutCreated: "Tek bir toplu gelir işlemi oluşturulacak.",
     selected: "{count} seçili",
     empty: "Henüz seans yok. E-postadan yapıştır veya elle ekle.",
@@ -2297,6 +2301,7 @@ export const tr: Dictionary = {
       depositAccountId: "Paranın hesabı",
       payAccountId: "Ödendiği hesap",
       payoffDate: "Ödeme tarihi",
+      convertToAccountId: "Çevrildiği hesap",
     },
   },
   datacheck: {

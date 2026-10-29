@@ -342,6 +342,7 @@ export class DemoRepo implements Repo {
       victvsPayoutId: null,
       purchaseId: null,
       legacy: false,
+      ...(input.convertsId ? { convertsId: input.convertsId } : {}),
       createdAt: now,
     };
     this.store.transactions.push(

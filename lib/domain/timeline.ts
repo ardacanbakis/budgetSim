@@ -4,6 +4,7 @@ import { CardBook, chargeAmount, isDebtPrincipal, paymentDateIn } from "./cards"
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { GoldRatios } from "./gold";
+import { conversionFor, expectedArrival } from "./convertedIncome";
 import { repaymentDirection, scheduleOf } from "./debt";
 import { fromMinor, roundTo, toMinor } from "./money";
 import { buildInstallmentPlan, lastDueDate } from "./purchases";
@@ -43,7 +44,9 @@ import type { VictvsForecast } from "./victvsForecast";
  *   today, into the VICTVS deposit account. They are "expected": the money
  *   isn't promised, so the balances count them only when asked (`counts`).
  * - buildTimeline: all of them, sorted the way comingUp sorts (date, overdue
- *   first, kind, then createdAt and id).
+ *   first, kind, then createdAt and id). A converted income's payday still
+ *   to come (lib/domain/convertedIncome.ts) has its leg where it's converted
+ *   into, at today's rate less the usual cut, marked approx.
  *
  * Balances, per cash account in its own currency (balanceSeries):
  * anchored on computeBalances (completed, non-legacy rows), walked back
@@ -410,6 +413,8 @@ export interface TimelineInput {
   usdPer?: UsdPerMap | null;
   /** expected VICTVS payouts (expectedVictvsEvents), already built */
   expected?: TimelineEvent[];
+  /** what a middleman keeps converting one currency into another (lib/domain/convertedIncome.ts) */
+  conversionCut?: (from: Currency, to: Currency) => number;
 }
 
 /**
@@ -423,8 +428,17 @@ export function buildTimeline(input: TimelineInput, o: { from?: string; to: stri
   const accountsById = new Map(accounts.map((a) => [a.id, a] as const));
   const inWindow = (e: TimelineEvent) =>
     (e.date <= o.to || e.kind === "milestone") && (e.status === "overdue" || o.from == null || e.date >= o.from);
+  // a converted income's payday still to come lands where it's converted
+  // into, at today's rate less the usual cut; the row itself reads as paid
+  const converted = (e: TimelineEvent): TimelineEvent => {
+    if (e.kind !== "tx" || !e.tx || e.status === "completed" || !input.usdPer) return e;
+    const c = conversionFor(e.tx, input.templates ?? [], accounts);
+    if (!c) return e;
+    const arrives = expectedArrival(e.tx.amount, c.from.currency, c.to.currency, input.usdPer, input.conversionCut?.(c.from.currency, c.to.currency) ?? 0);
+    return arrives == null ? e : { ...e, legs: [{ accountId: c.to.id, delta: arrives, approx: true }] };
+  };
   const events = [
-    ...ledgerEvents(transactions, book, accountsById, o.today),
+    ...ledgerEvents(transactions, book, accountsById, o.today).map(converted),
     ...statementEvents(book, accounts, o.today, o.to.slice(0, 7), input.usdPer),
     ...debtMilestones({
       loans: input.loans ?? [],

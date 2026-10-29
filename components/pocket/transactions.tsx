@@ -2,6 +2,7 @@
 
 import { redirect, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
+import { PendingConversions } from "@/components/convertedIncome";
 import { Spinner } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
@@ -102,12 +103,15 @@ function TransactionsScreen() {
       {tab === "income" || tab === "bills" ? (
         <PocketRecurring key={tab} kind={tab} creating={creating} onCreatingChange={setCreating} />
       ) : (
-        <PocketActivity
-          key={[link.show, link.filter, link.account, link.q].join("|")}
-          link={link}
-          selecting={selecting}
-          onEndSelection={() => setSelecting(false)}
-        />
+        <>
+          <PendingConversions />
+          <PocketActivity
+            key={[link.show, link.filter, link.account, link.q].join("|")}
+            link={link}
+            selecting={selecting}
+            onEndSelection={() => setSelecting(false)}
+          />
+        </>
       )}
     </PocketPage>
   );

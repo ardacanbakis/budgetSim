@@ -6,6 +6,7 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, usePlans, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { Loan } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
+import { conversionCut } from "@/lib/domain/convertedIncome";
 import { loanProgress } from "@/lib/domain/debt";
 import { PayoffOption, PayoffSuggestion, suggestPayoff } from "@/lib/domain/debtPayoff";
 import { goldRatiosOf } from "@/lib/domain/gold";
@@ -51,6 +52,7 @@ export function usePayoffSuggestion(loan: Loan | null): PayoffSuggestion | null 
       today,
       funding: { order: planFundingOrder(plan, drawable), routine: plan.funding?.routine ?? [] },
       threshold: shortThreshold(displayCurrency, rates.data.usdPer),
+      conversionCut: conversionCut(transactions.data, accounts.data, rates.data.usdPer),
     });
   }, [loan, accounts.data, transactions.data, templates.data, rates.data, plans.data, displayCurrency]);
 }

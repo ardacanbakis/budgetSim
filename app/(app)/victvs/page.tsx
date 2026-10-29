@@ -10,14 +10,16 @@ import {
   useAppMutation,
   useCategories,
   useRates,
+  useTransactions,
   useUserSettings,
   useVictvsPayouts,
   useVictvsSessions,
 } from "@/lib/data/queries";
 import { MarkPaidInput, NewVictvsSession, VictvsSessionPatch } from "@/lib/data/repo";
 import { DEFAULT_VICTVS_AMOUNTS, VictvsSession, victvsTypeList } from "@/lib/data/types";
+import { expectedArrival, usualCut } from "@/lib/domain/convertedIncome";
 import { formatAmount } from "@/lib/domain/currencies";
-import { convert, snapshotFromTable } from "@/lib/domain/fx";
+import { snapshotFromTable } from "@/lib/domain/fx";
 import { sumAmounts } from "@/lib/domain/money";
 import { todayISO } from "@/lib/domain/recurrence";
 import { ParsedSession, parseVictvsPaste } from "@/lib/domain/victvsParser";
@@ -780,6 +782,7 @@ export function MarkPaidModal({
   const accounts = useAccounts();
   const categories = useCategories();
   const rates = useRates();
+  const transactions = useTransactions();
   const [accountId, setAccountId] = useState("");
   const [paymentDate, setPaymentDate] = useState(todayISO());
   const [received, setReceived] = useState("");
@@ -796,7 +799,12 @@ export function MarkPaidModal({
     active[0];
   const victvsCategory = (categories.data ?? []).find((c) => c.direction === "income" && c.name.toLowerCase().includes("victvs"));
 
-  const marketReceived = account && rates.data ? convert(totalUsd, "USD", account.currency, rates.data.usdPer) : null;
+  // into another currency: the market rate less what the middleman usually keeps (lib/domain/convertedIncome.ts)
+  const cut =
+    account && rates.data && account.currency !== "USD"
+      ? usualCut({ transactions: transactions.data ?? [], accounts: accounts.data ?? [], usdPer: rates.data.usdPer, from: "USD", to: account.currency })
+      : 0;
+  const marketReceived = account && rates.data ? expectedArrival(totalUsd, "USD", account.currency, rates.data.usdPer, cut) : null;
   const shownReceived = receivedTouched ? received : marketReceived != null ? String(marketReceived) : "";
 
   return (

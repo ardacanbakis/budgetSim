@@ -4,7 +4,7 @@ import { ActivityAction, ActivityEntity, ActivityEntry, Transaction } from "./ty
 
 type NewEntry = Omit<ActivityEntry, "id">;
 
-const TEMPLATE_FIELDS = ["name", "accountId", "direction", "categoryId", "amount", "frequency", "startDate", "endDate", "autoComplete"] as const;
+const TEMPLATE_FIELDS = ["name", "accountId", "direction", "categoryId", "amount", "frequency", "startDate", "endDate", "autoComplete", "convertToAccountId"] as const;
 const PURCHASE_FIELDS = ["name", "details", "categoryId", "reflected"] as const;
 const LOAN_FIELDS = ["name", "kind", "counterparty", "depositAccountId", "payAccountId", "payoffDate"] as const;
 

@@ -12,6 +12,7 @@ import {
   useVictvsPayouts,
   useVictvsSessions,
 } from "@/lib/data/queries";
+import { conversionCut } from "@/lib/domain/convertedIncome";
 import { CardBook } from "@/lib/domain/cards";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
@@ -98,6 +99,7 @@ export function useTimeline(book: CardBook, countExpected = false): TimelineData
           book,
           usdPer,
           expected,
+          conversionCut: usdPer ? conversionCut(transactions.data ?? [], accounts.data ?? [], usdPer) : undefined,
         },
         { to: horizon, today }
       ),

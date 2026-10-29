@@ -85,6 +85,8 @@ export interface Transaction {
    * neither income nor spending (lib/domain/cards.ts isIncome / isSpending)
    */
   loanPrincipal?: boolean;
+  /** on both legs of a transfer that converted a payday (RecurringTemplate.convertToAccountId): that payday's row */
+  convertsId?: string | null;
   createdAt: string;
 }
 
@@ -124,6 +126,14 @@ export interface RecurringTemplate {
    * absent or null on a template that's its own
    */
   series?: string | null;
+  /**
+   * an income paid in one currency and converted into another (a dollar
+   * salary a middleman turns into lira): the account it's converted into
+   * (lib/domain/convertedIncome.ts); absent or null when it isn't
+   */
+  convertToAccountId?: string | null;
+  /** the first payday that's converted; earlier ones stay as they were */
+  convertFrom?: string | null;
   createdAt: string;
 }
 
