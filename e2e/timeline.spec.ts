@@ -108,7 +108,7 @@ test.describe("Timeline report", () => {
 
     // Transactions keeps the ledger and recurring; the old link redirects, account and all
     await page.goto("/transactions");
-    await expect(page.getByRole("tablist", { name: "Transactions" }).getByRole("tab")).toHaveText(["Transactions", "Recurring"]);
+    await expect(page.getByRole("tablist", { name: "Transactions" }).getByRole("tab")).toHaveText(["Transactions", "Income", "Bills"]);
     await expect(ledgerTab(page)).toHaveAttribute("aria-selected", "true");
     const ziraat = (await store(page)).accounts.find((a) => a.name === "Ziraat TRY")!;
     await page.goto(`/transactions?tab=timeline&account=${ziraat.id}`);

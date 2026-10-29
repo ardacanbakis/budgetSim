@@ -18,18 +18,19 @@ import {
   pastOccurrences,
   rowsReplacedByEdit,
 } from "@/lib/domain/materialize";
-import { todayISO } from "@/lib/domain/recurrence";
+import { CombineSuggestion, combineSuggestions, incomeSeries, raise } from "@/lib/domain/incomeSeries";
+import { addDays, todayISO } from "@/lib/domain/recurrence";
 import { TemplateProgress, TemplateStatus, templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
-import { RECURRING_DIRECTION_FILTER_KEY, RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
+import { RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
 import { LABELED_STATUSES, LabelColor, LabeledStatus, SWATCH_CLASS, useLabelColor } from "@/lib/ui/labelColors";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { loanHref } from "@/lib/ui/portfolioUrl";
 
 type StatusFilter = "all" | TemplateStatus;
 const STATUS_FILTERS: readonly StatusFilter[] = ["all", "active", "notStarted", "toConfirm", "completed"];
-type DirectionFilter = "all" | TxDirection;
-const DIRECTION_FILTERS: readonly DirectionFilter[] = ["all", "income", "expense"];
+/** Transactions' two tabs of recurring items: what comes in, and what goes out. */
+export type RecurringKind = "income" | "bills";
 
 const BACKFILL_MODES: readonly BackfillMode[] = ["paid", "confirm", "fromToday"];
 
@@ -42,11 +43,15 @@ const segmentClass = (on: boolean) =>
   }`;
 
 /**
- * The recurring items, as the Transactions page's second tab: the templates
- * that write its planned rows. `tabs` is the page's tab strip, shown under
- * the header like on the Cards page.
+ * The recurring items that write the ledger's planned rows, as two of the
+ * Transactions page's tabs: Income (income items; an income's periods, a
+ * salary with raises, show as one card with its earlier amounts, and "Give
+ * a raise" starts the next; items that look like one income entered year by
+ * year are offered as one) and Bills (everything that goes out, a debt's
+ * repayments included, linked to the debt). `tabs` is the page's tab strip,
+ * shown under the header like on the Cards page.
  */
-export function RecurringTab({ tabs }: { tabs: ReactNode }) {
+export function RecurringTab({ tabs, kind }: { tabs: ReactNode; kind: RecurringKind }) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const templates = useTemplates();
@@ -58,8 +63,10 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
   const [moving, setMoving] = useState<RecurringTemplate | null>(null);
   const [deleting, setDeleting] = useState<RecurringTemplate | null>(null);
   const [colorsOpen, setColorsOpen] = useState(false);
+  const [raising, setRaising] = useState<RecurringTemplate | null>(null);
   const statusFilter = useLocalChoice<StatusFilter>(RECURRING_STATUS_FILTER_KEY, STATUS_FILTERS, "all");
-  const directionFilter = useLocalChoice<DirectionFilter>(RECURRING_DIRECTION_FILTER_KEY, DIRECTION_FILTERS, "all");
+  const combine = useCombineSuggestions();
+  const direction: TxDirection = kind === "income" ? "income" : "expense";
   const labelColors: Record<LabeledStatus, LabelColor> = {
     completed: useLabelColor("completed")[0],
     notStarted: useLabelColor("notStarted")[0],
@@ -95,12 +102,19 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
 
   if (templates.isLoading || accounts.isLoading || transactions.isLoading) return <Spinner />;
 
-  const list = templates.data ?? [];
+  const list = (templates.data ?? []).filter((tpl) => tpl.direction === direction);
   const accountById = new Map((accounts.data ?? []).map((a) => [a.id, a]));
   const statusOf = (tpl: RecurringTemplate) => progressById.get(tpl.id)?.status ?? "active";
+  const money = (tpl: RecurringTemplate, amount = tpl.amount) => {
+    const account = accountById.get(tpl.accountId);
+    return account ? formatAmount(amount, account.currency, locale) : String(amount);
+  };
 
-  // Counts follow the direction filter, so each number matches what its chip shows.
-  const byDirection = list.filter((tpl) => directionFilter.value === "all" || tpl.direction === directionFilter.value);
+  // an income is one card however many raises it had: its current period, the earlier ones under it
+  const series = kind === "income" ? incomeSeries(list, todayISO()) : null;
+  const byDirection = series ? series.map((s) => s.current) : list;
+  const seriesOf = new Map(series?.map((s) => [s.current.id, s]) ?? []);
+  const period = (p: RecurringTemplate) => ({ id: p.id, amount: money(p), from: p.startDate, to: p.endDate });
   const counts: Record<StatusFilter, number> = { all: byDirection.length, active: 0, notStarted: 0, toConfirm: 0, completed: 0 };
   for (const tpl of byDirection) counts[statusOf(tpl)]++;
   const shown = byDirection
@@ -118,15 +132,20 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("tx.title")}</h1>
         <Button variant="primary" onClick={() => setModalOpen(true)}>
-          + {t("recurring.newTemplate")}
+          + {kind === "income" ? t("income.newIncome") : t("income.newBill")}
         </Button>
       </div>
 
       {tabs}
-      <p className="text-xs text-zinc-500">{t("recurring.materialized")}</p>
+      <p className="text-xs text-zinc-500">
+        {t("recurring.materialized")}
+        {kind === "bills" && list.some((tpl) => tpl.loanId) ? ` ${t("income.debtsHint")}` : ""}
+      </p>
+
+      {kind === "income" ? <CombineCard templates={list} combine={combine} /> : null}
 
       {list.length === 0 ? (
-        <EmptyState>{t("recurring.empty")}</EmptyState>
+        <EmptyState>{kind === "income" ? t("income.emptyIncome") : t("income.emptyBills")}</EmptyState>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -134,13 +153,6 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
               {statusChips.map((s) => (
                 <button key={s} type="button" aria-pressed={statusFilter.value === s} onClick={() => statusFilter.setValue(s)} className={segmentClass(statusFilter.value === s)}>
                   {t(`recurring.status_${s}`)} <span className="tabular-nums opacity-70">{counts[s]}</span>
-                </button>
-              ))}
-            </div>
-            <div role="group" aria-label={t("recurring.filterDirection")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
-              {DIRECTION_FILTERS.map((d) => (
-                <button key={d} type="button" aria-pressed={directionFilter.value === d} onClick={() => directionFilter.setValue(d)} className={segmentClass(directionFilter.value === d)}>
-                  {d === "all" ? t("recurring.status_all") : t(`tx.${d}`)}
                 </button>
               ))}
             </div>
@@ -158,10 +170,7 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
             <EmptyState
               action={
                 <Button
-                  onClick={() => {
-                    statusFilter.setValue("all");
-                    directionFilter.setValue("all");
-                  }}
+                  onClick={() => statusFilter.setValue("all")}
                 >
                   {t("recurring.showAll")}
                 </Button>
@@ -171,20 +180,24 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
             </EmptyState>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
-              {shown.map((tpl) => {
-                const account = accountById.get(tpl.accountId);
-                return (
-                  <TemplateCard
-                    key={tpl.id}
-                    tpl={tpl}
-                    progress={progressById.get(tpl.id)}
-                    amount={account ? formatAmount(tpl.amount, account.currency, locale) : String(tpl.amount)}
-                    accountName={account?.name}
-                    colors={labelColors}
-                    onEdit={() => setEditing(tpl)}
-                  />
-                );
-              })}
+              {shown.map((tpl) => (
+                <TemplateCard
+                  key={tpl.id}
+                  tpl={tpl}
+                  progress={progressById.get(tpl.id)}
+                  amount={money(tpl)}
+                  accountName={accountById.get(tpl.accountId)?.name}
+                  colors={labelColors}
+                  earlier={mergeSameAmount((seriesOf.get(tpl.id)?.earlier ?? []).map(period))}
+                  later={(seriesOf.get(tpl.id)?.later ?? []).map(period)}
+                  onEdit={() => setEditing(tpl)}
+                  onRaise={(() => {
+                    // the next raise follows the last one, even one that hasn't started yet
+                    const latest = seriesOf.get(tpl.id)?.latest ?? tpl;
+                    return kind === "income" && progressById.get(latest.id)?.status !== "completed" ? () => setRaising(latest) : undefined;
+                  })()}
+                />
+              ))}
             </div>
           )}
         </>
@@ -195,9 +208,12 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
         <LabelColorSettings />
       </Modal>
 
+      <RaiseModal tpl={raising} onClose={() => setRaising(null)} />
+
       <TemplateModal
         open={modalOpen || editing != null}
         initial={editing}
+        defaultDirection={direction}
         onClose={() => {
           setModalOpen(false);
           setEditing(null);
@@ -278,16 +294,25 @@ function TemplateCard({
   amount,
   accountName,
   colors,
+  earlier = [],
+  later = [],
   onEdit,
+  onRaise,
 }: {
   tpl: RecurringTemplate;
   progress: TemplateProgress | undefined;
   amount: string;
   accountName: string | undefined;
   colors: Record<LabeledStatus, LabelColor>;
+  /** an income's earlier periods, latest first, its amounts formatted */
+  earlier?: Array<{ id: string; amount: string; from: string; to: string | null }>;
+  /** its periods still to start (a raise ahead), earliest first */
+  later?: Array<{ id: string; amount: string; from: string; to: string | null }>;
   onEdit: () => void;
+  onRaise?: () => void;
 }) {
   const { t } = useI18n();
+  const formatDate = useFormatDate();
   const status = progress?.status ?? "active";
   const finished = status === "completed";
 
@@ -323,13 +348,34 @@ function TemplateCard({
             {progress ? (
               <ProgressLine progress={progress} barClass={finished ? SWATCH_CLASS[colors.completed] : "bg-teal-600 dark:bg-teal-500"} />
             ) : null}
+            {later.length > 0 ? (
+              <div className="mt-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400" data-income-later>
+                {later.map((p) => t("income.then", { amount: p.amount, date: formatDate(p.from) })).join(" · ")}
+              </div>
+            ) : null}
+            {earlier.length > 0 ? (
+              <div className="mt-1.5 text-xs text-zinc-500" data-income-earlier>
+                {t("income.earlier", {
+                  list: earlier
+                    .map((p) => t("income.earlierItem", { amount: p.amount, from: formatDate(p.from), to: p.to ? formatDate(p.to) : "—" }))
+                    .join(" · "),
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
-        {!tpl.loanId ? (
-          <Button variant="ghost" onClick={onEdit}>
-            {t("common.edit")}
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {!tpl.loanId ? (
+            <Button variant="ghost" onClick={onEdit}>
+              {t("common.edit")}
+            </Button>
+          ) : null}
+          {onRaise ? (
+            <Button variant="ghost" onClick={onRaise}>
+              {t("income.giveRaise")}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </Card>
   );
@@ -372,9 +418,12 @@ export function TemplateModal({
   onSave,
   onDelete,
   onMoveToDebts,
+  defaultDirection = "expense",
 }: {
   open: boolean;
   initial: RecurringTemplate | null;
+  /** a new item's direction: the tab it's made from */
+  defaultDirection?: TxDirection;
   onClose: () => void;
   /** backfill: what to do with the dates already passed; null when there are none to ask about */
   onSave: (input: NewTemplate, backfill: BackfillMode | null) => Promise<void>;
@@ -408,7 +457,7 @@ export function TemplateModal({
     setInitialized(targetKey);
     setName(initial?.name ?? "");
     setAccountId(initial?.accountId ?? "");
-    setDirection(initial?.direction ?? "expense");
+    setDirection(initial?.direction ?? defaultDirection);
     setCategoryId(initial?.categoryId ?? "");
     setAmount(initial ? String(initial.amount) : "");
     setFrequency(initial?.frequency ?? "monthly");
@@ -571,6 +620,153 @@ export function TemplateModal({
           </div>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/** Earlier periods, latest first, with the same amount back to back read as one stretch: "WBL 2024" and "WBL 2025" at $1,679. */
+function mergeSameAmount<T extends { amount: string; from: string; to: string | null }>(periods: T[]): T[] {
+  const out: T[] = [];
+  for (const p of periods) {
+    const last = out[out.length - 1];
+    if (last && last.amount === p.amount) out[out.length - 1] = { ...last, from: p.from };
+    else out.push(p);
+  }
+  return out;
+}
+
+const COMBINE_DISMISSED_KEY = "renovator-income-combine-dismissed";
+
+/** "Not the same" answers, kept on this device: a suggestion said no to doesn't come back. */
+function useCombineSuggestions() {
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem(COMBINE_DISMISSED_KEY) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const dismiss = (key: string) =>
+    setDismissed((prev) => {
+      const next = new Set(prev).add(key);
+      try {
+        window.localStorage.setItem(COMBINE_DISMISSED_KEY, JSON.stringify([...next]));
+      } catch {
+        // no storage: it's back next time
+      }
+      return next;
+    });
+  return { dismissed, dismiss };
+}
+
+/** Items that look like one income entered year by year, offered as one series. */
+function CombineCard({ templates, combine }: { templates: RecurringTemplate[]; combine: ReturnType<typeof useCombineSuggestions> }) {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const join = useAppMutation(async (s: CombineSuggestion) => {
+    // the series is the earliest one's id, as a raise would have made it
+    for (const tpl of s.templates) await repo.updateTemplate(tpl.id, { series: s.key });
+  }, [KEYS.templates]);
+  const suggestions = combineSuggestions(templates).filter((s) => !combine.dismissed.has(s.templates.map((x) => x.id).join(",")));
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="space-y-2" data-combine>
+      {suggestions.map((s) => {
+        const id = s.templates.map((x) => x.id).join(",");
+        return (
+          <Card key={id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">{t("income.combineTitle")}</p>
+              <p className="text-sm text-zinc-500">{t("income.combineHint", { names: s.templates.map((x) => x.name).join(", ") })}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => combine.dismiss(id)}>
+                {t("income.notSame")}
+              </Button>
+              <Button variant="primary" disabled={join.isPending} onClick={() => join.mutate(s)}>
+                {t("income.combine")}
+              </Button>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Give a raise (lib/domain/incomeSeries.ts raise): the current amount ends
+ * the day before, the new one starts on the chosen date, in the same series.
+ * From its next date on by default, never earlier than today: months already
+ * recorded keep what they were.
+ */
+export function RaiseModal({ tpl, onClose }: { tpl: RecurringTemplate | null; onClose: () => void }) {
+  const { t, locale } = useI18n();
+  const formatDate = useFormatDate();
+  const repo = useRepo();
+  const accounts = useAccounts();
+  const transactions = useTransactions();
+  const [amount, setAmount] = useState("");
+  const [from, setFrom] = useState("");
+  const [opened, setOpened] = useState<string | null>(null);
+
+  const today = todayISO();
+  if (!tpl && opened !== null) setOpened(null);
+  if (tpl && opened !== tpl.id) {
+    setOpened(tpl.id);
+    setAmount("");
+    const next = templateProgress(tpl, transactions.data ?? [], today).next;
+    setFrom(next && next > tpl.startDate ? next : addDays(today, 1));
+  }
+
+  const plan = tpl ? raise(tpl, Number(amount), from) : null;
+  const save = useAppMutation(async () => {
+    if (!plan) return;
+    await repo.updateTemplate(plan.end.id, { endDate: plan.end.endDate, series: plan.end.series });
+    await repo.createTemplate(plan.next);
+    await repo.materializeTemplates(MATERIALIZE_MONTHS_AHEAD);
+  }, [KEYS.templates, KEYS.transactions]);
+
+  const currency = accounts.data?.find((a) => a.id === tpl?.accountId)?.currency ?? "TRY";
+  return (
+    <Modal
+      open={tpl != null}
+      onClose={onClose}
+      title={tpl ? t("income.raiseTitle", { name: tpl.name }) : ""}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!plan || save.isPending) return;
+        await save.mutateAsync(undefined as never);
+        onClose();
+      }}
+    >
+      {tpl ? (
+        <div className="space-y-3" data-raise>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`${t("income.raiseAmount")} (${currency})`}>
+              <Input type="number" step="any" min="0" required inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+            <Field label={t("income.raiseFrom")}>
+              <Input type="date" required min={today > tpl.startDate ? today : addDays(tpl.startDate, 1)} value={from} onChange={(e) => setFrom(e.target.value)} />
+            </Field>
+          </div>
+          <p className="text-xs text-zinc-500">
+            {plan
+              ? t("income.raiseHint", { amount: formatAmount(tpl.amount, currency, locale), date: formatDate(plan.end.endDate) })
+              : amount
+                ? t("income.raiseInvalid")
+                : null}
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" onClick={onClose}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="primary" disabled={!plan || save.isPending}>
+              {t("common.save")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </Modal>
   );
 }

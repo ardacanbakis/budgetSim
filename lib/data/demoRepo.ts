@@ -421,6 +421,8 @@ export class DemoRepo implements Repo {
     const template = this.store.templates.find((t) => t.id === id);
     if (!template) return;
     Object.assign(template, patch);
+    // joining a series changes nothing it plans
+    if (Object.keys(patch).every((k) => k === "series")) return this.save();
     const replaced = new Set(rowsReplacedByEdit(id, template.endDate, this.store.transactions).map((t) => t.id));
     this.store.transactions = this.store.transactions.filter((t) => !replaced.has(t.id));
     this.save();

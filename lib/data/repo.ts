@@ -91,6 +91,8 @@ export interface NewTemplate {
   endDate: string | null;
   autoComplete: boolean;
   loanId?: string | null;
+  /** the income it continues (RecurringTemplate.series) */
+  series?: string | null;
 }
 
 /** How a new template treats the dates its schedule has already passed (see planBackfill). */

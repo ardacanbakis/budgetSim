@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * Pocket's Activity and Recurring (/transactions and ?tab=recurring): the
+ * Pocket's Activity, Income and Bills (/transactions, ?tab=income, ?tab=bills): the
  * ledger as a phone list with what needs doing on top, and the recurring
  * items with their commitments. Runs in the demo at 390×844 with the Pocket
  * phone layout switched on; a last group checks 402 and 440 wide.
@@ -92,7 +92,7 @@ async function enterPocket(
   await page.goto(opts.path ?? "/transactions");
   await expect(page.locator("[data-pocket-shell]")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("h1[data-pocket-title]")).toBeVisible({ timeout: 15_000 });
-  if ((opts.path ?? "").includes("tab=recurring")) {
+  if (/tab=(income|bills)/.test(opts.path ?? "")) {
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
   } else {
     await expect(monthHeads(page).first().or(page.getByText(/No transactions match|eşleşen işlem yok/i))).toBeVisible({
@@ -169,7 +169,8 @@ test.describe("Pocket activity", () => {
     await enterPocket(page);
     await expect(page.getByRole("heading", { level: 1, name: "Transactions" })).toBeVisible();
     await expect(tabs(page).getByRole("button", { name: "Transactions" })).toHaveAttribute("aria-pressed", "true");
-    await expect(tabs(page).getByRole("button", { name: "Recurring" })).toHaveAttribute("aria-pressed", "false");
+    await expect(tabs(page).getByRole("button", { name: "Income" })).toHaveAttribute("aria-pressed", "false");
+    await expect(tabs(page).getByRole("button", { name: "Bills" })).toHaveAttribute("aria-pressed", "false");
     await expect(search(page)).toHaveAccessibleName("Search descriptions, categories, accounts");
     await expect(search(page)).toHaveCSS("font-size", "16px");
 
@@ -496,19 +497,20 @@ test.describe("Pocket activity", () => {
   });
 });
 
-test.describe("Pocket recurring", () => {
-  test("the segment keeps the tab in the URL; commitments read Yearly = Monthly × 12", async ({ page }) => {
+test.describe("Pocket income and bills", () => {
+  test("the segments keep the tab in the URL; Bills reads what goes out, Income what comes in, Yearly = Monthly × 12", async ({ page }) => {
     await enterPocket(page);
-    await tabs(page).getByRole("button", { name: "Recurring" }).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
-    await expect(tabs(page).getByRole("button", { name: "Recurring" })).toHaveAttribute("aria-pressed", "true");
+    await tabs(page).getByRole("button", { name: "Bills" }).click();
+    await expect(page).toHaveURL(/\/transactions\?tab=bills$/);
+    await expect(tabs(page).getByRole("button", { name: "Bills" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("heading", { level: 2, name: "Commitments" })).toBeVisible();
 
     const out = page.locator('[data-commitment="out"] [data-amount]');
     const income = page.locator('[data-commitment="in"] [data-amount]');
     await expect(out).toHaveText(/^−\$[\d,]+\.\d\d$/);
-    await expect(income).toHaveText(/^\+\$[\d,]+\.\d\d$/);
-    const monthly = { out: amountOf(await out.innerText()), in: amountOf(await income.innerText()) };
+    await expect(income).toHaveCount(0);
+    await expect(recurringRows(page).filter({ hasText: "VICTVS retainer" })).toHaveCount(0);
+    const monthlyOut = amountOf(await out.innerText());
     await expect(page.locator("[data-commitments] + p, [data-commitments] ~ p").last()).toHaveText(
       /^Next: .+ (today|tomorrow|in \d+ days)$/
     );
@@ -519,9 +521,15 @@ test.describe("Pocket recurring", () => {
       "aria-pressed",
       "true"
     );
-    await expect.poll(async () => amountOf(await out.innerText())).not.toBe(monthly.out);
-    expect(Math.abs(amountOf(await out.innerText()) - monthly.out * 12)).toBeLessThanOrEqual(0.06);
-    expect(Math.abs(amountOf(await income.innerText()) - monthly.in * 12)).toBeLessThanOrEqual(0.06);
+    await expect.poll(async () => amountOf(await out.innerText())).not.toBe(monthlyOut);
+    expect(Math.abs(amountOf(await out.innerText()) - monthlyOut * 12)).toBeLessThanOrEqual(0.06);
+
+    await tabs(page).getByRole("button", { name: "Income" }).click();
+    await expect(page).toHaveURL(/\/transactions\?tab=income$/);
+    await expect(income).toHaveText(/^\+\$[\d,]+\.\d\d$/);
+    await expect(out).toHaveCount(0);
+    await expect(recurringRows(page).filter({ hasText: "VICTVS retainer" })).toBeVisible();
+    await expect(recurringRows(page).filter({ hasText: "Rent" })).toHaveCount(0);
 
     // back to the ledger
     await tabs(page).getByRole("button", { name: "Transactions" }).click();
@@ -530,22 +538,22 @@ test.describe("Pocket recurring", () => {
   });
 
   test("rows: to confirm first, then by next date, in the label colours chosen in Settings", async ({ page }) => {
-    await enterPocket(page, { path: "/transactions?tab=recurring" });
+    await enterPocket(page, { path: "/transactions?tab=bills" });
     const texts = await recurringRows(page).allInnerTexts();
-    expect(texts.length).toBeGreaterThanOrEqual(3);
+    expect(texts.length).toBeGreaterThanOrEqual(2);
     const confirm = texts.map((t) => /\d+ to confirm/.test(t));
     const lastConfirm = confirm.lastIndexOf(true);
     const firstOther = confirm.indexOf(false);
-    expect(lastConfirm).toBeGreaterThanOrEqual(0);
-    if (firstOther >= 0) expect(lastConfirm).toBeLessThan(firstOther);
+    if (lastConfirm >= 0 && firstOther >= 0) expect(lastConfirm).toBeLessThan(firstOther);
     // the rest by next date: "in n days" never goes down
     const days = texts.filter((_, i) => !confirm[i]).map((t) => Number(/in (\d+) days/.exec(t)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
     expect(days).toEqual([...days].sort((a, b) => a - b));
     for (const row of await recurringRows(page).all()) expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(64);
 
-    // tags: Loan (sky) and Auto, and "1 to confirm" in the default amber
+    // tags: Loan (sky) and Auto; on Income, "1 to confirm" in the default amber
     await expect(recurringRows(page).filter({ hasText: "Car loan installment" }).getByText("Loan", { exact: true })).toBeVisible();
     await expect(recurringRows(page).filter({ hasText: "Rent" }).getByText("Auto", { exact: true })).toBeVisible();
+    await tabs(page).getByRole("button", { name: "Income" }).click();
     const tag = recurringRows(page).first().getByText(/^\d+ to confirm$/);
     await expect(tag).toHaveClass(/bg-amber-100/);
 
@@ -557,7 +565,7 @@ test.describe("Pocket recurring", () => {
   });
 
   test("a template's sheet confirms its due item; Edit is TemplateModal as a sheet", async ({ page }) => {
-    await enterPocket(page, { path: "/transactions?tab=recurring" });
+    await enterPocket(page, { path: "/transactions?tab=income" });
     const victvs = (await store(page)).templates.find((t) => t.name === "VICTVS retainer")!;
     const due = (await store(page)).transactions.find(
       (t) => t.recurringTemplateId === victvs.id && t.status === "planned" && t.dueDate <= isoFromToday(0)
@@ -569,6 +577,7 @@ test.describe("Pocket recurring", () => {
     await expect(items).toHaveCount(1);
     await expect(items.getByRole("button", { name: "Paid a different amount…" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Give a raise" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "See its items" })).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/pocket-activity-template-sheet-light.png` });
 
@@ -591,7 +600,7 @@ test.describe("Pocket recurring", () => {
   });
 
   test("a loan's template opens its loan; See its items searches the ledger", async ({ page }) => {
-    await enterPocket(page, { path: "/transactions?tab=recurring" });
+    await enterPocket(page, { path: "/transactions?tab=bills" });
     await recurringRows(page).filter({ hasText: "Car loan installment" }).getByRole("button").click();
     await expect(sheet(page).getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
     await sheet(page).getByRole("button", { name: "Managed by its loan — open the loan" }).click();
@@ -599,7 +608,7 @@ test.describe("Pocket recurring", () => {
     await expect(page.locator("[data-loan-detail]")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Car loan — Garanti" })).toBeVisible();
 
-    await page.goto("/transactions?tab=recurring");
+    await page.goto("/transactions?tab=bills");
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
     // from further down the list: the search still opens at its top
     await recurringRows(page).last().scrollIntoViewIfNeeded();
@@ -613,32 +622,33 @@ test.describe("Pocket recurring", () => {
     await expect(historyRow(page, "Rent").first()).toBeVisible();
     // Back returns to the list it came from, Forward to the search
     await page.goBack();
-    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+    await expect(page).toHaveURL(/\/transactions\?tab=bills$/);
     await expect(page.locator("[data-commitments]")).toBeVisible();
     await page.goForward();
     await expect(page).toHaveURL(/\/transactions\?q=Rent$/);
     await expect(search(page)).toHaveValue("Rent");
   });
 
-  test("opened at ?tab=recurring, the segment still moves between the tabs", async ({ page }) => {
+  test("opened at ?tab=bills, the segment still moves between the tabs; the old ?tab=recurring lands on Income", async ({ page }) => {
     // a production build once ignored a router call to the same page with
     // another query after loading with one (lib/ui/shallowUrl.ts)
-    await enterPocket(page, { path: "/transactions?tab=recurring" });
+    await enterPocket(page, { path: "/transactions?tab=bills" });
     await tabs(page).getByRole("button", { name: "Transactions" }).click();
     await expect(page).toHaveURL(/\/transactions$/);
     await expect(needs(page)).toBeVisible();
-    await tabs(page).getByRole("button", { name: "Recurring" }).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
+    await tabs(page).getByRole("button", { name: "Bills" }).click();
+    await expect(page).toHaveURL(/\/transactions\?tab=bills$/);
     await expect(page.locator("[data-commitments]")).toBeVisible();
 
     // the tab bar's Activity, from the page itself and from another
     const bar = page.getByRole("navigation", { name: "Sections" });
     await page.goto("/transactions?tab=recurring");
+    await expect(page).toHaveURL(/\/transactions\?tab=income$/);
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
     await bar.getByRole("link", { name: "Activity" }).click();
     await expect(page).toHaveURL(/\/transactions$/);
     await expect(needs(page)).toBeVisible();
-    await page.goto("/transactions?tab=recurring");
+    await page.goto("/transactions?tab=bills");
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
     await bar.locator('a[href="/"]').click();
     await expect(page).toHaveURL(/\/$/);
@@ -647,9 +657,9 @@ test.describe("Pocket recurring", () => {
     await expect(needs(page)).toBeVisible();
   });
 
-  test("+ opens TemplateModal as a sheet, and a new item lands in the list", async ({ page }) => {
-    await enterPocket(page, { path: "/transactions?tab=recurring" });
-    await page.locator("[data-pocket-header]").getByRole("button", { name: "New recurring item" }).click();
+  test("+ opens TemplateModal as a sheet, and a new bill lands in the list", async ({ page }) => {
+    await enterPocket(page, { path: "/transactions?tab=bills" });
+    await page.locator("[data-pocket-header]").getByRole("button", { name: "New bill" }).click();
     const form = sheet(page);
     await expect(form.getByRole("heading", { name: "New recurring item" })).toBeVisible();
     await form.getByRole("textbox").first().fill("Gym");
@@ -663,7 +673,7 @@ test.describe("Pocket recurring", () => {
 });
 
 test.describe("Pocket activity, setting off", () => {
-  test("the Classic page is untouched and /recurring still redirects", async ({ page }) => {
+  test("the Classic page is untouched and /recurring lands on Income", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/welcome");
     await page.getByRole("button", { name: /demo/i }).click();
@@ -673,8 +683,8 @@ test.describe("Pocket activity, setting off", () => {
     await expect(page.locator("[data-pocket-shell]")).toHaveCount(0);
     await expect(page.locator("h1[data-pocket-title]")).toHaveCount(0);
     await page.goto("/recurring");
-    await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
-    await expect(page.getByRole("tab", { name: "Recurring" })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/transactions\?tab=income$/);
+    await expect(page.getByRole("tab", { name: "Income" })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("[data-commitments]")).toHaveCount(0);
   });
 });
@@ -685,9 +695,11 @@ test.describe("Pocket activity at other phone widths", () => {
       await enterPocket(page, { width });
       await expect(needs(page)).toBeVisible();
       await noSideScroll(page, width);
-      await tabs(page).getByRole("button", { name: "Recurring" }).click();
-      await expect(page.locator("[data-commitments]")).toBeVisible();
-      await noSideScroll(page, width);
+      for (const tab of ["Income", "Bills"]) {
+        await tabs(page).getByRole("button", { name: tab }).click();
+        await expect(page.locator("[data-commitments]")).toBeVisible();
+        await noSideScroll(page, width);
+      }
     });
   }
 });
@@ -699,7 +711,8 @@ test.describe("Pocket activity, Turkish", () => {
     await expect(chip(page, "Hesap: Tüm hesaplar")).toBeVisible();
     await expect(monthHeads(page).first()).toHaveText(/^\p{L}+ \d{4}$/u);
     await page.screenshot({ path: `${SHOTS}/pocket-activity-ledger-tr-light.png` });
-    await tabs(page).getByRole("button", { name: "Düzenli" }).click();
+    await expect(tabs(page).getByRole("button")).toHaveText(["İşlemler", "Gelirler", "Faturalar"]);
+    await tabs(page).getByRole("button", { name: "Faturalar" }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Taahhütler" })).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/pocket-activity-recurring-tr-light.png` });
   });
@@ -729,7 +742,7 @@ test.describe("Pocket activity, dark", () => {
     await chip(page, "Planned").click();
     await page.screenshot({ path: `${SHOTS}/pocket-activity-chips-dark.png` });
 
-    await page.goto("/transactions?tab=recurring");
+    await page.goto("/transactions?tab=income");
     await expect(page.locator("[data-commitments]")).toBeVisible({ timeout: 15_000 });
     await page.screenshot({ path: `${SHOTS}/pocket-activity-recurring-dark.png` });
     await recurringRows(page).filter({ hasText: "VICTVS retainer" }).getByRole("button").click();

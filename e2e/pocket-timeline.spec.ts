@@ -109,7 +109,7 @@ test.describe("Pocket timeline", () => {
     await expect(today(page)).toBeAttached();
     // Transactions keeps the ledger and recurring; the old link lands here
     await page.goto("/transactions");
-    await expect(tabs(page).getByRole("button")).toHaveText(["Transactions", "Recurring"]);
+    await expect(tabs(page).getByRole("button")).toHaveText(["Transactions", "Income", "Bills"]);
     await page.goto("/transactions?tab=timeline");
     await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
     await expect(today(page)).toBeAttached();

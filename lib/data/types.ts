@@ -118,6 +118,12 @@ export interface RecurringTemplate {
   endDate: string | null;
   autoComplete: boolean;
   loanId: string | null;
+  /**
+   * the periods of one income share a series (the first period's id): a
+   * salary with raises is one template per amount (lib/domain/incomeSeries.ts);
+   * absent or null on a template that's its own
+   */
+  series?: string | null;
   createdAt: string;
 }
 
