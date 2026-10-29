@@ -18,7 +18,7 @@ import { templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
 import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { CardId } from "@/lib/ui/dashboardLayout";
-import { debtHref, statementRows, thisMonthSummary, trendPoints } from "@/lib/ui/dashboardCards";
+import { debtHref, MonthItem, monthItems, statementRows, thisMonthSummary, trendPoints } from "@/lib/ui/dashboardCards";
 import { monthlyCommitments } from "@/lib/ui/pocket/commitments";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
 import { AMOUNT_SLOT, recentRows, RECENT_DAYS } from "@/lib/ui/pocket/homeSections";
@@ -126,7 +126,22 @@ function ThisMonthBody({ d }: { d: DashboardData }) {
   const { t, locale } = useI18n();
   const { displayCurrency } = useApp();
   const m = useMemo(() => thisMonthSummary(d.flow, d.today), [d.flow, d.today]);
+  const items = useMemo(
+    () =>
+      monthItems({
+        transactions: d.transactions,
+        accounts: d.accounts,
+        book: d.book,
+        today: d.today,
+        usdPer: d.usdPer,
+        display: displayCurrency,
+        includeLegacy: d.includeLegacy,
+      }),
+    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency]
+  );
   if (!m) return <p className={muted}>{t("dashboard.noMonth")}</p>;
+  const { incomeAhead, expenseAhead } = items.totals;
+  const ahead = incomeAhead > 0.005 || expenseAhead > 0.005;
   return (
     <div className="space-y-2">
       <div>
@@ -148,6 +163,24 @@ function ThisMonthBody({ d }: { d: DashboardData }) {
         >
           <Money amount={m.net} currency={displayCurrency} tone={m.net < 0 ? "neg" : "pos"} />
         </Line>
+        {/* what's planned for the rest of the month, and where that leaves it */}
+        {ahead ? (
+          <div data-month-ahead>
+            <Line label={t("dashboard.monthAhead")}>
+              <span className="flex gap-2">
+                <Money amount={incomeAhead} currency={displayCurrency} sign="in" tone={incomeAhead > 0.005 ? "pos" : undefined} />
+                <Money amount={expenseAhead} currency={displayCurrency} sign="out" />
+              </span>
+            </Line>
+            <Line label={t("dashboard.monthEnd")}>
+              <Money
+                amount={m.net + incomeAhead - expenseAhead}
+                currency={displayCurrency}
+                tone={m.net + incomeAhead - expenseAhead < 0 ? "neg" : "pos"}
+              />
+            </Line>
+          </div>
+        ) : null}
         {m.usual ? (
           <p className={`${muted} text-right`}>
             <AmountPhrase text={t("dashboard.usualNet", { amount: AMOUNT_SLOT })} amount={formatSigned(m.usual.net, displayCurrency, locale)} />
@@ -168,7 +201,40 @@ function ThisMonthBody({ d }: { d: DashboardData }) {
           />
         </div>
       ) : null}
+      <MonthList title={t("dashboard.income")} items={items.income} kind="income" />
+      <MonthList title={t("dashboard.expense")} items={items.expense} kind="expense" />
       <p className={muted}>{t("dashboard.cashBasis")}</p>
+    </div>
+  );
+}
+
+/** One side of the month, line by line: what's done, then a fainter line for what's still to come. */
+function MonthList({ title, items, kind }: { title: string; items: MonthItem[]; kind: "income" | "expense" }) {
+  const { t, locale } = useI18n();
+  // the day and the month: the year is this one
+  const day = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-GB", { day: "numeric", month: "short" });
+  if (items.length === 0) return null;
+  return (
+    <div data-month-list={kind}>
+      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+        {title} <span className="tabular-nums">· {items.length}</span>
+      </p>
+      <ul className="max-h-64 divide-y divide-[var(--edge-soft)] overflow-y-auto">
+        {items.map((i) => (
+          <li key={i.key} className={`flex items-baseline gap-2 py-1 text-sm ${i.status === "done" ? "" : "text-zinc-500 dark:text-zinc-400"}`} data-month-item={i.status}>
+            <span className="w-12 shrink-0 text-[11px] tabular-nums text-zinc-400">{day(i.date)}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {i.label}
+              {i.status !== "done" ? (
+                <span className="ml-1.5 text-[11px] text-zinc-400">{t(i.status === "expected" ? "dashboard.monthExpected" : "dashboard.monthPlanned")}</span>
+              ) : null}
+            </span>
+            <span className="shrink-0 font-medium">
+              <Money amount={i.amount} currency={i.currency} sign={kind === "income" ? "in" : "out"} tone={kind === "income" && i.status === "done" ? "pos" : undefined} />
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { Account, NetWorthSnapshot, Transaction } from "@/lib/data/types";
 import { buildCardBook } from "@/lib/domain/cards";
 import { UsdPerMap } from "@/lib/domain/fx";
 import { cardStandings, findDueCardPayments } from "@/lib/domain/purchases";
-import { debtHref, statementRows, thisMonthSummary, trendPoints } from "../dashboardCards";
+import { debtHref, monthItems, statementRows, thisMonthSummary, trendPoints } from "../dashboardCards";
 
 const usdPer: UsdPerMap = { USD: 1, TRY: 1 / 40, EUR: 1 / 0.9, BTC: 60000, XAU_G: 100 };
 const today = "2026-10-16";
@@ -124,5 +124,55 @@ describe("debtHref", () => {
   it("opens the loans page", () => {
     expect(debtHref("loan-1")).toBe("/accounts?view=debts&loan=loan-1");
     expect(debtHref()).toBe("/accounts?view=debts");
+  });
+});
+
+describe("monthItems", () => {
+  const base: Account = {
+    id: "bank", name: "EnPara TRY", currency: "TRY", kind: "fiat", openingBalance: 0, archived: false,
+    paymentAccountId: null, paymentDay: null, creditLimit: null, createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const usd: Account = { ...base, id: "usd", name: "EnPara USD", currency: "USD" };
+  const akbank: Account = { ...base, id: "akbank", name: "CC Akbank", kind: "credit_card", paymentAccountId: "bank", paymentDay: 16 };
+  const enpara: Account = { ...base, id: "enpara", name: "CC EnPara", kind: "credit_card", paymentAccountId: "bank", paymentDay: 16 };
+  const accounts = [base, usd, akbank, enpara];
+  let n = 0;
+  const row = (accountId: string, dueDate: string, amount: number, o: Partial<Transaction> = {}): Transaction => ({
+    id: `r${++n}`, accountId, direction: "expense", categoryId: null, amount, status: "planned", dueDate, completedAt: null,
+    description: `row ${n}`, fxSnapshot: null, transferGroupId: null, transferMarketRate: null, recurringTemplateId: null,
+    loanId: null, victvsPayoutId: null, purchaseId: null, legacy: false, createdAt: "2026-01-01T00:00:00.000Z", ...o,
+  });
+  const transactions = [
+    row("usd", "2026-10-05", 2090, { direction: "income", status: "completed", description: "WBL 2026" }),
+    row("bank", "2026-10-04", 40476.14, { status: "completed", description: "Renault-Suzi Orfin" }),
+    row("bank", "2026-10-26", 9046.8, { description: "Tansu Akbank 100k Kredi" }),
+    // a card payment recorded: the payment counts, the charge it covers doesn't
+    row("bank", "2026-10-16", 30000, { status: "completed", transferGroupId: "g", description: "CC Akbank statement" }),
+    row("akbank", "2026-10-16", 30000, { direction: "income", status: "completed", transferGroupId: "g" }),
+    row("akbank", "2026-09-20", 30000, { status: "completed", description: "Migros" }),
+    // CC EnPara's October statement: nothing recorded, so it's expected
+    row("enpara", "2026-09-28", 4000, { status: "completed", description: "Market" }),
+    // a transfer between your own accounts is neither
+    row("bank", "2026-10-10", 1000, { status: "completed", transferGroupId: "t" }),
+    row("usd", "2026-10-10", 25, { direction: "income", status: "completed", transferGroupId: "t" }),
+    // another month
+    row("bank", "2026-11-04", 40476.14, { description: "Renault-Suzi Orfin" }),
+  ];
+  const book = buildCardBook(accounts, transactions);
+  const items = monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY" });
+
+  it("lists the month's incomes and expenses, done and still to come, and an expected card statement", () => {
+    expect(items.income.map((i) => [i.label, i.status, i.value])).toEqual([["WBL 2026", "done", 83600]]);
+    expect(items.expense.map((i) => [i.date, i.label, i.status])).toEqual([
+      ["2026-10-04", "Renault-Suzi Orfin", "done"],
+      ["2026-10-16", "CC Akbank statement", "done"],
+      ["2026-10-16", "CC EnPara", "expected"],
+      ["2026-10-26", "Tansu Akbank 100k Kredi", "planned"],
+    ]);
+    expect(items.expense.find((i) => i.status === "expected")?.accountName).toBe("EnPara TRY");
+  });
+
+  it("splits the totals into done and still to come", () => {
+    expect(items.totals).toEqual({ incomeDone: 83600, incomeAhead: 0, expenseDone: 70476.14, expenseAhead: 13046.8 });
   });
 });

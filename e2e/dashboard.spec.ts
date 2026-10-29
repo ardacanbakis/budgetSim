@@ -469,6 +469,30 @@ test.describe("Optional cards", () => {
     for (const [id, , mark] of CARDS) await expect(mark(card(page, id)).first()).toBeVisible();
   });
 
+  test("This month lists every income and expense of the month, done and still to come", async ({ page }) => {
+    await enterDemo(page);
+    await page.evaluate((key) => {
+      const store = JSON.parse(localStorage.getItem(key) ?? "{}");
+      store.settings.dashboardLayout = { order: [], hidden: [], shown: ["this-month"] };
+      localStorage.setItem(key, JSON.stringify(store));
+    }, DEMO_KEY);
+    await page.goto("/");
+    const month = card(page, "this-month");
+    await expect(month).toBeVisible({ timeout: 15_000 });
+    // the demo's salary is in, rent and the market are out
+    const income = month.locator("[data-month-list=income]");
+    const expense = month.locator("[data-month-list=expense]");
+    await expect(income.locator("li").first()).toBeVisible();
+    await expect(expense.locator("li").first()).toBeVisible();
+    await expect(expense).toContainText("Weekly market");
+    // a card's statement shows as the payment, never as the charges it covers
+    await expect(expense).not.toContainText("Migros + market");
+    // done lines and lines still to come both
+    await expect(month.locator("[data-month-item=done]").first()).toBeVisible();
+    await expect(month.locator("[data-month-item=planned], [data-month-item=expected]").first()).toBeVisible();
+    await expect(month.locator("[data-month-ahead]")).toContainText("By month end");
+  });
+
   test("the debt and VICTVS cards leave with their pages", async ({ page }) => {
     await enterDemo(page);
     await page.evaluate((key) => {

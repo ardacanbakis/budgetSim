@@ -1,5 +1,5 @@
-import { Account, NetWorthSnapshot } from "@/lib/data/types";
-import { CardBook, cardSchedule } from "@/lib/domain/cards";
+import { Account, NetWorthSnapshot, Transaction } from "@/lib/data/types";
+import { CardBook, cardSchedule, isIncome, isSpending, paymentDateIn } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, DueCardPayment } from "@/lib/domain/purchases";
@@ -17,6 +17,9 @@ import { loanHref } from "./portfolioUrl";
  *   dashboard's flow (cash basis: a card counts when it's paid), the share
  *   of income kept, the same against the mean of the earlier months, and
  *   the month's spending pace against that mean (lib/ui/pocket/pace.ts).
+ * - monthItems(…): every income and expense of this month, one line each,
+ *   done or still to come, on the same cash basis, plus a card's statement
+ *   due this month that no payment is recorded for yet ("expected").
  * - trendPoints(snapshots, …): one point a month from the net-worth
  *   snapshots, the last 12 months, plus "now" from the live figure; both
  *   are what you hold less what the cards owe, so the line doesn't jump.
@@ -65,6 +68,108 @@ export function thisMonthSummary(flow: readonly FlowMonth[], today: string): Thi
     usual,
     pace: usual && usual.expense > 0.005 ? pace({ spent: current.expense, limit: usual.expense, today }) : null,
   };
+}
+
+export interface MonthItem {
+  key: string;
+  date: string;
+  label: string;
+  /** the account it moves (the paying account for a card's statement) */
+  accountName: string;
+  direction: "income" | "expense";
+  /** in its own currency */
+  amount: number;
+  currency: Currency;
+  /** in the display currency: the rates it was completed at, else today's; null without a rate */
+  value: number | null;
+  /** done: completed · planned: a row still to come · expected: a card statement with no payment recorded yet */
+  status: "done" | "planned" | "expected";
+}
+
+export interface MonthItems {
+  income: MonthItem[];
+  expense: MonthItem[];
+  /** display currency */
+  totals: { incomeDone: number; incomeAhead: number; expenseDone: number; expenseAhead: number };
+}
+
+/**
+ * Every income and expense of today's month, on the dashboard's cash basis
+ * (lib/domain/cards.ts isIncome / isSpending): ordinary incomes and
+ * expenses, and card payments, never the charges a payment covers or a
+ * transfer between your accounts. Rows done and still planned both count;
+ * a card's statement due this month with no payment recorded is one more
+ * line, from what the card expects (cardSchedule, estimates included).
+ * Legacy rows count when `includeLegacy`, as the month's totals do.
+ */
+export function monthItems(params: {
+  transactions: readonly Transaction[];
+  accounts: readonly Account[];
+  book: CardBook;
+  today: string;
+  usdPer: UsdPerMap;
+  display: Currency;
+  includeLegacy?: boolean;
+}): MonthItems {
+  const { transactions, accounts, book, today, usdPer, display, includeLegacy = true } = params;
+  const month = today.slice(0, 7);
+  const byId = new Map(accounts.map((a) => [a.id, a] as const));
+  const out: MonthItems = { income: [], expense: [], totals: { incomeDone: 0, incomeAhead: 0, expenseDone: 0, expenseAhead: 0 } };
+  const add = (item: MonthItem) => {
+    (item.direction === "income" ? out.income : out.expense).push(item);
+    const v = item.value ?? 0;
+    const done = item.status === "done";
+    if (item.direction === "income") out.totals[done ? "incomeDone" : "incomeAhead"] += v;
+    else out.totals[done ? "expenseDone" : "expenseAhead"] += v;
+  };
+
+  for (const t of transactions) {
+    if (t.dueDate.slice(0, 7) !== month || (t.legacy && !includeLegacy)) continue;
+    const income = isIncome(t, book);
+    if (!income && !isSpending(t, book)) continue;
+    const account = byId.get(t.accountId);
+    if (!account) continue;
+    const done = t.status === "completed";
+    // what's done reads at the rates it was done at, so the month doesn't drift
+    const rates = done ? (t.fxSnapshot?.usdPer ?? usdPer) : usdPer;
+    add({
+      key: t.id,
+      date: t.dueDate,
+      label: t.description || account.name,
+      accountName: account.name,
+      direction: income ? "income" : "expense",
+      amount: t.amount,
+      currency: account.currency,
+      value: convert(t.amount, account.currency, display, rates),
+      status: done ? "done" : "planned",
+    });
+  }
+
+  // a statement due this month that no payment says anything about yet
+  for (const card of accounts) {
+    if (card.kind !== "credit_card" || card.archived) continue;
+    if (book.payments(card.id).some((p) => p.date.slice(0, 7) === month)) continue;
+    const due = cardSchedule(book, card.id, month).find((s) => s.month === month);
+    if (!due || due.total <= 0.005) continue;
+    const payer = card.paymentAccountId ? byId.get(card.paymentAccountId) : undefined;
+    add({
+      key: `stmt:${card.id}`,
+      date: paymentDateIn(month, card.paymentDay) ?? today,
+      label: card.name,
+      accountName: payer?.name ?? card.name,
+      direction: "expense",
+      amount: due.total,
+      currency: card.currency,
+      value: convert(due.total, card.currency, display, usdPer),
+      status: "expected",
+    });
+  }
+
+  const byDate = (a: MonthItem, b: MonthItem) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label);
+  out.income.sort(byDate);
+  out.expense.sort(byDate);
+  for (const k of Object.keys(out.totals) as (keyof MonthItems["totals"])[]) out.totals[k] = Math.round(out.totals[k] * 100) / 100;
+  return out;
 }
 
 export interface TrendPoint {
