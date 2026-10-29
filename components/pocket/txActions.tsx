@@ -16,6 +16,7 @@ import { describeTx, useDueLabel, useTxLookup } from "./dayList";
 import { Approx, Money } from "./kit";
 import { PaidAmount, PocketPaidAmountSheet } from "./paidAmountSheet";
 import { ActionItem, PocketActionSheet } from "./sheet";
+import { canBeCardPayment, ConvertToCardPaymentModal } from "@/components/convertToCardPayment";
 
 /**
  * What can be done to a ledger row in Pocket, and the sheet that offers it.
@@ -134,6 +135,9 @@ export function PocketTxActionSheet({ tx, onClose }: { tx: Transaction | null; o
   const dueLabel = useDueLabel();
   // "Paid a different amount…" swaps this sheet for the amount sheet: one sheet at a time
   const [paidFor, setPaidFor] = useState<string | null>(null);
+  // "This is a card payment" swaps the sheet for the card picker, the same way
+  const [convertFor, setConvertFor] = useState<string | null>(null);
+  const accountList = useAccounts().data;
 
   const d = tx ? describeTx(tx, lookup, t) : null;
   if (!tx || !d) return null;
@@ -194,6 +198,9 @@ export function PocketTxActionSheet({ tx, onClose }: { tx: Transaction | null; o
   }
   if (editable) items.push(edit);
   items.push(duplicate);
+  if (canBeCardPayment(tx, accountList ?? [])) {
+    items.push({ label: t("tx.toCardPayment"), icon: "card", onSelect: () => setConvertFor(tx.id) });
+  }
   if (!planned && !d.transfer) {
     items.push(
       {
@@ -261,7 +268,14 @@ export function PocketTxActionSheet({ tx, onClose }: { tx: Transaction | null; o
   return (
     <>
       {/* keyed by row: an armed Delete never carries over to the next row */}
-      <PocketActionSheet key={tx.id} open={!paying} onClose={onClose} title={d.title} summary={summary} items={items} />
+      <PocketActionSheet key={tx.id} open={!paying && convertFor !== tx.id} onClose={onClose} title={d.title} summary={summary} items={items} />
+      <ConvertToCardPaymentModal
+        tx={convertFor === tx.id ? tx : null}
+        onClose={() => {
+          setConvertFor(null);
+          onClose();
+        }}
+      />
       <PocketPaidAmountSheet
         tx={paying ? tx : null}
         onClose={() => {

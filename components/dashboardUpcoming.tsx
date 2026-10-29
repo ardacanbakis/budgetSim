@@ -13,7 +13,7 @@ import { sumAmounts } from "@/lib/domain/money";
 import { cardStandings } from "@/lib/domain/purchases";
 import { useI18n } from "@/lib/i18n";
 import { NormalizedLayout } from "@/lib/ui/dashboardLayout";
-import { COMING_UP_ROWS } from "@/lib/ui/pocket/homeSections";
+import { COMING_UP_ROWS, visibleComingUp } from "@/lib/ui/pocket/homeSections";
 import { comingUp, ComingUpItem } from "@/lib/ui/pocket/attention";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
 import { DashboardData } from "@/lib/useDashboardData";
@@ -84,7 +84,7 @@ export function UpcomingCard({
 
   // what a payment recorded now would cover, as the Cards page suggests it
   const covers = paying
-    ? d.book.uncovered(paying.id).filter((c) => c.dueDate.slice(0, 7) < d.today.slice(0, 7))
+    ? d.book.wouldCover(paying.id, d.today.slice(0, 7))
     : [];
 
   const row = variant === "classic" ? "px-4 py-2.5" : "px-[var(--ui-card-pad-x)] py-[var(--ui-row-py)]";
@@ -189,7 +189,7 @@ export function UpcomingCard({
         </div>
       ) : (
         <ul data-upcoming-list className="divide-y divide-[var(--edge-soft)]">
-          {items.slice(0, COMING_UP_ROWS).map(render)}
+          {visibleComingUp(items).map(render)}
         </ul>
       )}
       {/* the modal portals out, but React still bubbles its clicks to the card */}

@@ -122,11 +122,13 @@ test.describe("Pocket home", () => {
     await expect(snackbar(page)).toBeVisible();
     await expect(snackbar(page)).toContainText("Marked paid");
     await expect.poll(async () => (await store(page)).transactions.find((t) => t.id === before!.id)?.status).toBe("completed");
-    await expect(comingUpRows(page).filter({ hasText: title })).toHaveCount(0);
+    // only the overdue one: next month's of the same item may be listed as "in N days"
+    const late = () => comingUpRows(page).filter({ hasText: title }).filter({ hasText: /days? late/ });
+    await expect(late()).toHaveCount(0);
 
     await snackbar(page).getByRole("button", { name: "Undo" }).click();
     await expect.poll(async () => (await store(page)).transactions.find((t) => t.id === before!.id)?.status).toBe("planned");
-    await expect(comingUpRows(page).filter({ hasText: title })).toHaveCount(1);
+    await expect(late()).toHaveCount(1);
   });
 
   test("tapping a row's body opens its actions", async ({ page }) => {

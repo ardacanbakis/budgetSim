@@ -27,6 +27,7 @@ import {
   splitAtSlot,
   toggleSection,
   topBudgets,
+  visibleComingUp,
 } from "../pocket/homeSections";
 
 const account = (id: string, kind: Account["kind"] = "fiat", extra: Partial<Account> = {}): Account => ({
@@ -198,13 +199,30 @@ describe("comingUpTotal", () => {
       overdue: false,
       account: card,
       standing: cardStandings(accounts, book, today)[0],
-      figure: { amount: 2000, totalOwed: 9000, monthsToGo: 3 },
+      figure: { amount: 2000, totalOwed: 9000, monthsToGo: 3, next: { month: "2026-10", date: "2026-10-20", amount: 2000 } },
     };
     // salary $1,000 − rent ₺4,000 ($100) − statement ₺2,000 ($50); the transfer and VICTVS count for nothing
     expect(comingUpTotal([...items, statement], { book, usdPer, display: "USD" })).toBeCloseTo(850, 10);
     expect(comingUpTotal([...items, statement], { book, usdPer, display: "TRY" })).toBeCloseTo(34000, 6);
     expect(comingUpTotal(items, { book, usdPer: undefined, display: "USD" })).toBeNull();
     expect(comingUpTotal([], { book, usdPer, display: "USD" })).toBe(0);
+  });
+});
+
+describe("visibleComingUp", () => {
+  const dated = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ kind: "planned", key: `p${i}` }) as unknown as ComingUpItem);
+  const victvs = { kind: "victvs", key: "victvs", amountUsd: 592.5, count: 14 } as ComingUpItem;
+
+  it("shows everything that fits", () => {
+    expect(visibleComingUp([...dated(4), victvs], 6)).toHaveLength(5);
+  });
+
+  it("cuts a dated row, never the VICTVS line", () => {
+    const shown = visibleComingUp([...dated(6), victvs], 6);
+    expect(shown).toHaveLength(6);
+    expect(shown[5]).toBe(victvs);
+    expect(visibleComingUp(dated(8), 6)).toHaveLength(6);
   });
 });
 

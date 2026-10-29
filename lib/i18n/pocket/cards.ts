@@ -19,6 +19,7 @@
 export const en = {
   // Cards
   thisStatement: "This statement",
+  nextStatement: "Next payment · {date}",
   nothingThisMonth: "Nothing to pay this month",
   owedMonthsOne: "Total owed {amount} · 1 month to go",
   owedMonthsMany: "Total owed {amount} · {count} months to go",
@@ -55,6 +56,7 @@ export const en = {
 export const tr: typeof en = {
   // Cards
   thisStatement: "Bu ekstre",
+  nextStatement: "Sonraki ödeme · {date}",
   nothingThisMonth: "Bu ay ödenecek bir şey yok",
   owedMonthsOne: "Toplam borç {amount} · 1 ay kaldı",
   owedMonthsMany: "Toplam borç {amount} · {count} ay kaldı",

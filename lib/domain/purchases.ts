@@ -1,5 +1,5 @@
 import { Account, Purchase, Transaction } from "@/lib/data/types";
-import { CardBook, chargeAmount } from "./cards";
+import { CardBook, chargeAmount, paymentDateIn } from "./cards";
 import { Currency } from "./currencies";
 import { fromMinor, toMinor } from "./money";
 import { addMonthsClamped } from "./recurrence";
@@ -35,9 +35,14 @@ export function buildInstallmentPlan(params: {
   return rows;
 }
 
-/** Default first-due: one month after purchase (how taksit hits the next statement). */
-export function defaultFirstDue(purchaseDate: string): string {
-  return addMonthsClamped(purchaseDate, 1);
+/**
+ * Default first-due: the next month's statement, which is how a taksit lands.
+ * On a card with a payment day it's that day, since an installment's date is
+ * the statement it's paid with; otherwise a month after the purchase.
+ */
+export function defaultFirstDue(purchaseDate: string, paymentDay?: number | null): string {
+  const next = addMonthsClamped(purchaseDate, 1);
+  return paymentDateIn(next.slice(0, 7), paymentDay ?? null) ?? next;
 }
 
 export function lastDueDate(firstDue: string, count: number): string {
@@ -87,6 +92,32 @@ export function buildPurchaseTransactionSpecs(
   }));
 }
 
+/**
+ * Charges already on an account that look like a purchase's installments:
+ * not part of any purchase, the same amount to the minor unit, in the month
+ * of one of its rows. The usual cause is the same taksit entered earlier as a
+ * recurring item; reflecting the purchase as well would count those months
+ * twice, and the plan would pay them twice.
+ */
+export function findOverlappingCharges(
+  accountId: string,
+  rows: Pick<PurchaseTxSpec, "amount" | "dueDate">[],
+  transactions: Transaction[],
+  currency: Currency
+): Transaction[] {
+  const wanted = new Set(rows.map((r) => `${r.dueDate.slice(0, 7)}|${toMinor(r.amount, currency)}`));
+  return transactions
+    .filter(
+      (t) =>
+        t.accountId === accountId &&
+        t.direction === "expense" &&
+        t.purchaseId == null &&
+        t.transferGroupId == null &&
+        wanted.has(`${t.dueDate.slice(0, 7)}|${toMinor(t.amount, currency)}`)
+    )
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
 export interface PurchaseProgress {
   paidCount: number;
   paidAmount: number;
@@ -122,15 +153,16 @@ export function purchaseProgress(purchase: Purchase, book: CardBook, transaction
 
 export interface DueCardPayment {
   account: Account;
-  /** what's been charged to the card and not yet covered by a payment, from before this month */
+  /** what this month's payment would cover (CardBook.wouldCover) */
   suggestedAmount: number;
   /** those charges: the payment you record will cover them */
   covers: Transaction[];
 }
 
 /**
- * Cards with charges from earlier months that no payment covers yet, and no
- * payment recorded this month. Recording one covers them.
+ * Cards with a statement due and no payment recorded this month: charges from
+ * earlier months, or installments due this month, that no payment covers yet.
+ * Recording one covers them.
  */
 export function findDueCardPayments(accounts: Account[], book: CardBook, today: string): DueCardPayment[] {
   const month = today.slice(0, 7);
@@ -138,7 +170,7 @@ export function findDueCardPayments(accounts: Account[], book: CardBook, today: 
   for (const account of accounts) {
     if (account.kind !== "credit_card" || account.archived) continue;
     if (book.payments(account.id).some((p) => p.date.slice(0, 7) === month)) continue;
-    const covers = book.uncovered(account.id).filter((c) => c.dueDate.slice(0, 7) < month);
+    const covers = book.wouldCover(account.id, month);
     if (covers.length === 0) continue;
     const suggestedAmount = covers.reduce((sum, c) => sum + chargeAmount(c), 0);
     if (suggestedAmount <= 0.005) continue;

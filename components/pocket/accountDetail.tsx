@@ -314,7 +314,7 @@ export function AccountDetail({ account }: { account: Account }) {
   const upcoming = allUpcoming ? feed.upcoming : feed.upcoming.slice(0, UPCOMING_ROWS);
 
   // what a payment recorded now would cover, as the Cards page suggests it
-  const covers = card && book ? book.uncovered(account.id).filter((c) => c.dueDate.slice(0, 7) < today.slice(0, 7)) : [];
+  const covers = card && book ? book.wouldCover(account.id, today.slice(0, 7)) : [];
   const suggested = Math.max(0, covers.reduce((sum, c) => sum + chargeAmount(c), 0));
 
   const startAdjust = () => {

@@ -54,6 +54,7 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
+  const [deleting, setDeleting] = useState<RecurringTemplate | null>(null);
   const [colorsOpen, setColorsOpen] = useState(false);
   const statusFilter = useLocalChoice<StatusFilter>(RECURRING_STATUS_FILTER_KEY, STATUS_FILTERS, "all");
   const directionFilter = useLocalChoice<DirectionFilter>(RECURRING_DIRECTION_FILTER_KEY, DIRECTION_FILTERS, "all");
@@ -208,13 +209,58 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
         onDelete={
           editing
             ? async () => {
-                const deletePlanned = window.confirm(t("recurring.deletePlannedToo"));
-                await deleteTemplate.mutateAsync({ id: editing.id, deletePlanned });
+                setDeleting(editing);
                 setEditing(null);
               }
             : undefined
         }
       />
+
+      {/* Three explicit answers. A yes/no "also delete its planned items?"
+          read as "cancel the delete" on No, and quietly left every future
+          payment in the plan. */}
+      <Modal
+        open={deleting != null}
+        onClose={() => setDeleting(null)}
+        title={deleting ? t("recurring.deleteTitle", { name: deleting.name }) : ""}
+      >
+        {deleting ? (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-500">
+              {t("recurring.deleteHint", {
+                count: (transactions.data ?? []).filter((tx) => tx.recurringTemplateId === deleting.id && tx.status === "planned").length,
+              })}
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" onClick={() => setDeleting(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={deleteTemplate.isPending}
+                onClick={async () => {
+                  await deleteTemplate.mutateAsync({ id: deleting.id, deletePlanned: false });
+                  setDeleting(null);
+                }}
+              >
+                {t("recurring.deleteKeepPlanned")}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={deleteTemplate.isPending}
+                onClick={async () => {
+                  await deleteTemplate.mutateAsync({ id: deleting.id, deletePlanned: true });
+                  setDeleting(null);
+                }}
+              >
+                {t("recurring.deleteWithPlanned")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

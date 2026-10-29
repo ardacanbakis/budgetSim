@@ -413,18 +413,25 @@ export class SupabaseRepo implements Repo {
   }
 
   async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
-    const { error } = await this.db.from("transactions").update({ legacy }).eq("id", id);
-    throwIf(error);
+    // both legs of a transfer, or a card payment's card side is left behind
+    await this.updateWithLegs(id, { legacy });
   }
 
   async bulkCompleteAsLegacy(ids: string[], fxSnapshot: FxSnapshot): Promise<number> {
     if (!ids.length) return 0;
-    const { error } = await this.db
-      .from("transactions")
-      .update({ status: "completed", completed_at: new Date().toISOString(), fx_snapshot: fxSnapshot, legacy: true })
-      .in("id", ids)
-      .eq("status", "planned");
+    const row = { status: "completed", completed_at: new Date().toISOString(), fx_snapshot: fxSnapshot, legacy: true };
+    const { error } = await this.db.from("transactions").update(row).in("id", ids).eq("status", "planned");
     throwIf(error);
+    // the other leg of any transfer among them: lists show one leg only (a card
+    // payment's card side is hidden), and completing just that one left the
+    // other planned forever
+    const { data, error: legsError } = await this.db.from("transactions").select("transfer_group_id").in("id", ids);
+    throwIf(legsError);
+    const groups = [...new Set((data ?? []).map((r) => r.transfer_group_id as string | null).filter((g): g is string => g != null))];
+    if (groups.length) {
+      const { error: e } = await this.db.from("transactions").update(row).in("transfer_group_id", groups).eq("status", "planned");
+      throwIf(e);
+    }
     return ids.length;
   }
 

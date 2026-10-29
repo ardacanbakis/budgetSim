@@ -5,6 +5,7 @@ import {
   buildPurchaseTransactionSpecs,
   defaultFirstDue,
   findDueCardPayments,
+  findOverlappingCharges,
   lastDueDate,
   purchaseProgress,
 } from "../purchases";
@@ -67,6 +68,12 @@ describe("buildInstallmentPlan", () => {
     expect(lastDueDate("2026-02-15", 6)).toBe("2026-07-15");
     expect(lastDueDate("2026-02-15", 1)).toBe("2026-02-15");
   });
+
+  it("on a card with a payment day, first due is next month's payment day", () => {
+    expect(defaultFirstDue("2026-10-29", 17)).toBe("2026-11-17");
+    expect(defaultFirstDue("2026-01-31", 31)).toBe("2026-02-28");
+    expect(defaultFirstDue("2026-01-15", null)).toBe("2026-02-15");
+  });
 });
 
 describe("purchaseProgress", () => {
@@ -93,13 +100,14 @@ describe("purchaseProgress", () => {
   ];
 
   it("on a card, an installment is paid once the payment covering it is made", () => {
-    // May and June installments; June's payment (made) covers May, July's (only planned) covers June
+    // May, June and July installments; June's payment (made) covers May's and
+    // June's, July's (only planned) covers July's
     const txs = [installment(1), installment(2), installment(3), ...payment("2026-06-16", true), ...payment("2026-07-16", false)];
     const book = buildCardBook(accounts, txs);
     const progress = purchaseProgress(purchase, book, txs, "TRY");
-    expect(progress.paidCount).toBe(1);
-    expect(progress.paidAmount).toBe(10000);
-    expect(progress.remainingAmount).toBe(50000);
+    expect(progress.paidCount).toBe(2);
+    expect(progress.paidAmount).toBe(20000);
+    expect(progress.remainingAmount).toBe(40000);
     expect(progress.totalCount).toBe(6);
   });
 
@@ -158,6 +166,28 @@ describe("buildPurchaseTransactionSpecs", () => {
   });
 });
 
+describe("findOverlappingCharges", () => {
+  const rows = buildPurchaseTransactionSpecs(
+    { name: "Semoş AkKız 100k", amount: 132749.16, installmentCount: 12, purchaseDate: "2026-09-02", firstDue: "2026-09-15" },
+    "TRY",
+    "2026-10-28"
+  );
+
+  it("finds the same taksit entered before, not the purchase's own rows or other charges", () => {
+    const old = [
+      tx({ accountId: "card", direction: "expense", amount: 11062.43, dueDate: "2026-09-15", recurringTemplateId: null, legacy: true }),
+      tx({ accountId: "card", direction: "expense", amount: 11062.43, dueDate: "2026-10-15" }),
+    ];
+    const others = [
+      tx({ accountId: "card", direction: "expense", amount: 11062.43, dueDate: "2026-10-15", purchaseId: "p1" }), // its own row
+      tx({ accountId: "card", direction: "expense", amount: 11062.44, dueDate: "2026-11-15" }), // a kuruş off
+      tx({ accountId: "other", direction: "expense", amount: 11062.43, dueDate: "2026-11-15" }), // another account
+      tx({ accountId: "card", direction: "expense", amount: 11062.43, dueDate: "2028-01-15" }), // after the last installment
+    ];
+    expect(findOverlappingCharges("card", rows, [...others, ...old], "TRY")).toEqual(old);
+  });
+});
+
 describe("findDueCardPayments", () => {
   const accounts = [account("bank", "TRY"), account("card", "TRY", "credit_card")];
   const due = (txs: Transaction[], today: string) => findDueCardPayments(accounts, buildCardBook(accounts, txs), today);
@@ -168,17 +198,23 @@ describe("findDueCardPayments", () => {
     tx({ accountId: "card", direction: "income", amount: 1, dueDate: date, transferGroupId: `g${date}`, status: "planned" }),
   ];
 
-  it("asks for a payment covering last month's charges", () => {
-    const list = due([charge("2026-05-10", 1400), charge("2026-05-20", 5000), charge("2026-06-10", 1400)], "2026-06-15");
+  const swipe = (dueDate: string, amount: number) =>
+    tx({ accountId: "card", direction: "expense", amount, dueDate, status: "completed", completedAt: dueDate });
+
+  it("asks for a payment covering earlier charges and this month's installments", () => {
+    const list = due(
+      [charge("2026-05-10", 1400), swipe("2026-05-20", 5000), charge("2026-06-10", 1400), swipe("2026-06-12", 300)],
+      "2026-06-15"
+    );
     expect(list).toHaveLength(1);
-    // this month's charge goes on next month's statement
-    expect(list[0].covers.map((c) => c.dueDate)).toEqual(["2026-05-10", "2026-05-20"]);
-    expect(list[0].suggestedAmount).toBe(6400);
+    // June's installment is due with June's statement; June's swipe goes on July's
+    expect(list[0].covers.map((c) => c.dueDate)).toEqual(["2026-05-10", "2026-05-20", "2026-06-10"]);
+    expect(list[0].suggestedAmount).toBe(7800);
   });
 
   it("stays quiet once this month's payment is recorded, or when nothing is due yet", () => {
-    expect(due([charge("2026-05-20", 5000), ...payment("2026-06-16")], "2026-06-15")).toHaveLength(0);
-    expect(due([charge("2026-06-10", 1400)], "2026-06-15")).toHaveLength(0);
+    expect(due([swipe("2026-05-20", 5000), ...payment("2026-06-16")], "2026-06-15")).toHaveLength(0);
+    expect(due([swipe("2026-06-10", 1400), charge("2026-07-10", 1400)], "2026-06-15")).toHaveLength(0);
   });
 });
 

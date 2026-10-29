@@ -30,6 +30,7 @@ import {
   accountTiles,
   AMOUNT_SLOT,
   COMING_UP_ROWS,
+  visibleComingUp,
   comingUpTotal,
   HOME_SECTIONS_KEY,
   parseSections,
@@ -158,7 +159,7 @@ export function PocketHome() {
     lead != null ? `${leadName} ${hideAmounts ? MASK : formatSigned(lead, displayCurrency, locale)}` : undefined;
 
   // what a payment recorded now would cover, as the Cards page suggests it
-  const coversFor = (cardId: string) => book.uncovered(cardId).filter((c) => c.dueDate.slice(0, 7) < today.slice(0, 7));
+  const coversFor = (cardId: string) => book.wouldCover(cardId, today.slice(0, 7));
   const covers = paying ? coversFor(paying.id) : [];
 
   const loading = lookup.loading;
@@ -535,7 +536,7 @@ function ComingUp({
         </p>
       ) : (
         <ul data-coming-up className="divide-y divide-[var(--edge-soft)] border-t border-[var(--edge-soft)]">
-          {items.slice(0, COMING_UP_ROWS).map((item) =>
+          {visibleComingUp(items).map((item) =>
             item.kind === "planned" ? (
               <PocketTxRow key={item.key} tx={item.tx} lookup={lookup} onTap={onRowTap} onComplete={onComplete} due />
             ) : item.kind === "card" ? (

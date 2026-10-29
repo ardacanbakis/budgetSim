@@ -20,6 +20,7 @@ import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { RecurringTab } from "@/components/recurringTab";
 import { TimelineTab } from "@/components/timelineTab";
 import { CompleteModal, EditModal } from "@/components/txModals";
+import { canBeCardPayment, ConvertToCardPaymentModal } from "@/components/convertToCardPayment";
 import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
@@ -99,6 +100,7 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
   const [txModal, setTxModal] = useState(false);
   const [transferModal, setTransferModal] = useState(false);
   const [completing, setCompleting] = useState<Transaction | null>(null);
+  const [converting, setConverting] = useState<Transaction | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const { columns, setColumns } = useColumns("renovator-cols-transactions");
@@ -380,6 +382,9 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
                                 onToggleLegacy={() => toggleLegacy.mutate({ id: tx.id, legacy: !tx.legacy })}
                                 onReopen={() => reopenTx.mutate(tx.id)}
                                 onDelete={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(tx.id)}
+                                onCardPayment={
+                                  canBeCardPayment(tx, accounts.data ?? []) ? () => setConverting(tx) : undefined
+                                }
                                 cardPayment={book.roleOf(tx) === "payment"}
                               />
                             ))}
@@ -399,6 +404,7 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
 
       <TransferModal open={transferModal} onClose={() => setTransferModal(false)} />
 
+      <ConvertToCardPaymentModal key={converting?.id ?? "none"} tx={converting} onClose={() => setConverting(null)} />
       <CompleteModal
         tx={completing}
         accountCurrency={completing ? accountById.get(completing.accountId)?.currency : undefined}
@@ -438,6 +444,7 @@ function TxRow({
   onToggleLegacy,
   onReopen,
   onDelete,
+  onCardPayment,
   cardPayment,
 }: {
   tx: Transaction;
@@ -453,6 +460,8 @@ function TxRow({
   onToggleLegacy: () => void;
   onReopen: () => void;
   onDelete: () => void;
+  /** offered on a planned expense that could be a card's statement */
+  onCardPayment?: () => void;
   /** a payment into a card: the spending, so it reads as an expense */
   cardPayment?: boolean;
 }) {
@@ -500,6 +509,11 @@ function TxRow({
         ) : null}
       </div>
       <div className="flex shrink-0 gap-1">
+        {onCardPayment ? (
+          <Button variant="ghost" title={t("tx.toCardPayment")} aria-label={t("tx.toCardPayment")} onClick={onCardPayment}>
+            💳
+          </Button>
+        ) : null}
         {tx.status === "planned" ? (
           <Button variant="primary" disabled={!hasRates} onClick={onComplete}>
             {t("tx.complete")}

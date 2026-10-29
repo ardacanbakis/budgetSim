@@ -335,8 +335,9 @@ test("cards: a recorded statement counts against the limit until it's paid, and 
   await modal.locator('input[data-date-input]').fill(dueIso);
   await modal.getByRole("button", { name: /^Record payment$/ }).click();
 
-  // owed until it's paid, and the limit says so
-  await expect(card).toContainText(/Owed: ₺10,019\.54/);
+  // it leads as the next payment, owed until it's paid, and the limit says so
+  await expect(card).toContainText(/Next payment ₺10,019\.54/);
+  await expect(card).toContainText(/Total owed ₺10,019\.54/);
   await expect(card).toContainText(/₺39,980\.46 left of ₺50,000\.00/);
 
   // on the ledger it's an expense, not a neutral transfer
@@ -2252,4 +2253,147 @@ test("sidebar: middle handle, empty-space click and number-key shortcuts", async
   await page.keyboard.press("n");
   await page.keyboard.press("3");
   await expect(page).toHaveURL(new RegExp(`${hrefs[0] === "/" ? "/" : hrefs[0]}$`));
+});
+
+test("recurring: deleting asks what happens to its planned items, three clear answers", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/transactions?tab=recurring");
+  const rowsOf = (name: string) =>
+    page.evaluate((name) => {
+      const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5") ?? "{}");
+      return (store.transactions as { description: string; status: string; recurringTemplateId: string | null }[]).filter(
+        (t) => t.description === name
+      );
+    }, name);
+  const plannedBefore = (await rowsOf("Rent")).filter((t) => t.status === "planned").length;
+  expect(plannedBefore).toBeGreaterThan(0);
+
+  const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
+  await rentCard.getByRole("button", { name: /^edit$|^düzenle$/i }).click();
+  await page.getByRole("button", { name: /^delete$|^sil$/i }).click();
+  const dialog = page.locator(".fixed.inset-0").filter({ hasText: "Delete Rent?" });
+  await expect(dialog).toContainText(`It has ${plannedBefore} planned items ahead`);
+  // Cancel really cancels
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Rent", { exact: true })).toBeVisible();
+
+  await rentCard.getByRole("button", { name: /^edit$|^düzenle$/i }).click();
+  await page.getByRole("button", { name: /^delete$|^sil$/i }).click();
+  await page.getByRole("button", { name: "Delete it, keep its planned items" }).click();
+  await expect(page.getByText("Rent", { exact: true })).toHaveCount(0);
+  const kept = await rowsOf("Rent");
+  expect(kept.filter((t) => t.status === "planned")).toHaveLength(plannedBefore);
+  expect(kept.every((t) => t.recurringTemplateId == null)).toBe(true);
+});
+
+test("cards: a draft statement becomes a card payment, and the plan stops paying twice", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  const next = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 15);
+  const due = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-15`;
+  await page.evaluate(
+    ({ due }) => {
+      const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5")!);
+      const ziraat = store.accounts.find((a: { name: string }) => a.name === "Ziraat TRY");
+      store.transactions.push({
+        id: "e2e-draft",
+        accountId: ziraat.id,
+        direction: "expense",
+        categoryId: null,
+        amount: 25000,
+        status: "planned",
+        dueDate: due,
+        completedAt: null,
+        description: "draft next month - Bonus",
+        fxSnapshot: null,
+        transferGroupId: null,
+        transferMarketRate: null,
+        recurringTemplateId: null,
+        loanId: null,
+        victvsPayoutId: null,
+        purchaseId: null,
+        legacy: false,
+        createdAt: new Date().toISOString(),
+      });
+      window.localStorage.setItem("renovator-demo-v5", JSON.stringify(store));
+    },
+    { due }
+  );
+  await page.goto("/transactions");
+  const draft = page.locator("li").filter({ hasText: "draft next month - Bonus" });
+  await draft.getByRole("button", { name: "This is a card payment" }).click();
+  const dialog = page.locator(".fixed.inset-0").filter({ hasText: "Make it a card payment" });
+  // the card is picked from the description
+  await expect(dialog.locator("select[data-convert-card] option:checked")).toHaveText("Bonus Card");
+  await dialog.getByRole("button", { name: "Make it a card payment" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const row = page.locator("li").filter({ hasText: "draft next month - Bonus" });
+  await expect(row).toContainText(/Card payment/);
+  await expect(row).toContainText("−₺25,000.00");
+  const legs = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("renovator-demo-v5")!).transactions.filter(
+      (t: { description: string }) => t.description === "draft next month - Bonus"
+    )
+  );
+  expect(legs).toHaveLength(2);
+  expect(legs.every((t: { status: string; transferGroupId: string | null }) => t.status === "planned" && t.transferGroupId)).toBe(true);
+});
+
+test("cards: a new purchase warns about the same installment already on the card", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  const now = new Date();
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 15);
+  // the same taksit entered before by hand: ₺3,000 on the card next month
+  await page.evaluate(
+    ({ due }) => {
+      const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5")!);
+      const card = store.accounts.find((a: { name: string }) => a.name === "Bonus Card");
+      store.transactions.push({
+        id: "e2e-old-taksit",
+        accountId: card.id,
+        direction: "expense",
+        categoryId: null,
+        amount: 3000,
+        status: "planned",
+        dueDate: due,
+        completedAt: null,
+        description: "Fridge taksit (old)",
+        fxSnapshot: null,
+        transferGroupId: null,
+        transferMarketRate: null,
+        recurringTemplateId: null,
+        loanId: null,
+        victvsPayoutId: null,
+        purchaseId: null,
+        legacy: false,
+        createdAt: new Date().toISOString(),
+      });
+      window.localStorage.setItem("renovator-demo-v5", JSON.stringify(store));
+    },
+    { due: iso(nextMonth) }
+  );
+  await page.goto("/cards");
+  await page.getByRole("button", { name: /new purchase|yeni alım/i }).click();
+  await page.getByLabel(/name|ad/i).first().fill("Fridge");
+  await page.getByLabel(/amount|tutar/i).first().fill("9000");
+  await page.getByLabel(/number of installments|taksit sayısı/i).fill("3");
+  // first installment defaults to next month's payment day (the 15th)
+  await expect(page.getByLabel(/first installment|ilk taksit/i)).toHaveValue(
+    nextMonth.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+  );
+  const warning = page.locator("[data-purchase-overlaps]");
+  await expect(warning).toContainText("1 charges already on this account");
+  await expect(warning).toContainText("Fridge taksit (old)");
+  await page.getByRole("button", { name: /^save$|kaydet/i }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.parse(window.localStorage.getItem("renovator-demo-v5")!).transactions.some((t: { id: string }) => t.id === "e2e-old-taksit")
+      )
+    )
+    .toBe(false);
 });

@@ -195,7 +195,7 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
   );
   const visible = new Set([slots.home, slots.activity, slots.fourth, ...slots.more].filter(Boolean).map((i) => i!.href));
   const coversFor = (cardId: string) =>
-    book ? book.uncovered(cardId).filter((c) => c.dueDate.slice(0, 7) < today.slice(0, 7)) : [];
+    book ? book.wouldCover(cardId, today.slice(0, 7)) : [];
   const dueCards = new Set(book ? cardsDueSoon(cardStandings(accounts.data ?? [], book, today), 7).map((s) => s.account.id) : []);
 
   const tab = (item: NavItem | null, slot: "home" | "activity" | "fourth", label?: string, badge?: ReactNode) => {

@@ -185,7 +185,7 @@ function StatementsBody({ d }: { d: DashboardData }) {
   );
   const monthName = (m: string) =>
     new Date(`${m}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-GB", { month: "short" });
-  const covers = paying ? d.book.uncovered(paying.id).filter((c) => c.dueDate.slice(0, 7) < d.today.slice(0, 7)) : [];
+  const covers = paying ? d.book.wouldCover(paying.id, d.today.slice(0, 7)) : [];
 
   const due = (days: number | null, paid: boolean) =>
     paid

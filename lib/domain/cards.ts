@@ -15,8 +15,11 @@ import { GoldPrices, goldRatiosOf } from "./gold";
  *   item billed to it, a one-off) is a breakdown of what some payment covers.
  *   Counting it as well would count that spending twice.
  * - A payment made in month M covers the card's charges dated before M (the
- *   statement it pays was cut before it). A charge is paid once the payment
- *   covering it has been made, so nothing needs ticking off by hand.
+ *   statement it pays was cut before it), and a big purchase's installments
+ *   due by M's payment day: an installment's date is when it's paid, not a
+ *   swipe, so it's paid with the first statement due on or after it. A
+ *   charge is paid once the payment covering it has been made, so nothing
+ *   needs ticking off by hand.
  * - What a card is owed: payments recorded but not yet made, plus charges no
  *   payment covers yet. Those are what's already been charged, and every
  *   installment of a big purchase still to come, because Turkish banks hold
@@ -69,12 +72,25 @@ export interface CardBook {
   uncovered(cardId: string): Transaction[];
   /** what the card is owed today, in its own currency (see the rules above) */
   owed(cardId: string, today: string): number;
-  /** the month a charge is paid in: its covering payment's, else the month after it */
+  /** the month a charge is paid in: its covering payment's, else the first statement that covers it (coveredIn) */
   paidInMonth(charge: Transaction): string;
+  /** uncovered charges a payment made in `month` (yyyy-mm) would cover */
+  wouldCover(cardId: string, month: string): Transaction[];
 }
 
 /** + for a charge, − for a refund landing on the card */
 export const chargeAmount = (t: Transaction): number => (t.direction === "expense" ? t.amount : -t.amount);
+
+/**
+ * Whether the statement of `month` (yyyy-mm) covers a charge: a swipe from an
+ * earlier month, or an installment due by that statement's payment day. With
+ * no payment day, any installment due that month or earlier.
+ */
+export function coveredIn(charge: Transaction, month: string, paymentDay: number | null): boolean {
+  const own = charge.dueDate.slice(0, 7);
+  if (charge.purchaseId == null) return own < month;
+  return charge.dueDate <= (paymentDateIn(month, paymentDay) ?? `${month}-31`);
+}
 
 function nextMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -84,6 +100,8 @@ function nextMonth(month: string): string {
 export function buildCardBook(accounts: Account[], transactions: Transaction[]): CardBook {
   const cards = new Set(accounts.filter((a) => a.kind === "credit_card").map((a) => a.id));
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
+  const paymentDayOf = new Map(accounts.map((a) => [a.id, a.paymentDay ?? null] as const));
+  const covers = (charge: Transaction, month: string) => coveredIn(charge, month, paymentDayOf.get(charge.accountId) ?? null);
 
   const legsByGroup = new Map<string, Transaction[]>();
   for (const t of transactions) {
@@ -128,10 +146,8 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
   }
   for (const list of chargesOf.values()) list.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
-  const coverOf = (charge: Transaction): CardPayment | null => {
-    const month = charge.dueDate.slice(0, 7);
-    return (paymentsOf.get(charge.accountId) ?? []).find((p) => p.date.slice(0, 7) > month) ?? null;
-  };
+  const coverOf = (charge: Transaction): CardPayment | null =>
+    (paymentsOf.get(charge.accountId) ?? []).find((p) => covers(charge, p.date.slice(0, 7))) ?? null;
 
   const roleOf = (t: Transaction): CardRole => {
     if (t.transferGroupId) {
@@ -162,7 +178,14 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
       }
       return owed;
     },
-    paidInMonth: (charge) => coverOf(charge)?.date.slice(0, 7) ?? nextMonth(charge.dueDate.slice(0, 7)),
+    paidInMonth: (charge) => {
+      const covering = coverOf(charge);
+      if (covering) return covering.date.slice(0, 7);
+      // its own month's statement if that one's due on or after it, else the next
+      const own = charge.dueDate.slice(0, 7);
+      return covers(charge, own) ? own : nextMonth(own);
+    },
+    wouldCover: (cardId, month) => uncovered(cardId).filter((c) => covers(c, month)),
   };
 }
 
@@ -175,6 +198,36 @@ export function paymentDateIn(month: string, day: number | null): string | null 
   const [y, m] = month.split("-").map(Number);
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return `${month}-${String(Math.min(Math.max(1, day), last)).padStart(2, "0")}`;
+}
+
+const CARD_WORDS = new Set(["cc", "card", "kart", "kredi", "credit"]);
+const words = (text: string) =>
+  text
+    .toLocaleLowerCase("tr-TR")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0);
+
+/**
+ * The card a description most likely names: "draft November - Akbank" names
+ * CC Akbank. Each card's name, without words like "CC", is matched against
+ * the description's words; the card with the largest share of its name found
+ * wins, so "Akbank" picks CC Akbank over CC Tansu Akbank, and on a tie the one
+ * more of whose name was said. Null when no card's name appears at all.
+ */
+export function guessCardFor(description: string, cards: readonly Account[]): Account | null {
+  const said = new Set(words(description));
+  let best: { card: Account; score: number; found: number } | null = null;
+  for (const card of cards) {
+    const name = words(card.name).filter((w) => !CARD_WORDS.has(w));
+    if (name.length === 0) continue;
+    const found = name.filter((w) => said.has(w)).length;
+    const score = found / name.length;
+    // a tie goes to the card more of whose name was said: "Tansu Akbank" is Tansu's
+    if (found > 0 && (best == null || score > best.score || (score === best.score && found > best.found))) {
+      best = { card, score, found };
+    }
+  }
+  return best?.card ?? null;
 }
 
 /** What every open card is owed today, in the display currency. */
@@ -197,12 +250,15 @@ export function totalOwed(
 /**
  * A card's bills month by month: payments recorded but not yet made, in the
  * month they're due, and charges no payment covers yet, in the month they'll
- * be paid (see paidInMonth). In the card's own currency.
+ * be paid (see paidInMonth). Anything that fell due before `fromMonth` is
+ * still owed, so it's folded into `fromMonth` rather than dropped. In the
+ * card's own currency.
  */
 export function cardSchedule(book: CardBook, cardId: string, fromMonth: string): { month: string; total: number }[] {
   const months = new Map<string, number>();
   const add = (month: string, amount: number) => {
-    if (month >= fromMonth) months.set(month, (months.get(month) ?? 0) + amount);
+    const due = month < fromMonth ? fromMonth : month;
+    months.set(due, (months.get(due) ?? 0) + amount);
   };
   for (const p of book.payments(cardId)) if (!p.made) add(p.date.slice(0, 7), p.amount);
   for (const c of book.uncovered(cardId)) add(book.paidInMonth(c), chargeAmount(c));
@@ -210,6 +266,26 @@ export function cardSchedule(book: CardBook, cardId: string, fromMonth: string):
     .filter(([, total]) => Math.abs(total) > 0.005)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, total]) => ({ month, total }));
+}
+
+export interface NextCardPayment {
+  /** yyyy-mm of the statement */
+  month: string;
+  /** the card's payment day in that month; null when it has none */
+  date: string | null;
+  /** in the card's currency */
+  amount: number;
+}
+
+/**
+ * The next statement you'll pay: the first month from this one with anything
+ * due (cardSchedule), on the card's payment day. This month's, while it's
+ * unpaid; next month's once it's paid. Null when nothing more is coming.
+ */
+export function nextCardPayment(book: CardBook, card: Account, today: string): NextCardPayment | null {
+  const first = cardSchedule(book, card.id, today.slice(0, 7))[0];
+  if (!first || first.total <= 0.005) return null;
+  return { month: first.month, date: paymentDateIn(first.month, card.paymentDay), amount: first.total };
 }
 
 /**

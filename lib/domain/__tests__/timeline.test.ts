@@ -214,15 +214,16 @@ describe("statementEvents", () => {
     const rows = [...ikea, market];
     const events = timelineOf(rows).filter((e) => e.kind === "statement");
     expect(events.map((e) => [e.date, e.amount, e.status])).toEqual([
-      // September's instalment, paid in October, unpaid by the 15th: overdue
-      ["2026-10-15", 1000, "overdue"],
+      // September's instalment (never paid) folds into October's, which is
+      // due with October's statement; unpaid by the 15th: overdue
+      ["2026-10-15", 2000, "overdue"],
+      // October's market swipe goes on November's statement with its instalment
       ["2026-11-15", 1250, "planned"],
       ["2026-12-15", 1000, "planned"],
-      ["2027-01-15", 1000, "planned"],
     ]);
     expect(events[0].effectiveDate).toBe(today);
     expect(events[1].legs).toEqual([{ accountId: "bank", delta: -1250 }]);
-    expect(events[1].charges?.map((c) => c.id)).toEqual([market.id, ikea[1].id]);
+    expect(events[1].charges?.map((c) => c.id)).toEqual([market.id, ikea[2].id]);
   });
 
   it("adds up, with the payments not yet made, to the card's schedule", () => {

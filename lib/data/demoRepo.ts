@@ -284,17 +284,21 @@ export class DemoRepo implements Repo {
   }
 
   async setTransactionLegacy(id: string, legacy: boolean): Promise<void> {
-    const tx = this.store.transactions.find((t) => t.id === id);
-    if (!tx) return;
-    tx.legacy = legacy;
+    const legs = this.withLegs(id);
+    if (!legs.length) return;
+    for (const tx of legs) tx.legacy = legacy;
     this.save();
   }
 
   async bulkCompleteAsLegacy(ids: string[], fxSnapshot: FxSnapshot): Promise<number> {
     const now = new Date().toISOString();
     let count = 0;
+    // lists show one leg of a transfer: complete the other one with it
+    const groups = new Set(
+      this.store.transactions.filter((t) => ids.includes(t.id) && t.transferGroupId).map((t) => t.transferGroupId!)
+    );
     for (const tx of this.store.transactions) {
-      if (ids.includes(tx.id) && tx.status === "planned") {
+      if ((ids.includes(tx.id) || (tx.transferGroupId != null && groups.has(tx.transferGroupId))) && tx.status === "planned") {
         tx.status = "completed";
         tx.completedAt = now;
         tx.fxSnapshot = fxSnapshot;
@@ -427,6 +431,8 @@ export class DemoRepo implements Repo {
         (t) => !(t.recurringTemplateId === id && t.status === "planned")
       );
     }
+    // the rows it keeps lose the link, as Supabase's "on delete set null" does
+    for (const t of this.store.transactions) if (t.recurringTemplateId === id) t.recurringTemplateId = null;
     this.save();
   }
 
