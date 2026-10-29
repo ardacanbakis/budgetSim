@@ -37,6 +37,9 @@ export default pocketable(TransactionsPage, PocketTransactions);
 
 const TABS = ["ledger", "income", "bills"] as const;
 type Tab = (typeof TABS)[number];
+/** how the ledger's months run, apart from the rows inside each month */
+const MONTH_ORDERS = ["now", "latest", "oldest"] as const;
+type MonthOrder = (typeof MONTH_ORDERS)[number];
 
 function TransactionsPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
@@ -102,6 +105,7 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
   const [filterStatus, setFilterStatus] = useState<"all" | TxStatus>("all");
   const [filterDirection, setFilterDirection] = useState<"all" | TxDirection>("all");
   const [latestFirst, setLatestFirst] = useState(true);
+  const [monthOrder, setMonthOrder] = useState<MonthOrder>("now");
   const [txModal, setTxModal] = useState(false);
   const [transferModal, setTransferModal] = useState(false);
   const [completing, setCompleting] = useState<Transaction | null>(null);
@@ -199,10 +203,12 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
     }
     const months = [...byMonth.entries()].map(([month, b]) => ({ month, ...b, net: b.income - b.expense }));
 
-    // "now" first, then recent history, with the future after it — landing on
-    // a ledger full of next year's planned rows helps nobody
+    // by default "now" first, then recent history, with the future after it —
+    // landing on a ledger full of next year's planned rows helps nobody
     const rank = (month: string) => (month === thisMonth ? 0 : month < thisMonth ? 1 : 2);
     months.sort((a, b) => {
+      if (monthOrder === "latest") return a.month < b.month ? 1 : -1;
+      if (monthOrder === "oldest") return a.month < b.month ? -1 : 1;
       const ra = rank(a.month);
       const rb = rank(b.month);
       if (ra !== rb) return ra - rb;
@@ -217,7 +223,7 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
     }
     // years inherit the order their first month landed in
     return [...byYear.entries()];
-  }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth, book]);
+  }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth, book, monthOrder]);
 
   // history collapses by default: only the current year is open on arrival
   const currentYear = thisMonth.slice(0, 4);
@@ -285,6 +291,13 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
           </option>
           <option value="income">{t("tx.income")}</option>
           <option value="expense">{t("tx.expense")}</option>
+        </Select>
+        <Select className="!w-auto" value={monthOrder} onChange={(e) => setMonthOrder(e.target.value as MonthOrder)}>
+          {MONTH_ORDERS.map((o) => (
+            <option key={o} value={o}>
+              {t("tx.monthOrder")}: {t(`tx.monthOrder_${o}`)}
+            </option>
+          ))}
         </Select>
         <button onClick={() => setLatestFirst(!latestFirst)} className="text-xs text-teal-600 hover:underline">
           {latestFirst ? t("portfolio.sortLatest") : t("portfolio.sortOldest")} ⇅

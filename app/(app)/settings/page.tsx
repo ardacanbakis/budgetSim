@@ -47,6 +47,13 @@ const TAB_ICON: Record<SettingsTab, string> = {
   history: "🕘",
   account: "👤",
 };
+/** the side nav's grouping of the tabs, in SETTINGS_TABS order */
+const TAB_GROUPS: { key: string; tabs: SettingsTab[] }[] = [
+  { key: "general", tabs: ["preferences", "dashboard"] },
+  { key: "budgeting", tabs: ["categories", "victvs"] },
+  { key: "data", tabs: ["data", "check", "history"] },
+  { key: "account", tabs: ["account"] },
+];
 
 export default function SettingsPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
@@ -128,17 +135,18 @@ function SettingsScreen() {
   if (categories.isLoading) return <Spinner />;
 
   const isDemo = session.status === "ready" && session.repo.mode === "demo";
+  const tabLabel = (v: SettingsTab) => t(v === "dashboard" ? "dashboard.settingsTab" : `settings.tab_${v}`);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div>
         <h1 className="text-xl font-bold">{t("settings.title")}</h1>
         <p className="text-sm text-zinc-500">{t("settings.subtitle")}</p>
       </div>
 
-      {/* tab bar — scrollable on narrow screens; each panel is short enough
-          that it doesn't need to pin (and pinning would fight the ticker) */}
-      <div className="-mx-1 overflow-x-auto px-1 py-1">
+      {/* narrow screens: a scrollable tab bar; wide ones: a grouped side nav
+          that stays in view while the panel scrolls */}
+      <div className="-mx-1 overflow-x-auto px-1 py-1 lg:hidden">
         <div className="flex w-max min-w-full gap-1 rounded-xl bg-[var(--edge-soft)] p-1">
           {SETTINGS_TABS.map((v) => (
             <button
@@ -151,12 +159,43 @@ function SettingsScreen() {
               }`}
             >
               <span className="text-xs">{TAB_ICON[v]}</span>
-              {t(v === "dashboard" ? "dashboard.settingsTab" : `settings.tab_${v}`)}
+              {tabLabel(v)}
             </button>
           ))}
         </div>
       </div>
 
+      <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-6">
+      <nav aria-label={t("settings.title")} className="sticky top-4 hidden space-y-4 lg:block">
+        {TAB_GROUPS.map((g) => (
+          <div key={g.key}>
+            <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+              {t(`settings.group_${g.key}`)}
+            </p>
+            <ul className="space-y-0.5">
+              {g.tabs.map((v) => (
+                <li key={v}>
+                  <button
+                    type="button"
+                    aria-current={tab === v ? "page" : undefined}
+                    onClick={() => switchTab(v)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors ${
+                      tab === v
+                        ? "bg-[var(--surface)] shadow-sm ring-1 ring-[var(--edge-soft)]"
+                        : "text-zinc-500 hover:bg-[var(--edge-soft)] hover:text-zinc-700 dark:hover:text-zinc-300"
+                    }`}
+                  >
+                    <span className="w-4 text-center text-xs">{TAB_ICON[v]}</span>
+                    {tabLabel(v)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <div className="min-w-0 space-y-4">
       {tab === "preferences" ? (
         <>
           {/* on a Pocket phone the way back to Standard comes first */}
@@ -291,6 +330,8 @@ function SettingsScreen() {
       ) : null}
 
       <AboutLine />
+      </div>
+      </div>
     </div>
   );
 }
