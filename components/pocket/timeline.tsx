@@ -30,6 +30,7 @@ import {
   TIMELINE_KEYS,
   TIMELINE_PAGE_MONTHS,
   TimelineDay,
+  timelineHref,
   timelineWindow,
 } from "@/lib/ui/timeline";
 import { LOOKAHEAD_MONTHS, useTimeline } from "@/lib/useTimeline";
@@ -48,7 +49,7 @@ const TimelineChart = dynamic(() => import("@/components/timelineChart"), {
 });
 
 /**
- * Pocket's Timeline (/transactions?tab=timeline): what happened and what is
+ * Pocket's Timeline (/reports?tab=timeline): what happened and what is
  * planned on one axis, earliest at the top, from lib/domain/timeline.ts.
  *
  * 1. "Lowest point ahead": one line per cash account with anything planned
@@ -97,7 +98,7 @@ export function PocketTimeline({ accountParam }: { accountParam: string | null }
 
   const pick = (id: string | null) => {
     setAccountId(id);
-    replaceQuery(id ? `/transactions?tab=timeline&account=${encodeURIComponent(id)}` : "/transactions?tab=timeline");
+    replaceQuery(timelineHref(id));
   };
 
   const options: BucketOptions = useMemo(

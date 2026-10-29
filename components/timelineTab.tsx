@@ -39,6 +39,7 @@ import {
   TIMELINE_KEYS,
   TIMELINE_PAGE_MONTHS,
   TimelineMonth,
+  timelineHref,
   timelineWindow,
 } from "@/lib/ui/timeline";
 import { LOOKAHEAD_MONTHS, useTimeline } from "@/lib/useTimeline";
@@ -56,9 +57,9 @@ const segmentClass = (on: boolean) =>
   }`;
 
 /**
- * The Timeline, as the Transactions page's middle tab (?tab=timeline): what
+ * The Timeline, the first of Reports' reports (/reports?tab=timeline): what
  * happened and what is planned on one axis, from lib/domain/timeline.ts.
- * `tabs` is the page's tab strip, as RecurringTab takes it.
+ * `tabs` is the page's report picker.
  *
  * - The stream, month by month: each month's in, out and net (and, up to this
  *   month, the six-month average), its days, and its rows: ledger rows with
@@ -121,7 +122,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
 
   const pick = (id: string | null) => {
     setAccountId(id);
-    replaceQuery(id ? `/transactions?tab=timeline&account=${encodeURIComponent(id)}` : "/transactions?tab=timeline");
+    replaceQuery(timelineHref(id));
   };
 
   const options: BucketOptions = useMemo(
@@ -179,7 +180,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
   return (
     <div className="mx-auto max-w-7xl space-y-4" data-timeline>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">{t("tx.title")}</h1>
+        <h1 className="text-xl font-bold">{t("reports.title")}</h1>
         <div className="flex items-center gap-2">
           <Button onClick={() => setTransferModal(true)}>⇄ {t("tx.newTransfer")}</Button>
           <Button variant="primary" onClick={() => setTxModal(true)}>

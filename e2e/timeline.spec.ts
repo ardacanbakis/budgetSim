@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * The Classic Timeline tab (/transactions?tab=timeline): the stream with its
+ * The Classic Timeline tab (/reports?tab=timeline): the stream with its
  * Today divider, the side panel, and the Ledger tab's own actions. Runs in
  * the demo at 1280×800.
  */
@@ -83,39 +83,52 @@ const timelineTab = (page: Page) => tab(page, /^timeline$|^zaman tüneli$/i);
 const ledgerTab = (page: Page) => tab(page, /^transactions$|^işlemler$/i);
 const today = (page: Page) => page.getByRole("separator", { name: /^(Today|Bugün) · / });
 
-test.describe("Timeline tab", () => {
-  test("a tab of Transactions between the ledger and recurring, kept in the URL", async ({ page }) => {
+test.describe("Timeline report", () => {
+  test("the first of Reports' reports and the one it opens on; the old address lands there", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions");
-    await expect(page.getByRole("tablist", { name: "Transactions" }).getByRole("tab")).toHaveText([
-      "Transactions",
+    await page.goto("/reports");
+    await expect(page.getByRole("tablist", { name: "Report" }).getByRole("tab")).toHaveText([
       "Timeline",
-      "Recurring",
+      "Cash flow",
+      "Spending",
+      "Net worth",
     ]);
-    await timelineTab(page).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
     await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Reports", level: 1 })).toBeVisible();
     await expect(today(page)).toBeVisible();
 
-    // loaded with the query, the tabs still switch, and the sidebar lands on the ledger
-    await page.goto("/transactions?tab=timeline");
-    await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
-    await ledgerTab(page).click();
-    await expect(page).toHaveURL(/\/transactions$/);
-    await expect(ledgerTab(page)).toHaveAttribute("aria-selected", "true");
+    // the other reports switch in place, kept in the URL
+    await tab(page, /^Cash flow$/).click();
+    await expect(page).toHaveURL(/\/reports\?tab=cashflow$/);
+    await expect(page.getByText("Month by month", { exact: false })).toBeVisible();
+    await expect(today(page)).toHaveCount(0);
     await timelineTab(page).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
-    const sidebar = page.locator("aside nav");
-    await sidebar.locator('a[href="/accounts"]').click();
-    await expect(page).toHaveURL(/\/accounts$/);
-    await sidebar.locator('a[href="/transactions"]').click();
-    await expect(page).toHaveURL(/\/transactions$/);
+    await expect(page).toHaveURL(/\/reports$/);
+    await expect(today(page)).toBeVisible();
+
+    // Transactions keeps the ledger and recurring; the old link redirects, account and all
+    await page.goto("/transactions");
+    await expect(page.getByRole("tablist", { name: "Transactions" }).getByRole("tab")).toHaveText(["Transactions", "Recurring"]);
     await expect(ledgerTab(page)).toHaveAttribute("aria-selected", "true");
+    const ziraat = (await store(page)).accounts.find((a) => a.name === "Ziraat TRY")!;
+    await page.goto(`/transactions?tab=timeline&account=${ziraat.id}`);
+    await expect(page).toHaveURL(new RegExp(`/reports\\?tab=timeline&account=${ziraat.id}$`));
+    await expect(page.getByRole("combobox", { name: "Account" })).toHaveValue(ziraat.id);
+    await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("the dashboard's Coming up leads to it", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await enterDemo(page);
+    await page.goto("/");
+    await page.locator('[data-card="upcoming"] a[href="/reports?tab=timeline"]').first().click();
+    await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
+    await expect(today(page)).toBeVisible();
   });
 
   test("Today, the Bonus Card statement, the lowest point ahead and the loan's last payment", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     await expect(today(page)).toBeVisible();
     const bonus = page.locator("[data-statement]").filter({ hasText: "Bonus Card statement" }).first();
     await expect(bonus).toBeVisible();
@@ -136,7 +149,7 @@ test.describe("Timeline tab", () => {
 
   test("✓ Complete marks a planned row done, with the Ledger tab's own form", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     const dentist = page.locator("[data-event]").filter({ hasText: "Dentist follow-up" }).first();
     await expect(dentist).toBeVisible();
     const id = (await dentist.getAttribute("data-event"))!;
@@ -154,7 +167,7 @@ test.describe("Timeline tab", () => {
     await enterDemo(page, (s) => {
       s.accounts.find((a) => a.name === "Bonus Card")!.paymentDay = day;
     });
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     await page.getByRole("button", { name: "Pay Bonus Card" }).first().click();
     await expect(page.getByRole("heading", { name: /Record payment — Bonus Card/ })).toBeVisible();
   });
@@ -162,19 +175,19 @@ test.describe("Timeline tab", () => {
   test("one account from the link: its chart, and the balance after each row", async ({ page }) => {
     await enterDemo(page);
     const ziraat = (await store(page)).accounts.find((a) => a.name === "Ziraat TRY")!;
-    await page.goto(`/transactions?tab=timeline&account=${ziraat.id}`);
+    await page.goto(`/reports?tab=timeline&account=${ziraat.id}`);
     await expect(page.getByRole("img", { name: "Ziraat TRY: balance over time" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("combobox", { name: "Account" })).toHaveValue(ziraat.id);
     await expect(page.locator("[data-event] [title='Balance after']").first()).toHaveText(/^→ −?₺[\d,.]+$/);
     // the lowest-point line toggles the account off again
     await page.locator("[data-lowest]").getByRole("button", { name: /Ziraat TRY/ }).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
+    await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
     await expect(page.getByRole("img", { name: /balance over time/ })).toHaveCount(0);
   });
 
   test("Month sums each month up: biggest outflows, statements, markers", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     await page.getByRole("group", { name: "Show by" }).getByRole("button", { name: "Month" }).click();
     await expect(page.getByRole("heading", { name: "Biggest outflows" }).first()).toBeVisible();
     await expect(today(page)).toBeAttached();
@@ -193,13 +206,13 @@ test.describe("Timeline tab", () => {
     await page.keyboard.type("timeline");
     await expect(palette.getByRole("button", { name: /Timeline/ })).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
+    await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
     await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
   });
 
   test("expected VICTVS payouts: dashed, and counted only when switched on", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     const expected = page.locator("[data-expected]").first();
     await expect(expected).toContainText(/VICTVS · expected ~\$[\d,]+/);
     await expect(expected).toContainText("not in balances");
@@ -214,7 +227,7 @@ test.describe("Timeline tab", () => {
 
   test("lira runway: short on the day a big bill lands, with the transfer that covers it", async ({ page }) => {
     await enterDemo(page, (s) => bigBill(s, 10));
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     const runway = page.locator("[data-runway]");
     const by = businessDayBefore(10);
     await expect(runway).toHaveAttribute("data-runway", "short");
@@ -251,7 +264,7 @@ test.describe("Timeline tab", () => {
     await enterDemo(page, (s) => {
       s.accounts.find((a) => a.name === "Ziraat TRY")!.openingBalance = 100_000_000;
     });
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     await expect(page.locator("[data-runway]")).toContainText("Your lira covers everything planned for the next 3 months.");
     await expect(page.getByRole("button", { name: "Plan this transfer" })).toHaveCount(0);
   });
@@ -259,7 +272,7 @@ test.describe("Timeline tab", () => {
   test("reads naturally in Turkish", async ({ page }) => {
     await enterDemo(page);
     await page.evaluate(() => localStorage.setItem("renovator-locale", "tr"));
-    await page.goto("/transactions?tab=timeline");
+    await page.goto("/reports?tab=timeline");
     await expect(timelineTab(page)).toHaveAttribute("aria-selected", "true");
     await expect(today(page)).toHaveAccessibleName(/^Bugün · /);
     await expect(page.getByRole("heading", { name: "Önümüzdeki en düşük nokta" })).toBeVisible();

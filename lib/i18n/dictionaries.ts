@@ -750,6 +750,11 @@ export const en = {
   },
   reports: {
     title: "Reports",
+    picker: "Report",
+    tab_timeline: "Timeline",
+    tab_cashflow: "Cash flow",
+    tab_spending: "Spending",
+    tab_networth: "Net worth",
     netWorthHistory: "Net worth over time",
     snapshotNow: "Snapshot now",
     snapshotHint: "A snapshot freezes today's balances and rates; one is taken automatically each month.",
@@ -1929,6 +1934,11 @@ export const tr: Dictionary = {
   },
   reports: {
     title: "Raporlar",
+    picker: "Rapor",
+    tab_timeline: "Zaman tüneli",
+    tab_cashflow: "Nakit akışı",
+    tab_spending: "Harcama",
+    tab_networth: "Varlık",
     netWorthHistory: "Zaman içinde toplam varlık",
     snapshotNow: "Şimdi kaydet",
     snapshotHint: "Anlık görüntü bugünün bakiye ve kurlarını dondurur; her ay otomatik alınır.",

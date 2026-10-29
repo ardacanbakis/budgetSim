@@ -12,7 +12,7 @@ import { AMOUNT_SLOT } from "@/lib/ui/pocket/homeSections";
 import { shortDay } from "@/lib/ui/timeline";
 
 /**
- * What the Classic and Pocket Timeline tabs both draw the same way: a
+ * What the Classic and Pocket Timelines both draw the same way: a
  * milestone's words and the flag that marks one, and an expected VICTVS
  * payout's words and the clipboard that marks it; the lira runway callout.
  */
