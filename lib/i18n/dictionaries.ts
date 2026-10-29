@@ -9,6 +9,7 @@ import * as timeline from "./timeline";
 import * as debts from "./debts";
 import * as income from "./income";
 import * as converted from "./converted";
+import * as middleman from "./middleman";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
@@ -550,6 +551,7 @@ export const en = {
   debts: debts.en,
   income: income.en,
   converted: converted.en,
+  middleman: middleman.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -1777,6 +1779,7 @@ export const tr: Dictionary = {
   debts: debts.tr,
   income: income.tr,
   converted: converted.tr,
+  middleman: middleman.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",

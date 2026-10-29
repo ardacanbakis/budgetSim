@@ -32,6 +32,7 @@ import { useLocalToggle } from "@/lib/prefs";
 import { pocketable } from "@/components/pocket/pocketable";
 import { RecentChanges, useLastChange } from "@/components/history";
 import { HistoryUpcoming } from "@/components/historyUpcoming";
+import { MiddlemanModal, middlemanTargets } from "@/components/middlemanModal";
 import { CompleteModal, EditModal } from "@/components/txModals";
 import { snapshotFromTable } from "@/lib/domain/fx";
 
@@ -95,6 +96,7 @@ function PortfolioScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [latestFirst, setLatestFirst] = useState(true);
   const [adjusting, setAdjusting] = useState(false);
+  const [converting, setConverting] = useState(false);
   // a row of the account's history being edited or completed
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [completingTx, setCompletingTx] = useState<Transaction | null>(null);
@@ -638,6 +640,12 @@ function PortfolioScreen() {
                       ± {t("adjust.title")}
                     </Button>
                   ) : null}
+                  {/* foreign cash a middleman turns into lira */}
+                  {!selected.archived && selected.kind === "fiat" && middlemanTargets(selected, accounts.data ?? []).length > 0 ? (
+                    <Button variant="ghost" onClick={() => setConverting(true)}>
+                      ⇄ {t("middleman.button")}
+                    </Button>
+                  ) : null}
                   <Button variant="ghost" onClick={() => setEditing(selected)}>
                     {t("common.edit")}
                   </Button>
@@ -714,6 +722,8 @@ function PortfolioScreen() {
           setCompletingTx(null);
         }}
       />
+
+      <MiddlemanModal from={converting ? selected : null} open={converting && selected != null} onClose={() => setConverting(false)} />
 
       <AdjustBalanceModal
         open={adjusting && selected != null}
