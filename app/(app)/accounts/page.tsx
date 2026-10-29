@@ -31,6 +31,7 @@ import { useSurfaceView } from "@/lib/ui/useViews";
 import { useLocalToggle } from "@/lib/prefs";
 import { pocketable } from "@/components/pocket/pocketable";
 import { RecentChanges, useLastChange } from "@/components/history";
+import { HistoryUpcoming } from "@/components/historyUpcoming";
 import { CompleteModal, EditModal } from "@/components/txModals";
 import { snapshotFromTable } from "@/lib/domain/fx";
 
@@ -340,7 +341,10 @@ function PortfolioScreen() {
         .filter((tx) => tx.accountId === selected.id)
         .sort((a, b) => (latestFirst ? (a.dueDate < b.dueDate ? 1 : -1) : a.dueDate > b.dueDate ? 1 : -1))
     : [];
-  const upcoming = history.filter((tx) => tx.status === "planned");
+  // what's planned reads soonest first, whichever way the history is sorted
+  const upcoming = history
+    .filter((tx) => tx.status === "planned")
+    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
   const completed = history.filter((tx) => tx.status === "completed");
 
   // completed history grouped by month with this account's monthly net
@@ -652,41 +656,37 @@ function PortfolioScreen() {
 
               <RecentChanges account={selected} balanceNow={balances.get(selected.id) ?? 0} />
 
-              <div className="flex items-center justify-between px-4 pt-3">
-                <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{t("portfolio.history")}</h3>
-                <button
-                  onClick={() => setLatestFirst(!latestFirst)}
-                  className="text-xs text-teal-600 hover:underline"
-                >
-                  {latestFirst ? t("portfolio.sortLatest") : t("portfolio.sortOldest")} ⇅
-                </button>
-              </div>
-              {history.length === 0 ? (
-                <p className="p-4 text-sm text-zinc-400">{t("portfolio.noHistory")}</p>
-              ) : (
-                <div className="max-h-[60vh] overflow-y-auto pb-2">
-                  {upcoming.length > 0 ? (
-                    <>
-                      <div className="px-4 pt-2 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
-                        {t("portfolio.upcoming")}
+              <HistoryUpcoming
+                className="pb-2"
+                historyCount={completed.length}
+                upcomingCount={upcoming.length}
+                historyAction={
+                  <button onClick={() => setLatestFirst(!latestFirst)} className="text-xs text-teal-600 hover:underline">
+                    {latestFirst ? t("portfolio.sortLatest") : t("portfolio.sortOldest")} ⇅
+                  </button>
+                }
+                upcoming={
+                  <ul className="max-h-[60vh] divide-y divide-[var(--edge-soft)] overflow-y-auto" data-account-upcoming>
+                    {upcoming.map(historyRow)}
+                  </ul>
+                }
+                history={
+                  <div className="max-h-[60vh] overflow-y-auto" data-account-history>
+                    {completedMonths.map(([month, { items, net }]) => (
+                      <div key={month}>
+                        <div className="flex items-center justify-between px-4 pt-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{monthLabel(month)}</span>
+                          <span className={`text-[11px] font-semibold tabular-nums ${net >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {net >= 0 ? "+" : "−"}
+                            {formatAmount(Math.abs(net), selected.currency, locale)}
+                          </span>
+                        </div>
+                        <ul className="divide-y divide-[var(--edge-soft)]">{items.map(historyRow)}</ul>
                       </div>
-                      <ul className="divide-y divide-[var(--edge-soft)]">{upcoming.map(historyRow)}</ul>
-                    </>
-                  ) : null}
-                  {completedMonths.map(([month, { items, net }]) => (
-                    <div key={month}>
-                      <div className="flex items-center justify-between px-4 pt-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{monthLabel(month)}</span>
-                        <span className={`text-[11px] font-semibold tabular-nums ${net >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          {net >= 0 ? "+" : "−"}
-                          {selected ? formatAmount(Math.abs(net), selected.currency, locale) : Math.abs(net)}
-                        </span>
-                      </div>
-                      <ul className="divide-y divide-[var(--edge-soft)]">{items.map(historyRow)}</ul>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                }
+              />
             </>
           )}
         </Card>

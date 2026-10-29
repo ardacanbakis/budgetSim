@@ -35,6 +35,7 @@ import { showSnack } from "@/lib/ui/pocket/snackbar";
 import { pushQuery, replaceQuery } from "@/lib/ui/shallowUrl";
 import { usePocketChrome } from "./chrome";
 import { RecentChanges } from "@/components/history";
+import { HistoryUpcoming } from "@/components/historyUpcoming";
 import { PocketDayList, PocketTxRow, useTxLookup } from "./dayList";
 import { Icon, IconName } from "./icons";
 import { Approx, Avatar, FitFigure, PocketPage, Section } from "./kit";
@@ -432,43 +433,47 @@ export function AccountDetail({ account }: { account: Account }) {
           className="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-3"
         />
 
-        {feed.upcoming.length > 0 ? (
-          <Section title={t("portfolio.upcoming")} flush>
-            <ul className="divide-y divide-[var(--edge-soft)]" data-account-upcoming>
-              {upcoming.map((tx) => (
-                <PocketTxRow
-                  key={tx.id}
-                  tx={tx}
-                  lookup={lookup}
-                  onTap={txSheet.open}
-                  // a card's instalment is paid by the card payment that covers it, never ticked by hand
-                  onComplete={card ? undefined : txSheet.complete}
-                  accountScoped
-                  due
-                />
-              ))}
-            </ul>
-            {feed.upcoming.length > upcoming.length ? (
-              <button
-                type="button"
-                onClick={() => setAllUpcoming(true)}
-                className="flex min-h-[44px] w-full items-center justify-center border-t border-[var(--edge-soft)] text-sm font-medium text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400"
-              >
-                {t("pocket.portfolio.showAllN", { count: feed.upcoming.length })}
-              </button>
-            ) : null}
-          </Section>
-        ) : null}
-
-        {months.length > 0 ? (
-          <div data-account-feed>
-            <PocketDayList months={months} onRowTap={txSheet.open} onComplete={txSheet.complete} accountCurrency={account.currency} />
-          </div>
-        ) : feed.upcoming.length === 0 && !base.loading ? (
-          <p className="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-4 text-sm text-zinc-500 dark:text-zinc-400">
-            {t("portfolio.noHistory")}
-          </p>
-        ) : null}
+        {base.loading && feed.upcoming.length === 0 && months.length === 0 ? null : (
+          <HistoryUpcoming
+            pocket
+            className="space-y-3"
+            emptyClassName="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-4 text-sm text-zinc-500 dark:text-zinc-400"
+            historyCount={feed.completed.length}
+            upcomingCount={feed.upcoming.length}
+            upcoming={
+              <Section flush>
+                <ul className="divide-y divide-[var(--edge-soft)]" data-account-upcoming>
+                  {upcoming.map((tx) => (
+                    <PocketTxRow
+                      key={tx.id}
+                      tx={tx}
+                      lookup={lookup}
+                      onTap={txSheet.open}
+                      // a card's instalment is paid by the card payment that covers it, never ticked by hand
+                      onComplete={card ? undefined : txSheet.complete}
+                      accountScoped
+                      due
+                    />
+                  ))}
+                </ul>
+                {feed.upcoming.length > upcoming.length ? (
+                  <button
+                    type="button"
+                    onClick={() => setAllUpcoming(true)}
+                    className="flex min-h-[44px] w-full items-center justify-center border-t border-[var(--edge-soft)] text-sm font-medium text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400"
+                  >
+                    {t("pocket.portfolio.showAllN", { count: feed.upcoming.length })}
+                  </button>
+                ) : null}
+              </Section>
+            }
+            history={
+              <div data-account-feed>
+                <PocketDayList months={months} onRowTap={txSheet.open} onComplete={txSheet.complete} accountCurrency={account.currency} />
+              </div>
+            }
+          />
+        )}
       </div>
 
       {txSheet.element}

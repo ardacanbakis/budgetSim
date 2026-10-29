@@ -415,3 +415,27 @@ test.describe("Pocket portfolio, dark", () => {
     await page.screenshot({ path: `${SHOTS}/pocket-portfolio-card-dark.png` });
   });
 });
+
+test("an item's History and Upcoming: both by default, or one tab at a time, for accounts and debts", async ({ page }) => {
+  await enterPocket(page);
+  await openAccount(page, "Ziraat TRY");
+  const control = page.getByRole("group", { name: "History or upcoming" });
+  await expect(control.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-account-upcoming] li").first()).toBeVisible();
+  await expect(page.locator("[data-account-feed] li").first()).toBeVisible();
+
+  await control.getByRole("button", { name: /^History/ }).click();
+  await expect(page.locator("[data-account-upcoming]")).toHaveCount(0);
+  await expect(page.locator("[data-account-feed] li").first()).toBeVisible();
+  await control.getByRole("button", { name: /^Upcoming/ }).click();
+  await expect(page.locator("[data-account-feed]")).toHaveCount(0);
+  await expect(page.locator("[data-account-upcoming] li").first()).toBeVisible();
+
+  // a debt's page lists what's been paid too, under History
+  await page.goto("/accounts?view=debts");
+  await page.locator("[data-portfolio-section='loans']").getByText("Car loan — Garanti").click();
+  const detail = page.locator("[data-loan-detail]");
+  await detail.getByRole("group", { name: "History or upcoming" }).getByRole("button", { name: /^History/ }).click();
+  await expect(detail.locator("[data-loan-history] li").first()).toBeVisible();
+  await expect(detail.locator("[data-loan-upcoming]")).toHaveCount(0);
+});
