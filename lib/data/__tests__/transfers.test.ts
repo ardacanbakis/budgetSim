@@ -32,6 +32,27 @@ describe("a transfer's two legs move together", () => {
     expect(legs.map((l) => l.status)).toEqual(["completed", "completed"]);
   });
 
+  it("completing the leg left planned doesn't re-date the one already done", async () => {
+    // the half-done card payments: the money left in August, the card side
+    // was only ticked in October
+    const { repo, out } = await withScheduledPayment();
+    const august: FxSnapshot = { usdPer: FALLBACK_USD_PER, at: "2026-08-17T09:52:53.965Z" };
+    await repo.completeTransaction(out.id, august);
+    const doneAt = (await repo.listTransactions()).find((t) => t.id === out.id)!.completedAt;
+    // the card side planned again, as those half-done rows were
+    const store = (repo as unknown as { store: { transactions: Array<{ id: string; transferGroupId: string | null; status: string }> } }).store;
+    const card = store.transactions.find((t) => t.transferGroupId === out.transferGroupId && t.id !== out.id)!;
+    card.status = "planned";
+
+    await repo.completeTransaction(card.id, snapshot);
+    const legs = (await repo.listTransactions()).filter((t) => t.transferGroupId === out.transferGroupId);
+    expect(legs.map((l) => l.status)).toEqual(["completed", "completed"]);
+    const paying = legs.find((l) => l.id === out.id)!;
+    expect(paying.completedAt).toBe(doneAt);
+    expect(paying.fxSnapshot?.at).toBe(august.at);
+    expect(legs.find((l) => l.id === card.id)!.fxSnapshot?.at).toBe(snapshot.at);
+  });
+
   it("reopening one leg reopens the other", async () => {
     const { repo, out } = await withScheduledPayment();
     await repo.completeTransaction(out.id, snapshot);

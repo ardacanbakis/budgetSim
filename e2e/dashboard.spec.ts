@@ -219,20 +219,21 @@ test.describe("Pocket accounts strip", () => {
   });
 });
 
+// on a wide screen the tabs are the side nav, and the open one is the current page
 const tabButton = (page: Page, name: RegExp) => page.getByRole("button", { name });
 
 test.describe("Settings → Dashboard", () => {
   test("opens by link, is remembered, and switching tabs keeps working after a query", async ({ page }) => {
     await enterDemo(page);
     await page.goto("/settings?tab=dashboard");
-    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "Dashboard cards" })).toBeVisible();
     await expect(page.getByText(/This one uses the Classic style/)).toBeVisible();
 
     // the tabs still switch, and say so in the URL
     await tabButton(page, /Data$/).click();
     await expect(page).toHaveURL(/\/settings\?tab=data$/);
-    await expect(tabButton(page, /Data$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(tabButton(page, /Data$/)).toHaveAttribute("aria-current", "page");
     await tabButton(page, /Dashboard$/).click();
     await expect(page).toHaveURL(/\/settings\?tab=dashboard$/);
 
@@ -242,7 +243,7 @@ test.describe("Settings → Dashboard", () => {
     await expect(page).toHaveURL(/\/accounts$/);
     await sidebar.locator('a[href="/settings"]').click();
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-current", "page");
     await tabButton(page, /Preferences$/).click();
     await expect(page).toHaveURL(/\/settings\?tab=preferences$/);
     await expect(page.getByText(/Display currency/).first()).toBeVisible();
@@ -307,7 +308,7 @@ test.describe("Settings → Dashboard", () => {
     await enterDemo(page);
     await page.evaluate(() => localStorage.setItem("renovator-locale", "tr"));
     await page.goto("/settings?tab=dashboard");
-    await expect(tabButton(page, /Özet$/)).toHaveAttribute("aria-pressed", "true");
+    await expect(tabButton(page, /Özet$/)).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "Özet kartları" })).toBeVisible();
     await expect(page.getByText(/Gizli hesaplar her toplamda sayılmaya devam eder/)).toBeVisible();
   });
