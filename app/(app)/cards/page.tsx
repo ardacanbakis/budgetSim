@@ -15,13 +15,15 @@ import {
 } from "@/lib/data/queries";
 import { NewPurchase } from "@/lib/data/repo";
 import { Account, Purchase } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, chargeAmount } from "@/lib/domain/cards";
+import { buildCardBook, cardSchedule, chargeAmount, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import {
   buildInstallmentPlan,
   cardStandings,
+  buildPurchaseTransactionSpecs,
   defaultFirstDue,
+  findOverlappingCharges,
   lastDueDate,
   purchaseProgress,
 } from "@/lib/domain/purchases";
@@ -113,12 +115,14 @@ function PurchasesPage() {
   // the latest payments first, made or still to make
   const recentPayments = (cardId: string) => [...book.payments(cardId)].reverse().slice(0, 6);
   // what a payment recorded now would cover: charges from before this month no payment covers yet
-  const coversFor = (cardId: string) => book.uncovered(cardId).filter((c) => c.dueDate.slice(0, 7) < thisMonth);
+  const coversFor = (cardId: string) => book.wouldCover(cardId, thisMonth);
   const monthLabel = (month: string) =>
     new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", {
       month: "short",
       year: "2-digit",
     });
+  // when the next statement is due: its payment day, or the month when the card has none
+  const nextWhen = (next: NextCardPayment) => (next.date ? fmtDate(next.date) : monthLabel(next.month));
   const byAccount = new Map<string | null, Purchase[]>();
   for (const p of purchases.data ?? []) {
     const key = p.accountId;
@@ -216,7 +220,8 @@ function PurchasesPage() {
           <thead>
             <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
               <th className="px-3 py-2 font-medium">{t("cards.title")}</th>
-              <th className="px-3 py-2 text-right font-medium">{t("cards.colOwed")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colNextPayment")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("cards.colTotalOwed")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("cards.colLimitLeft")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("cards.colDueIn")}</th>
               <th className="px-3 py-2" />
@@ -228,12 +233,26 @@ function PurchasesPage() {
               const owed = standing?.owed ?? 0;
               const available = standing?.available ?? null;
               const days = standing?.daysToDue ?? null;
+              const next = nextCardPayment(book, card, today);
               return (
                 <tr key={card.id} className="border-b border-[var(--edge-soft)]">
                   <td className="px-3 py-1.5 font-medium" data-label={t("cards.title")}>
                     {card.name}
                   </td>
-                  <td className={`px-3 py-1.5 text-right tnum ${owed > 0.005 ? "text-red-600" : ""}`} data-label={t("cards.colOwed")}>
+                  <td
+                    className={`px-3 py-1.5 text-right tnum ${next?.date != null && next.date < today ? "text-red-600" : ""}`}
+                    data-label={t("cards.colNextPayment")}
+                  >
+                    {next ? (
+                      <>
+                        {formatAmount(next.amount, card.currency, locale)}
+                        <span className="block text-[11px] text-zinc-400">{nextWhen(next)}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tnum text-zinc-500" data-label={t("cards.colTotalOwed")}>
                     {formatAmount(owed, card.currency, locale)}
                   </td>
                   <td
@@ -329,6 +348,7 @@ function PurchasesPage() {
       {cards.map((card) => {
         const owed = standings.get(card.id)?.owed ?? 0;
         const schedule = cardSchedule(book, card.id, thisMonth);
+        const next = nextCardPayment(book, card, today);
         const payments = recentPayments(card.id);
         const bigPurchases = byAccount.get(card.id)?.length ?? 0;
         const avg = stats?.byAccount.get(card.id);
@@ -338,10 +358,22 @@ function PurchasesPage() {
               title={
                 <span className="flex flex-wrap items-center gap-2">
                   {card.name}
+                  {/* the headline is the next statement; the whole debt comes second */}
+                  {next ? (
+                    <span title={t("cards.nextPaymentHint")} data-card-next>
+                      <Badge tone={next.date != null && next.date < today ? "red" : "amber"}>
+                        {t("cards.nextPayment", { amount: formatAmount(next.amount, card.currency, locale), date: nextWhen(next) })}
+                      </Badge>
+                    </span>
+                  ) : null}
                   {/* payments recorded but not made, plus charges no payment covers yet */}
-                  <span title={t("cards.owedHint")}>
-                    <Badge tone={owed > 0.005 ? "red" : "green"}>
-                      {owed > 0.005 ? t("cards.owed", { amount: formatAmount(owed, card.currency, locale) }) : t("cards.nothingOwed")}
+                  <span title={t("cards.owedHint")} data-card-owed>
+                    <Badge tone={owed > 0.005 ? "zinc" : "green"}>
+                      {owed <= 0.005
+                        ? t("cards.nothingOwed")
+                        : schedule.length > 1
+                          ? t("cards.totalOwedMonths", { amount: formatAmount(owed, card.currency, locale), count: schedule.length })
+                          : t("cards.totalOwed", { amount: formatAmount(owed, card.currency, locale) })}
                     </Badge>
                   </span>
                   {avg ? (
@@ -506,6 +538,7 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
   const accounts = useAccounts();
   const categories = useCategories();
   const rates = useRates();
+  const transactions = useTransactions();
 
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -517,9 +550,14 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
   const [details, setDetails] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [reflected, setReflected] = useState(true);
+  const [removeOverlaps, setRemoveOverlaps] = useState(true);
 
   const createPurchase = useAppMutation(
     (input: NewPurchase) => repo.createPurchase(input, rates.data ? snapshotFromTable(rates.data) : null),
+    PURCHASE_KEYS
+  );
+  const removeCharges = useAppMutation(
+    (ids: string[]) => Promise.all(ids.map((id) => repo.deleteTransaction(id))).then(() => undefined),
     PURCHASE_KEYS
   );
 
@@ -527,7 +565,7 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
   // cards first — the primary use case
   const ordered = [...active].sort((a, b) => Number(b.kind === "credit_card") - Number(a.kind === "credit_card"));
   const account = ordered.find((a) => a.id === accountId) ?? ordered[0];
-  const effectiveFirstDue = firstDue || defaultFirstDue(purchaseDate);
+  const effectiveFirstDue = firstDue || defaultFirstDue(purchaseDate, account?.kind === "credit_card" ? account.paymentDay : null);
   const parsedCount = Math.max(1, Math.floor(Number(count) || 1));
   const parsedAmount = Number(amount);
   const expenseCategories = (categories.data ?? []).filter((c) => c.direction === "expense");
@@ -536,6 +574,28 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
     account && parsedAmount > 0 && hasInstallments && parsedCount > 1
       ? buildInstallmentPlan({ amount: parsedAmount, currency: account.currency, count: parsedCount, firstDue: effectiveFirstDue })[0].amount
       : null;
+
+  // the same taksit entered before (as a recurring item, say): reflecting this
+  // as well would count those months twice
+  const overlaps =
+    account && reflected && parsedAmount > 0
+      ? findOverlappingCharges(
+          account.id,
+          buildPurchaseTransactionSpecs(
+            {
+              name,
+              amount: parsedAmount,
+              installmentCount: hasInstallments ? parsedCount : 1,
+              purchaseDate,
+              firstDue: hasInstallments ? effectiveFirstDue : purchaseDate,
+            },
+            account.currency,
+            todayISO()
+          ),
+          transactions.data ?? [],
+          account.currency
+        )
+      : [];
 
   return (
     <Modal open={open} onClose={onClose} title={t("purchases.newPurchase")}>
@@ -555,6 +615,7 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
             reflected,
             categoryId: categoryId || null,
           });
+          if (overlaps.length > 0 && removeOverlaps) await removeCharges.mutateAsync(overlaps.map((c) => c.id));
           setName("");
           setAmount("");
           setDetails("");
@@ -594,7 +655,7 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
               <Field label={t("purchases.installmentCount")}>
                 <Input type="number" step="1" min="2" max="48" required value={count} onChange={(e) => setCount(e.target.value)} />
               </Field>
-              <Field label={t("purchases.firstDue")}>
+              <Field label={t("purchases.firstDue")} hint={account?.kind === "credit_card" ? t("purchases.firstDueHint") : undefined}>
                 <Input type="date" value={effectiveFirstDue} onChange={(e) => setFirstDue(e.target.value)} />
               </Field>
             </div>
@@ -629,11 +690,36 @@ export function PurchaseModal({ open, onClose }: { open: boolean; onClose: () =>
           </span>
         </label>
 
+        {overlaps.length > 0 && account ? (
+          <div data-purchase-overlaps className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+            <p className="font-medium text-amber-800 dark:text-amber-200">{t("purchases.overlapTitle", { count: overlaps.length })}</p>
+            <ul className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-300">
+              {overlaps.slice(0, 6).map((c) => (
+                <li key={c.id} className="flex justify-between gap-2">
+                  <span className="truncate">
+                    {c.dueDate} · {c.description || "—"}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{formatAmount(c.amount, account.currency, locale)}</span>
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-teal-600"
+                checked={removeOverlaps}
+                onChange={(e) => setRemoveOverlaps(e.target.checked)}
+              />
+              {t("purchases.overlapRemove")}
+            </label>
+          </div>
+        ) : null}
+
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" variant="primary" disabled={createPurchase.isPending}>
+          <Button type="submit" variant="primary" disabled={createPurchase.isPending || removeCharges.isPending}>
             {t("common.save")}
           </Button>
         </div>

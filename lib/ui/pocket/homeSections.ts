@@ -175,6 +175,18 @@ export const RECENT_LIMIT = 8;
 /** "Coming up" rows shown before "See all (n)". */
 export const COMING_UP_ROWS = 6;
 
+/**
+ * The "Coming up" rows that fit. The VICTVS line is money owed to you, not a
+ * date in the queue, so it's never the one cut: a busy week used to push it
+ * off the end.
+ */
+export function visibleComingUp(items: readonly ComingUpItem[], rows = COMING_UP_ROWS): ComingUpItem[] {
+  if (items.length <= rows) return [...items];
+  const victvs = items.find((i) => i.kind === "victvs");
+  if (!victvs) return items.slice(0, rows);
+  return [...items.filter((i) => i !== victvs).slice(0, rows - 1), victvs];
+}
+
 function newestFirst(a: Transaction, b: Transaction): number {
   if (a.dueDate !== b.dueDate) return a.dueDate > b.dueDate ? -1 : 1;
   if (a.createdAt !== b.createdAt) return a.createdAt > b.createdAt ? -1 : 1;

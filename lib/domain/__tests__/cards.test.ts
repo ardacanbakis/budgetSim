@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Account, Transaction } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, isIncome, isSpending, totalOwed } from "../cards";
+import { buildCardBook, cardSchedule, guessCardFor, isIncome, isSpending, totalOwed } from "../cards";
 
 const account = (id: string, kind: Account["kind"] = "fiat"): Account => ({
   id,
@@ -109,11 +109,17 @@ describe("what each row is", () => {
 });
 
 describe("which payment pays a charge", () => {
-  it("a payment covers the charges dated before its month", () => {
+  it("a payment covers installments due in its month, and swipes from before it", () => {
     const book = buildCardBook(accounts, [...ledger, ...payment("garanti", "2026-10-10", 3188.88, false)]);
+    // no September payment: September's installment waits for October's
     expect(book.coverOf(ikea[0])?.date).toBe("2026-10-10");
-    // charged on the 15th: on the next statement, not this one
-    expect(book.coverOf(ikea[1])).toBeNull();
+    // an installment's date is the statement it's paid with, even when the
+    // payment day (the 10th) comes before the date entered (the 15th)
+    expect(book.coverOf(ikea[1])?.date).toBe("2026-10-10");
+    expect(book.coverOf(ikea[2])).toBeNull();
+    // a recurring charge on the 15th is a swipe: the next statement pays it
+    const akbank = buildCardBook(accounts, ledger);
+    expect(akbank.coverOf(semos[0])).toBeNull();
   });
 
   it("a charge is paid once its covering payment is made, with nothing ticked by hand", () => {
@@ -121,7 +127,8 @@ describe("which payment pays a charge", () => {
     expect(planned.isPaid(ikea[0])).toBe(false);
     const made = buildCardBook(accounts, [...ledger, ...payment("garanti", "2026-10-10", 3188.88, true)]);
     expect(made.isPaid(ikea[0])).toBe(true);
-    expect(made.isPaid(ikea[1])).toBe(false);
+    expect(made.isPaid(ikea[1])).toBe(true);
+    expect(made.isPaid(ikea[2])).toBe(false);
   });
 
   it("an earlier payment doesn't cover later charges", () => {
@@ -131,10 +138,20 @@ describe("which payment pays a charge", () => {
     expect(book.isPaid(ikea[0])).toBe(false);
   });
 
-  it("a charge with no payment yet is paid the month after it", () => {
+  it("with no payment yet, an installment is paid in its own month and a swipe the month after", () => {
     const book = buildCardBook(accounts, ledger);
-    expect(book.paidInMonth(ikea[1])).toBe("2026-11");
-    expect(book.paidInMonth(ikea[4])).toBe("2027-02");
+    expect(book.paidInMonth(ikea[1])).toBe("2026-10");
+    expect(book.paidInMonth(ikea[4])).toBe("2027-01");
+    expect(book.paidInMonth(semos[0])).toBe("2026-11");
+  });
+
+  it("knows what a payment made this month would cover", () => {
+    const book = buildCardBook(accounts, ledger);
+    // Garanti in October: September's and October's installments
+    expect(book.wouldCover("garanti", "2026-10")).toEqual([ikea[0], ikea[1]]);
+    // Akbank in October: not the swipe on Oct 15, that's November's statement
+    expect(book.wouldCover("akbank", "2026-10")).toEqual([]);
+    expect(book.wouldCover("akbank", "2026-11")).toEqual([semos[0]]);
   });
 });
 
@@ -152,8 +169,9 @@ describe("what a card is owed", () => {
   it("every installment of a big purchase is held until a payment covers it", () => {
     // all five: September's isn't paid until October's statement is
     expect(buildCardBook(accounts, ledger).owed("garanti", TODAY)).toBeCloseTo(15944.4, 2);
+    // October's payment pays September's and October's installments
     const octoberPaid = buildCardBook(accounts, [...ledger, ...payment("garanti", "2026-10-10", 3188.88, true)]);
-    expect(octoberPaid.owed("garanti", TODAY)).toBeCloseTo(12755.52, 2);
+    expect(octoberPaid.owed("garanti", TODAY)).toBeCloseTo(9566.64, 2);
   });
 
   it("a recurring item billed to the card isn't owed before its date", () => {
@@ -174,14 +192,13 @@ describe("what a card is owed", () => {
 describe("a card's bills by month", () => {
   it("shows a recorded payment in its month and uncovered charges in the month they'll be paid", () => {
     const book = buildCardBook(accounts, ledger);
-    // Garanti: no October payment recorded, so September's installment
-    // lands in October with the rest following a month behind each charge
+    // Garanti: nothing paid since August, so September's overdue installment
+    // is folded into October with October's own; the rest in their months
     expect(cardSchedule(book, "garanti", "2026-10").map((m) => [m.month, Math.round(m.total * 100) / 100])).toEqual([
-      ["2026-10", 3188.88],
+      ["2026-10", 6377.76],
       ["2026-11", 3188.88],
       ["2026-12", 3188.88],
       ["2027-01", 3188.88],
-      ["2027-02", 3188.88],
     ]);
     // Akbank: October's statement, then the recurring item a month behind
     expect(cardSchedule(book, "akbank", "2026-10").map((m) => m.month)).toEqual(["2026-10", "2026-11", "2026-12", "2027-01"]);
@@ -191,5 +208,55 @@ describe("a card's bills by month", () => {
     const book = buildCardBook(accounts, ledger);
     const rates = { USD: 1, TRY: 1 / 49.18, EUR: 1.13, BTC: 85000, XAU_G: 134 };
     expect(totalOwed(book, accounts, TODAY, rates, "TRY")).toBeCloseTo(15944.4 + 10019.54 + 45534.22, 1);
+  });
+});
+
+describe("guessCardFor", () => {
+  const cards = [
+    { ...account("a", "credit_card"), name: "CC Akbank" },
+    { ...account("ta", "credit_card"), name: "CC Tansu Akbank" },
+    { ...account("e", "credit_card"), name: "CC EnPara" },
+    { ...account("s", "credit_card"), name: "CC Semoş İş Bankası" },
+  ];
+
+  it("finds the card a draft statement names", () => {
+    expect(guessCardFor("draft November - Akbank ", cards)?.name).toBe("CC Akbank");
+    expect(guessCardFor("draft December - EnPara", cards)?.name).toBe("CC EnPara");
+    expect(guessCardFor("draft December - Semoş CC", cards)?.name).toBe("CC Semoş İş Bankası");
+    expect(guessCardFor("draft November - Semoş İş", cards)?.name).toBe("CC Semoş İş Bankası");
+    expect(guessCardFor("Tansu Akbank statement", cards)?.name).toBe("CC Tansu Akbank");
+  });
+
+  it("names nothing when no card is mentioned", () => {
+    expect(guessCardFor("Rent", cards)).toBeNull();
+    expect(guessCardFor("CC payment", cards)).toBeNull();
+  });
+});
+
+describe("an installment is paid with the first statement due on or after it", () => {
+  const withDay = (id: string, day: number) => ({ ...account(id, "credit_card"), paymentDay: day });
+  const cards = [account("bank"), withDay("akbank", 16), withDay("garanti", 10), withDay("yapikredi", 17)];
+  // Semoş AkKız on Akbank, due the 15th; Akbank pays on the 16th
+  const akkiz = ["2026-10-15", "2026-11-15"].map((d, i) => tx("akbank", d, 11062.43, { purchaseId: "akkiz", description: `AkKız (${i + 2}/12)` }));
+  // Ikea on Garanti, due the 15th; Garanti pays on the 10th
+  const ikea = ["2026-10-15", "2026-11-15"].map((d, i) => tx("garanti", d, 3188.88, { purchaseId: "ikea", description: `Ikea (${i + 2}/5)` }));
+  // 25k Coverup on Yapikredi, due the 16th; Yapikredi pays on the 17th
+  const coverup = tx("yapikredi", "2026-11-16", 9147.78, { purchaseId: "coverup" });
+
+  it("is paid in its own month when the payment day is on or after its date", () => {
+    const book = buildCardBook(cards, [...akkiz, ...payment("akbank", "2026-10-15", 45534.22, true), coverup]);
+    // even a payment made a day early pays that month's statement
+    expect(book.coverOf(akkiz[0])?.date).toBe("2026-10-15");
+    expect(book.isPaid(akkiz[0])).toBe(true);
+    expect(book.coverOf(akkiz[1])).toBeNull();
+    expect(book.paidInMonth(akkiz[1])).toBe("2026-11");
+    expect(book.paidInMonth(coverup)).toBe("2026-11");
+  });
+
+  it("waits for the next statement when the payment day comes before its date", () => {
+    const book = buildCardBook(cards, [...ikea, ...payment("garanti", "2026-10-10", 16134.5, true)]);
+    expect(book.coverOf(ikea[0])).toBeNull();
+    expect(book.paidInMonth(ikea[0])).toBe("2026-11");
+    expect(book.wouldCover("garanti", "2026-11")).toEqual([ikea[0]]);
   });
 });

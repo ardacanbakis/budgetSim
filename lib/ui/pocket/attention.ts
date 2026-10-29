@@ -1,5 +1,5 @@
 import { Account, Transaction } from "@/lib/data/types";
-import { CardBook, cardSchedule, paymentDateIn } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, NextCardPayment, nextCardPayment, paymentDateIn } from "@/lib/domain/cards";
 import { CardStanding, cardsDueSoon, DueCardPayment } from "@/lib/domain/purchases";
 import { addDays, addMonthsClamped } from "@/lib/domain/recurrence";
 import { isTransferLanding } from "./dayGroups";
@@ -49,6 +49,8 @@ export interface StatementFigure {
   totalOwed: number;
   /** months with something to pay, this one included */
   monthsToGo: number;
+  /** the next statement to pay, this month's while it's unpaid */
+  next: NextCardPayment | null;
 }
 
 export function statementFigure(
@@ -61,7 +63,7 @@ export function statementFigure(
   const schedule = cardSchedule(book, card.id, thisMonth);
   const due = duePayments.find((d) => d.account.id === card.id);
   const amount = due ? due.suggestedAmount : schedule[0]?.month === thisMonth ? schedule[0].total : 0;
-  return { amount, totalOwed: book.owed(card.id, today), monthsToGo: schedule.length };
+  return { amount, totalOwed: book.owed(card.id, today), monthsToGo: schedule.length, next: nextCardPayment(book, card, today) };
 }
 
 export type ComingUpItem =

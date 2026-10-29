@@ -40,6 +40,25 @@ describe("a transfer's two legs move together", () => {
     expect(legs.map((l) => l.status)).toEqual(["planned", "planned"]);
   });
 
+  it("completing it as legacy in bulk takes the other leg along", async () => {
+    // the ledger lists the paying leg only; the card side used to stay planned
+    const { repo, out } = await withScheduledPayment();
+    await repo.bulkCompleteAsLegacy([out.id], snapshot);
+    const legs = (await repo.listTransactions()).filter((t) => t.transferGroupId === out.transferGroupId);
+    expect(legs.map((l) => [l.status, l.legacy])).toEqual([
+      ["completed", true],
+      ["completed", true],
+    ]);
+  });
+
+  it("marking one leg legacy marks the other", async () => {
+    const { repo, out } = await withScheduledPayment();
+    await repo.completeTransaction(out.id, snapshot);
+    await repo.setTransactionLegacy(out.id, true);
+    const legs = (await repo.listTransactions()).filter((t) => t.transferGroupId === out.transferGroupId);
+    expect(legs.map((l) => l.legacy)).toEqual([true, true]);
+  });
+
   it("a changed amount applies to the leg it was changed on", async () => {
     const { repo, out } = await withScheduledPayment();
     await repo.completeTransaction(out.id, snapshot, 45000);

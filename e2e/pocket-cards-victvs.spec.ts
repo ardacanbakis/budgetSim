@@ -179,7 +179,9 @@ test.describe("Pocket cards", () => {
     await expect(s).toBeHidden();
 
     await expect(card.locator("[data-card-due]")).toHaveText("Paid this month");
-    await expect(card.locator("[data-card-statement]")).toContainText("Nothing to pay this month");
+    // this month done, the tile leads with the next payment: November's installment
+    await expect(card.locator("[data-card-next]")).toHaveText(/^Next payment · \w{3} 15$/);
+    await expect(card.locator("[data-card-statement]")).toContainText("₺14,000.00");
     await expect(card.locator("[data-card-owed]")).toHaveText("Total owed ₺70,000.00 · 5 months to go");
     await expect(card.getByText("Payments recorded")).toBeVisible();
     await expect(card.locator("li").filter({ hasText: "Bonus Card statement" })).toContainText("−₺20,220.30");

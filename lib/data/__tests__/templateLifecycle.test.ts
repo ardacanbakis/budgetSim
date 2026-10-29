@@ -257,3 +257,28 @@ describe("editing a template", () => {
     expect([...months.values()].every((n) => n === 1)).toBe(true);
   });
 });
+
+describe("deleting a template", () => {
+  it("with its planned items: history stays, the future goes", async () => {
+    const { repo, account } = await freshRepo();
+    const tpl = await repo.createTemplate(loan(account.id), { mode: "paid", fxSnapshot: snapshot });
+    await openApp(repo);
+    const completed = (await rowsOf(repo, tpl.id)).filter((t) => t.status === "completed").map((t) => t.id);
+    await repo.deleteTemplate(tpl.id, true);
+    const left = (await repo.listTransactions()).filter((t) => completed.includes(t.id) || t.description === tpl.name);
+    expect(left.every((t) => t.status === "completed")).toBe(true);
+    expect(left.map((t) => t.id).sort()).toEqual([...completed].sort());
+  });
+
+  it("keeping its planned items: they stay, no longer tied to a template that's gone", async () => {
+    const { repo, account } = await freshRepo();
+    const tpl = await repo.createTemplate(loan(account.id), { mode: "paid", fxSnapshot: snapshot });
+    await openApp(repo);
+    const planned = (await rowsOf(repo, tpl.id)).filter((t) => t.status === "planned").length;
+    await repo.deleteTemplate(tpl.id, false);
+    const rows = (await repo.listTransactions()).filter((t) => t.description === tpl.name);
+    expect(rows.filter((t) => t.status === "planned")).toHaveLength(planned);
+    // as Supabase's "on delete set null" leaves them
+    expect(rows.every((t) => t.recurringTemplateId == null)).toBe(true);
+  });
+});

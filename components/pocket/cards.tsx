@@ -251,7 +251,7 @@ function CardsScreen() {
   const standings = new Map(cardStandings(accountList, book, today).map((s) => [s.account.id, s]));
   const duePayments = findDueCardPayments(accountList, book, today);
   // what a payment recorded now would cover: charges from before this month no payment covers yet
-  const coversFor = (cardId: string) => book.uncovered(cardId).filter((c) => c.dueDate.slice(0, 7) < thisMonth);
+  const coversFor = (cardId: string) => book.wouldCover(cardId, thisMonth);
   const purchaseList = purchases.data ?? [];
   const purchasesOn = (accountId: string) => purchaseList.filter((p) => p.accountId === accountId);
   const openPurchase = purchaseId ? (purchaseList.find((p) => p.id === purchaseId) ?? null) : null;
@@ -528,11 +528,22 @@ function CardTile({
         </div>
 
         <div data-card-statement>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("pocket.cards.thisStatement")}</p>
           {figure.amount > 0.005 ? (
             <>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("pocket.cards.thisStatement")}</p>
               <FitFigure>{formatSigned(figure.amount, card.currency, locale, "none")}</FitFigure>
               <Approx amount={figure.amount} from={card.currency} to={display} usdPer={usdPer} />
+            </>
+          ) : figure.next ? (
+            // this month is done: lead with what's next rather than with nothing
+            <>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400" data-card-next>
+                {t("pocket.cards.nextStatement", {
+                  date: figure.next.date ? shortDate(figure.next.date, locale) : figure.next.month,
+                })}
+              </p>
+              <FitFigure>{formatSigned(figure.next.amount, card.currency, locale, "none")}</FitFigure>
+              <Approx amount={figure.next.amount} from={card.currency} to={display} usdPer={usdPer} />
             </>
           ) : (
             <p className="py-1 text-[17px] font-semibold text-zinc-600 dark:text-zinc-300">{t("pocket.cards.nothingThisMonth")}</p>

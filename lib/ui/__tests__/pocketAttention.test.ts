@@ -208,6 +208,8 @@ describe("statementFigure", () => {
     const due = findDueCardPayments(seed.accounts, book, day);
     const figure = statementFigure(bonus, book, day, due);
     expect(figure.amount).toBe(due.find((d) => d.account.id === bonus.id)!.suggestedAmount);
+    // September's card spending; October's phone installment is due on the
+    // 16th, after the card's payment day (the 15th), so November's pays it
     expect(figure.amount).toBeCloseTo(20220.3, 6);
     expect(figure.totalOwed).toBe(book.owed(bonus.id, day));
     expect(figure.totalOwed).toBeCloseTo(90220.3, 6);
@@ -246,9 +248,17 @@ describe("statementFigure", () => {
     expect(figure.totalOwed).toBe(book.owed("card", today));
     // October's payment, then November's for the charge from the 2nd
     expect(figure.monthsToGo).toBe(2);
+    expect(figure.next).toEqual({ month: "2026-10", date: "2026-10-20", amount: 1000 });
+
+    // once October's is made, the next payment is November's, on its payment day
+    const made = ledger.map((t) => (t.transferGroupId === "pay" ? { ...t, status: "completed" as const } : t));
+    const paidBook = buildCardBook(accounts, made);
+    const after = statementFigure(card, paidBook, today, findDueCardPayments(accounts, paidBook, today));
+    expect(after.amount).toBe(0);
+    expect(after.next).toEqual({ month: "2026-11", date: "2026-11-20", amount: 250 });
 
     const idle = account("idle", "credit_card");
     const idleBook = buildCardBook([idle], []);
-    expect(statementFigure(idle, idleBook, today, [])).toEqual({ amount: 0, totalOwed: 0, monthsToGo: 0 });
+    expect(statementFigure(idle, idleBook, today, [])).toEqual({ amount: 0, totalOwed: 0, monthsToGo: 0, next: null });
   });
 });

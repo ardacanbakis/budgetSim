@@ -314,7 +314,9 @@ test.describe("Pocket activity", () => {
 
   test("the ✓ on a planned row marks it paid, and Undo puts it back", async ({ page }) => {
     await enterPocket(page);
-    const check = needs(page).getByRole("button", { name: "Mark VICTVS retainer as paid" });
+    // the overdue one: next month's may already be in the list too, as "in N days"
+    const lateRow = () => needs(page).getByRole("listitem").filter({ hasText: "VICTVS retainer" }).filter({ hasText: /days? late/ });
+    const check = lateRow().getByRole("button", { name: "Mark VICTVS retainer as paid" });
     await expect(check).toBeEnabled();
     const victvs = (await store(page)).templates.find((t) => t.name === "VICTVS retainer")!;
     const row = (await store(page)).transactions.find(
@@ -324,11 +326,11 @@ test.describe("Pocket activity", () => {
     await check.click();
     await expect(snackbar(page)).toContainText("Marked paid · +$900.00");
     await expect.poll(async () => (await findTx(page, row.id))?.status).toBe("completed");
-    await expect(needs(page).getByText("VICTVS retainer")).toHaveCount(0);
+    await expect(lateRow()).toHaveCount(0);
 
     await snackbar(page).getByRole("button", { name: "Undo" }).click();
     await expect.poll(async () => (await findTx(page, row.id))?.status).toBe("planned");
-    await expect(needs(page).getByText("VICTVS retainer")).toBeVisible();
+    await expect(lateRow()).toBeVisible();
   });
 
   test("Planned and Overdue exclude each other, as do Income and Expense; Clear filters resets", async ({ page }) => {
