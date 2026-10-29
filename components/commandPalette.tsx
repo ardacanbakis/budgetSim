@@ -6,6 +6,7 @@ import { useAccounts } from "@/lib/data/queries";
 import { useI18n } from "@/lib/i18n";
 import { NAV } from "@/components/shell.nav";
 import { rankByLabel } from "@/lib/ui/rank";
+import { timelineHref } from "@/lib/ui/timeline";
 
 export interface Command {
   id: string;
@@ -84,10 +85,10 @@ export function CommandPalette({
       run: go("/accounts?view=debts"),
     });
     pages.push({
-      id: "nav:/transactions?tab=timeline",
+      id: "nav:/reports?tab=timeline",
       label: t("timeline.tab"),
       hint: t("palette.page"),
-      run: go("/transactions?tab=timeline"),
+      run: go(timelineHref()),
     });
     const actions: Command[] = [
       {

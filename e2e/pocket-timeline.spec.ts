@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * Pocket's Timeline (/transactions?tab=timeline): the third segment of
+ * Pocket's Timeline (/reports?tab=timeline): the third segment of
  * Activity. Runs in the demo at 390×844 with the Pocket phone layout on;
  * the segment's fit is checked at 390, 402 and 440 in both languages.
  */
@@ -61,22 +61,23 @@ async function enterPocket(
     opts.edit(saved);
     await page.evaluate(([key, value]) => localStorage.setItem(key, value), [DEMO_KEY, JSON.stringify(saved)] as const);
   }
-  await page.goto(opts.path ?? "/transactions?tab=timeline");
+  await page.goto(opts.path ?? "/reports?tab=timeline");
   await expect(page.locator("[data-pocket-shell]")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("h1[data-pocket-title]")).toBeVisible({ timeout: 15_000 });
 }
 
 const store = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "{}") as Store, DEMO_KEY);
 const tabs = (page: Page) => page.getByRole("group", { name: /^(Transactions|İşlemler)$/ });
+const reports = (page: Page) => page.getByRole("group", { name: /^(Report|Rapor)$/ });
 const today = (page: Page) => page.getByRole("separator", { name: /^(Today|Bugün) · / });
 const lowest = (page: Page) => page.locator("[data-lowest]");
 const statement = (page: Page) => page.locator("[data-statement]");
 const more = (page: Page, name: RegExp) => page.getByRole("button", { name });
 
-/** The segment's buttons each on one line, and nothing wider than the screen. */
+/** The report picker's buttons each on one line, and nothing wider than the screen. */
 async function segmentFits(page: Page, width: number) {
-  const buttons = await tabs(page).getByRole("button").all();
-  expect(buttons).toHaveLength(3);
+  const buttons = await reports(page).getByRole("button").all();
+  expect(buttons).toHaveLength(4);
   for (const b of buttons) {
     const lines = await b.evaluate((el) => {
       const range = document.createRange();
@@ -91,19 +92,28 @@ async function segmentFits(page: Page, width: number) {
 }
 
 test.describe("Pocket timeline", () => {
-  test("the third segment: Transactions | Timeline | Recurring, kept in the URL", async ({ page }) => {
-    await enterPocket(page, { path: "/transactions" });
-    const timeline = tabs(page).getByRole("button", { name: "Timeline" });
-    await expect(tabs(page).getByRole("button")).toHaveText(["Transactions", "Timeline", "Recurring"]);
-    await timeline.click();
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
+  test("the first of Reports' reports and the one it opens on; the old address lands there", async ({ page }) => {
+    await enterPocket(page, { path: "/reports" });
+    const timeline = reports(page).getByRole("button", { name: "Timeline" });
+    await expect(reports(page).getByRole("button")).toHaveText(["Timeline", "Cash flow", "Spending", "Net worth"]);
     await expect(timeline).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("h1[data-pocket-title]")).toHaveText("Reports");
     await expect(today(page)).toBeAttached();
-    // and back to the ledger, then the timeline again
-    await tabs(page).getByRole("button", { name: "Transactions" }).click();
-    await expect(page).toHaveURL(/\/transactions$/);
-    await timeline.click();
+    // another report, then the timeline again
+    await reports(page).getByRole("button", { name: "Cash flow" }).click();
+    await expect(page).toHaveURL(/\/reports\?tab=cashflow$/);
+    await expect(today(page)).toHaveCount(0);
+    await expect(page.locator("main table", { has: page.locator("th", { hasText: "Expenses" }) })).toBeVisible();
+    await reports(page).getByRole("button", { name: "Timeline" }).click();
+    await expect(page).toHaveURL(/\/reports$/);
     await expect(today(page)).toBeAttached();
+    // Transactions keeps the ledger and recurring; the old link lands here
+    await page.goto("/transactions");
+    await expect(tabs(page).getByRole("button")).toHaveText(["Transactions", "Recurring"]);
+    await page.goto("/transactions?tab=timeline");
+    await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
+    await expect(today(page)).toBeAttached();
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: `${SHOTS}/pocket-timeline-light.png` });
   });
 
@@ -158,14 +168,14 @@ test.describe("Pocket timeline", () => {
   test("an account from the link: its balance chart, and each day closing on its balance", async ({ page }) => {
     await enterPocket(page);
     const ziraat = (await store(page)).accounts.find((a) => a.name === "Ziraat TRY")!;
-    await page.goto(`/transactions?tab=timeline&account=${ziraat.id}`);
+    await page.goto(`/reports?tab=timeline&account=${ziraat.id}`);
     await expect(page.getByRole("img", { name: "Ziraat TRY: balance over time" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Account: Ziraat TRY" })).toBeVisible();
     await expect(page.locator("main section[aria-labelledby]").first().getByText("Balance after")).toBeAttached();
     // picking another account from the chip moves the link with it
     await page.getByRole("button", { name: "Account: Ziraat TRY" }).click();
     await page.getByRole("dialog").getByRole("radio", { name: /All accounts/ }).click();
-    await expect(page).toHaveURL(/\/transactions\?tab=timeline$/);
+    await expect(page).toHaveURL(/\/reports\?tab=timeline$/);
     await expect(page.getByRole("img", { name: /balance over time/ })).toHaveCount(0);
   });
 
@@ -206,7 +216,7 @@ test.describe("Pocket timeline, expected VICTVS", () => {
     await expect(expected).toContainText("Wise USD · not in balances");
 
     // Wise USD alone: this month's net moves by the payout when it counts
-    await page.goto(`/transactions?tab=timeline&account=${wise.id}`);
+    await page.goto(`/reports?tab=timeline&account=${wise.id}`);
     await expect(page.getByRole("img", { name: "Wise USD: balance over time" })).toBeVisible({ timeout: 15_000 });
     const before = await monthNet(page).innerText();
     const chip = page.getByRole("group", { name: "Timeline filters" }).getByRole("button", { name: "Count expected VICTVS" });
@@ -257,9 +267,9 @@ test.describe("Pocket timeline, lira runway", () => {
 test.describe("Pocket timeline, widths and Turkish", () => {
   for (const width of [390, 402, 440]) {
     for (const locale of [undefined, "tr"] as const) {
-      test(`the three segments fit ${width}px${locale ? " in Turkish" : ""}`, async ({ page }) => {
+      test(`the four reports fit ${width}px${locale ? " in Turkish" : ""}`, async ({ page }) => {
         await enterPocket(page, { width, locale });
-        if (locale) await expect(tabs(page).getByRole("button")).toHaveText(["İşlemler", "Zaman tüneli", "Düzenli"]);
+        if (locale) await expect(reports(page).getByRole("button")).toHaveText(["Zaman tüneli", "Nakit akışı", "Harcama", "Varlık"]);
         await expect(today(page)).toBeAttached();
         await segmentFits(page, width);
       });

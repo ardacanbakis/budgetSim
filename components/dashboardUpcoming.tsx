@@ -16,6 +16,7 @@ import { NormalizedLayout } from "@/lib/ui/dashboardLayout";
 import { COMING_UP_ROWS, visibleComingUp } from "@/lib/ui/pocket/homeSections";
 import { comingUp, ComingUpItem } from "@/lib/ui/pocket/attention";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
+import { timelineHref } from "@/lib/ui/timeline";
 import { DashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
 
@@ -32,7 +33,7 @@ import { useFormatDate } from "@/lib/useFormatDate";
  */
 
 /** Where "See all" goes: the Timeline, where what's coming sits beside what went. */
-export const UPCOMING_HREF = "/transactions?tab=timeline";
+export const UPCOMING_HREF = timelineHref();
 
 export function useUpcomingItems(
   d: DashboardData | null,

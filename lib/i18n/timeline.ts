@@ -1,5 +1,5 @@
 /**
- * Strings for the Timeline tab of Activity, under timeline.* — shared by the
+ * Strings for the Timeline (Reports' first report), under timeline.* — shared by the
  * Classic and Pocket layouts, English and Turkish side by side so a key
  * can't exist in one and not the other. Pocket's own few (its shorter tab
  * labels, the jump pill) are in lib/i18n/pocket/timeline.ts.

@@ -65,11 +65,11 @@ const OFF = { classic: false, v2: false } as const;
 export const CARD_SPECS = [
   // version 2 is built around it as its headline, so there it can't go
   spec("net-worth", { defaultOn: ON, always: "v2", route: "/reports", span: "sm:col-span-1" }),
-  spec("safe-to-spend", { defaultOn: ON, route: "/transactions?tab=timeline", span: "sm:col-span-1" }),
+  spec("safe-to-spend", { defaultOn: ON, route: "/reports?tab=timeline", span: "sm:col-span-1" }),
   spec("cc-debt", { defaultOn: ON, route: "/cards", span: "sm:col-span-1" }),
   spec("victvs", { defaultOn: ON, nav: "/victvs", route: "/victvs", span: "sm:col-span-1" }),
   spec("accounts", { defaultOn: ON, route: "/accounts", span: "sm:col-span-1" }),
-  spec("upcoming", { defaultOn: ON, route: "/transactions?tab=timeline", span: "sm:col-span-2" }),
+  spec("upcoming", { defaultOn: ON, route: "/reports?tab=timeline", span: "sm:col-span-2" }),
   spec("monthly-flow", { defaultOn: ON, route: "/reports", span: "sm:col-span-2" }),
   spec("budgets", { defaultOn: ON, route: "/reports", span: "sm:col-span-2 xl:col-span-1" }),
   // no route: a self-contained widget with its own modal (whose clicks would

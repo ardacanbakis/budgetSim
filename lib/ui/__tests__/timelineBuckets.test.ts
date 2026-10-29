@@ -13,6 +13,7 @@ import {
   flowBetween,
   monthHighlights,
   monthSummaries,
+  timelineHref,
 } from "../timeline";
 import { parseTab } from "../urlTab";
 
@@ -170,6 +171,14 @@ describe("parseTab", () => {
     expect(parseTab("timeline", tabs, "ledger")).toBe("timeline");
     expect(parseTab("nope", tabs, "ledger")).toBe("ledger");
     expect(parseTab(null, tabs, "ledger")).toBe("ledger");
+  });
+});
+
+describe("timelineHref", () => {
+  it("is Reports' first report, for every account or one", () => {
+    expect(timelineHref()).toBe("/reports?tab=timeline");
+    expect(timelineHref(null)).toBe("/reports?tab=timeline");
+    expect(timelineHref("a b")).toBe("/reports?tab=timeline&account=a%20b");
   });
 });
 

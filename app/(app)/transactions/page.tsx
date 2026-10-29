@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { ReactNode, Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { redirect, useSearchParams } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -18,12 +18,12 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { RecurringTab } from "@/components/recurringTab";
-import { TimelineTab } from "@/components/timelineTab";
 import { CompleteModal, EditModal } from "@/components/txModals";
 import { canBeCardPayment, ConvertToCardPaymentModal } from "@/components/convertToCardPayment";
 import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { timelineHref } from "@/lib/ui/timeline";
 import { parseTab } from "@/lib/ui/urlTab";
 
 const PocketTransactions = dynamic(() => import("@/components/pocket/transactions").then((m) => m.PocketTransactions), {
@@ -33,7 +33,7 @@ const PocketTransactions = dynamic(() => import("@/components/pocket/transaction
 
 export default pocketable(TransactionsPage, PocketTransactions);
 
-const TABS = ["ledger", "timeline", "recurring"] as const;
+const TABS = ["ledger", "recurring"] as const;
 type Tab = (typeof TABS)[number];
 
 function TransactionsPage() {
@@ -46,15 +46,16 @@ function TransactionsPage() {
 }
 
 /**
- * The ledger, the timeline and the recurring items that fill them, as three
- * tabs. The open tab lives in the URL (?tab=timeline, ?tab=recurring), so
- * /recurring can redirect here and a link opens the right one. Switching
- * replaces the history entry (replaceQuery), so Back leaves the page rather
- * than stepping between tabs.
+ * The ledger and the recurring items that fill it, as two tabs. The open tab
+ * lives in the URL (?tab=recurring), so /recurring can redirect here and a
+ * link opens the right one. Switching replaces the history entry
+ * (replaceQuery), so Back leaves the page rather than stepping between tabs.
+ * The Timeline is Reports' first report now; its old address lands there.
  */
 function TransactionsScreen() {
   const { t } = useI18n();
   const params = useSearchParams();
+  if (params.get("tab") === "timeline") redirect(timelineHref(params.get("account")));
   const tab: Tab = parseTab(params.get("tab"), TABS, "ledger");
 
   const tabs = (
@@ -72,14 +73,13 @@ function TransactionsScreen() {
               : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          {id === "ledger" ? t("tx.tabLedger") : id === "timeline" ? t("timeline.tab") : t("recurring.title")}
+          {id === "ledger" ? t("tx.tabLedger") : t("recurring.title")}
         </button>
       ))}
     </div>
   );
 
   if (tab === "recurring") return <RecurringTab tabs={tabs} />;
-  if (tab === "timeline") return <TimelineTab key={params.get("account") ?? ""} tabs={tabs} accountParam={params.get("account")} />;
   return <LedgerTab tabs={tabs} />;
 }
 

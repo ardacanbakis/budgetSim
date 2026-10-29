@@ -13,11 +13,12 @@ test.beforeEach(async ({ page }) => {
  * that the same classes do nothing with Pocket off.
  */
 
-const DESK = ["loans", "reports", "planner", "savings"] as const;
-/** where each desk page lives: Evim sistemi is a tab of Plan */
+const DESK = ["loans", "reports", "networth", "planner", "savings"] as const;
+/** where each desk page lives: Evim sistemi is a tab of Plan; Cash flow and Net worth are reports */
 const PATH: Record<(typeof DESK)[number], string> = {
   loans: "/planner?tab=loan",
-  reports: "/reports",
+  reports: "/reports?tab=cashflow",
+  networth: "/reports?tab=networth",
   planner: "/planner",
   savings: "/planner?tab=evim",
 };
@@ -140,6 +141,7 @@ test.describe("Pocket desk pages", () => {
     expect(await chips.evaluate((node) => node.scrollWidth > node.clientWidth && getComputedStyle(node).overflowX === "auto")).toBe(true);
 
     // allocation: every currency in the legend, inside the card
+    await open(page, "networth");
     const allocation = page.locator("main .pocket-auto-h");
     const card = (await allocation.boundingBox())!;
     for (const currency of ["TRY", "USD", "EUR", "BTC", "GOLD"]) {
@@ -152,6 +154,7 @@ test.describe("Pocket desk pages", () => {
     }
 
     // month by month: a 4-column table, a month to a line
+    await open(page, "reports");
     const monthly = page.locator("main table", { has: page.locator("th", { hasText: "Expenses" }) });
     expect(await monthly.evaluate((node) => getComputedStyle(node).display)).toBe("table");
     for (const head of ["Month", "Income", "Expenses", "Net"]) await expect(monthly.locator("thead").getByText(head, { exact: true })).toBeVisible();
@@ -267,10 +270,8 @@ test.describe("Pocket desk pages", () => {
         { part: "results", find: (p) => p.locator("main .pocket-cols-2") },
         { part: "schedule", find: (p) => p.locator("main .pocket-unscroll") },
       ],
-      reports: [
-        { part: "allocation", find: (p) => p.locator("main .pocket-auto-h") },
-        { part: "monthly", find: (p) => p.locator("main table", { has: p.locator("th", { hasText: "Expenses" }) }) },
-      ],
+      reports: [{ part: "monthly", find: (p) => p.locator("main table", { has: p.locator("th", { hasText: "Expenses" }) }) }],
+      networth: [{ part: "allocation", find: (p) => p.locator("main .pocket-auto-h") }],
       planner: [
         { part: "budgets", find: (p) => p.getByText("Monthly budgets", { exact: true }) },
         { part: "projections", find: (p) => p.locator('main [data-plan-card="projections"]') },

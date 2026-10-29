@@ -83,7 +83,7 @@ test("edit a month on the VICTVS page: your figure everywhere, kept, then revert
   await expect(plannerRow.locator("[data-own-figure]")).toHaveText("$1,250.50");
 
   // and so is the Timeline's expected payout for the month it lands in
-  await page.goto("/transactions?tab=timeline");
+  await page.goto("/reports?tab=timeline");
   const payout = page.locator(`[data-expected="victvs:${lands}"]`);
   await expect(payout).toContainText("VICTVS · expected ~$1,251", { timeout: 15_000 });
 
@@ -97,7 +97,7 @@ test("edit a month on the VICTVS page: your figure everywhere, kept, then revert
   await expect(forecastRow(page, month)).not.toHaveAttribute("data-edited");
   await expect(forecastRow(page, month).locator("[data-amount]").first()).toHaveText(original);
   await expect(page.locator("[data-victvs-forecast]")).not.toContainText("Months with your own figure");
-  await page.goto("/transactions?tab=timeline");
+  await page.goto("/reports?tab=timeline");
   await expect(page.locator(`[data-expected="victvs:${lands}"]`)).toContainText(`VICTVS · expected ~$${Math.round(Number(originalFigure.replace(/[$,]/g, "")))}`, {
     timeout: 15_000,
   });

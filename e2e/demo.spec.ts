@@ -501,7 +501,7 @@ test("wave11: month groups with net, edit transaction, report category filter, s
   await expect(page.getByText("Edited by test").first()).toBeVisible();
 
   // reports: picking a category chip filters and shows the hint
-  await page.goto("/reports");
+  await page.goto("/reports?tab=spending");
   await page.getByRole("button", { name: /^Groceries$/ }).click();
   await expect(page.getByText(/1 categories selected|1 kategori seçili/)).toBeVisible();
 
@@ -830,7 +830,7 @@ test("legacy records count in reports by default, and the choice is remembered",
     await page.waitForTimeout(500);
     return (await page.locator("text=Income sources").locator("../..").textContent()) ?? "";
   };
-  await page.goto("/reports");
+  await page.goto("/reports?tab=spending");
   const before = await incomeSplit();
 
   // a legacy income: kept out of balances, but real money that came in
@@ -843,7 +843,7 @@ test("legacy records count in reports by default, and the choice is remembered",
   await page.waitForTimeout(600);
 
   // it shows in the monthly figures without asking
-  await page.goto("/reports");
+  await page.goto("/reports?tab=spending");
   const withLegacy = await incomeSplit();
   expect(withLegacy).not.toBe(before);
 
@@ -1006,7 +1006,7 @@ test("part3: phone bar shows five targets and a More sheet", async ({ page }) =>
 test("part3: wide tables stack into cards on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  await page.goto("/reports");
+  await page.goto("/reports?tab=cashflow");
   await page.waitForTimeout(800);
 
   const monthly = page.locator("table.stack-sm").last();
@@ -1027,7 +1027,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/accounts?view=debts", "/reports", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/accounts?view=debts", "/reports", "/reports?tab=cashflow", "/reports?tab=spending", "/reports?tab=networth", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

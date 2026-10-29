@@ -154,11 +154,14 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  fit,
 }: {
   label: string;
   value: T;
   options: Array<{ value: T; label: ReactNode }>;
   onChange: (v: T) => void;
+  /** each segment as wide as its label rather than all alike, so four fit a phone */
+  fit?: boolean;
 }) {
   return (
     <div role="group" aria-label={label} className="flex rounded-[var(--pocket-chip-radius,9999px)] bg-[var(--edge-soft)] p-1">
@@ -168,7 +171,7 @@ export function Segmented<T extends string>({
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`min-h-[36px] flex-1 rounded-[var(--pocket-chip-radius,9999px)] px-3 text-[13px] font-medium transition-colors ${
+          className={`min-h-[36px] ${fit ? "flex-auto whitespace-nowrap px-2" : "flex-1 px-3"} rounded-[var(--pocket-chip-radius,9999px)] text-[13px] font-medium transition-colors ${
             value === o.value ? "bg-[var(--surface)] shadow-sm" : "text-zinc-500 dark:text-zinc-400"
           }`}
         >

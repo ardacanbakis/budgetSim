@@ -7,8 +7,8 @@ import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 
 /**
- * The two forms a ledger row opens in Classic, shared by the Ledger and
- * Timeline tabs of Transactions:
+ * The two forms a ledger row opens in Classic, shared by Transactions' Ledger
+ * tab and Reports' Timeline:
  * - EditModal: description, amount, date, account and category of one row.
  * - CompleteModal: mark a planned row done, at its amount or another, and
  *   optionally as legacy (pre-ticked when it was due over three months ago).

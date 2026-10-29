@@ -37,6 +37,8 @@ import { loanHref } from "./portfolioUrl";
  *   whole months, `past` before this one and `ahead` from this one on.
  * - lowestRows(series, today, to): "Lowest point ahead", one line per cash
  *   account with anything planned before `to`, those going below zero first.
+ * - timelineHref(accountId): the Timeline's address, the first of Reports'
+ *   reports, for every account or one.
  * - milestoneHref(milestone): where a marker leads (the loan, the card, the
  *   recurring item).
  * - shortDay(date, locale): "14 Nov" / "14 Kas".
@@ -293,6 +295,11 @@ export function lowestRows(series: ReadonlyMap<string, AccountSeries>, today: st
     if (low) rows.push({ account: s.account, now: s.now, low, approx: s.approx });
   }
   return rows.sort((a, b) => Number(b.low.belowZeroOn != null) - Number(a.low.belowZeroOn != null));
+}
+
+/** The Timeline: the first of Reports' reports, for every account or one (?account=). */
+export function timelineHref(accountId?: string | null): string {
+  return accountId ? `/reports?tab=timeline&account=${encodeURIComponent(accountId)}` : "/reports?tab=timeline";
 }
 
 export function milestoneHref(milestone: TimelineMilestone): string {

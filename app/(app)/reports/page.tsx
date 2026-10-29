@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
+import { ReactNode, Suspense, useState } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -35,7 +37,17 @@ import { deflateTryToLatest } from "@/lib/data/inflation";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, useColumns } from "@/components/columns";
+import { PocketPage, Segmented } from "@/components/pocket/kit";
+import { TimelineTab } from "@/components/timelineTab";
 import { REPORT_LEGACY_KEY, useLocalToggle } from "@/lib/prefs";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { parseTab } from "@/lib/ui/urlTab";
+import { usePocket } from "@/lib/ui/usePocket";
+
+const PocketTimeline = dynamic(() => import("@/components/pocket/timeline").then((m) => m.PocketTimeline), {
+  ssr: false,
+  loading: () => <Spinner />,
+});
 
 /** a key for card payments in the category trends: they have no category of their own */
 const CARD_PAYMENTS = "__card_payments__";
@@ -63,7 +75,80 @@ const TREND_SLOTS = [
   "var(--viz-series-5)",
 ];
 
+const REPORTS = ["timeline", "cashflow", "spending", "networth"] as const;
+type Report = (typeof REPORTS)[number];
+
 export default function ReportsPage() {
+  // useSearchParams needs a Suspense boundary on a prerendered page
+  return (
+    <Suspense fallback={<Spinner />}>
+      <ReportsScreen />
+    </Suspense>
+  );
+}
+
+/**
+ * One report at a time, picked at the top and kept in the URL (?tab=):
+ * the Timeline first and by default (?account= picks its account), then
+ * Cash flow (this year's in and out, month by month), Spending (category
+ * trends and income sources) and Net worth (its history, the currency
+ * allocation and FX conversions). Switching replaces the history entry
+ * (replaceQuery), as the Transactions tabs do. In Pocket the Timeline is
+ * Pocket's own (components/pocket/timeline.tsx) and the picker a segmented
+ * control; the other reports keep their Classic markup there.
+ */
+function ReportsScreen() {
+  const { t } = useI18n();
+  const params = useSearchParams();
+  const pocket = usePocket();
+  const report: Report = parseTab(params.get("tab"), REPORTS, "timeline");
+  const account = params.get("account");
+  const pick = (next: Report) => replaceQuery(next === "timeline" ? "/reports" : `/reports?tab=${next}`);
+
+  const picker = pocket ? (
+    <Segmented<Report>
+      label={t("reports.picker")}
+      value={report}
+      options={REPORTS.map((r) => ({ value: r, label: t(`reports.tab_${r}`) }))}
+      onChange={pick}
+      fit
+    />
+  ) : (
+    <div role="tablist" aria-label={t("reports.picker")} className="no-print flex gap-1 overflow-x-auto border-b border-[var(--edge)]">
+      {REPORTS.map((r) => (
+        <button
+          key={r}
+          role="tab"
+          type="button"
+          aria-selected={report === r}
+          onClick={() => pick(r)}
+          className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+            report === r
+              ? "border-teal-600 text-teal-700 dark:text-teal-300"
+              : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
+        >
+          {t(`reports.tab_${r}`)}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (report === "timeline") {
+    return pocket ? (
+      <PocketPage title={t("reports.title")}>
+        {picker}
+        <PocketTimeline key={account ?? ""} accountParam={account} />
+      </PocketPage>
+    ) : (
+      <TimelineTab key={account ?? ""} tabs={picker} accountParam={account} />
+    );
+  }
+  return <ReportBody report={report} picker={picker} />;
+}
+
+/** Cash flow, Spending or Net worth: the figures every one of them reads, and its own cards. */
+function ReportBody({ report, picker }: { report: Exclude<Report, "timeline">; picker: ReactNode }) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const { displayCurrency } = useApp();
@@ -221,19 +306,31 @@ export default function ReportsPage() {
 
   const fx = computeFxInsights({ transactions: transactions.data, accounts: accounts.data, usdPer, display: displayCurrency });
 
+  const cashflow = report === "cashflow";
+  const spending = report === "spending";
+  const networth = report === "networth";
+  // cash flow is one wide table; the others are grids of cards
+  const wide = columns === 3 && !cashflow;
+  const grid =
+    columns === 3
+      ? "grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+      : columns === 2
+        ? "grid items-start gap-4 xl:grid-cols-2"
+        : "space-y-4";
+
   return (
-    <div className={`mx-auto space-y-4 ${columns === 3 ? "max-w-none" : "max-w-6xl 3xl:max-w-[1700px]"}`}>
+    <div className={`mx-auto space-y-4 ${wide ? "max-w-none" : "max-w-6xl 3xl:max-w-[1700px]"}`} data-report={report}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{t("reports.title")}</h1>
         <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
-          <ColumnsToggle columns={columns} onChange={setColumns} />
-          {displayCurrency === "TRY" ? (
+          {cashflow ? null : <ColumnsToggle columns={columns} onChange={setColumns} />}
+          {!networth && displayCurrency === "TRY" ? (
             <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs">
               <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={realTry} onChange={(e) => setRealTry(e.target.checked)} />
               {t("reports.realTry")}
             </label>
           ) : null}
-          {hasLegacy ? (
+          {!networth && hasLegacy ? (
             <label className="no-print flex cursor-pointer items-center gap-1.5 text-xs" title={t("reports.includeLegacyHint")}>
               <input
                 type="checkbox"
@@ -247,276 +344,284 @@ export default function ReportsPage() {
           <Button variant="ghost" className="no-print pocket:hidden" onClick={() => window.print()}>
             🖶 {t("exports.printReport")}
           </Button>
-          <span>
-            {t("reports.thisYear")}: <span className="font-semibold text-emerald-600">{fmt(yearIncome)}</span> /{" "}
-            <span className="font-semibold">{fmt(yearExpense)}</span> ·{" "}
-            <span className={`font-semibold ${yearIncome - yearExpense >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-              {fmt(yearIncome - yearExpense)}
+          {cashflow ? (
+            <span>
+              {t("reports.thisYear")}: <span className="font-semibold text-emerald-600">{fmt(yearIncome)}</span> /{" "}
+              <span className="font-semibold">{fmt(yearExpense)}</span> ·{" "}
+              <span className={`font-semibold ${yearIncome - yearExpense >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {fmt(yearIncome - yearExpense)}
+              </span>
             </span>
-          </span>
+          ) : null}
         </div>
       </div>
 
-      {/* category filter chips — pick tags separately or combine them */}
-      <div className="pocket-scroll-x no-print flex flex-wrap items-center gap-1.5 pocket:[&>*]:shrink-0">
-        <button
-          onClick={() => setSelectedCats(new Set())}
-          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-            selectedCats.size === 0
-              ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
-              : "border-[var(--edge)] text-zinc-500 hover:border-teal-500/50"
-          }`}
-        >
-          {t("common.all")}
-        </button>
-        {categories.data.map((c) => {
-          const active = selectedCats.has(c.id);
-          return (
-            <button
-              key={c.id}
-              onClick={() => toggleCat(c.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                active ? "text-white" : "text-zinc-500 hover:opacity-80"
-              }`}
-              style={active ? { backgroundColor: c.color, borderColor: c.color } : { borderColor: c.color }}
-            >
-              {c.name}
-            </button>
-          );
-        })}
-        {selectedCats.size > 0 ? (
-          <span className="text-xs text-zinc-400">{t("reports.filteredBy", { count: selectedCats.size })}</span>
-        ) : null}
-      </div>
+      {picker}
 
-      <div
-        className={
-          columns === 3
-            ? "grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3"
-            : columns === 2
-              ? "grid items-start gap-4 xl:grid-cols-2"
-              : "space-y-4"
-        }
-      >
-        {/* net worth history */}
-        <Card>
-          <CardHeader
-            title={`${t("reports.netWorthHistory")} (${displayCurrency})`}
-            action={
-              <Button variant="ghost" onClick={() => takeSnapshot.mutate(undefined as never)} title={t("reports.snapshotHint")}>
-                ⊙ {t("reports.snapshotNow")}
-              </Button>
-            }
-          />
-          <div className="h-64 p-3">
-            {historyData.length === 0 ? (
-              <EmptyState>{t("reports.noSnapshots")}</EmptyState>
-            ) : (
+      {/* category filter chips — pick tags separately or combine them */}
+      {networth ? null : (
+        <div className="pocket-scroll-x no-print flex flex-wrap items-center gap-1.5 pocket:[&>*]:shrink-0">
+          <button
+            onClick={() => setSelectedCats(new Set())}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              selectedCats.size === 0
+                ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                : "border-[var(--edge)] text-zinc-500 hover:border-teal-500/50"
+            }`}
+          >
+            {t("common.all")}
+          </button>
+          {categories.data.map((c) => {
+            const active = selectedCats.has(c.id);
+            return (
+              <button
+                key={c.id}
+                onClick={() => toggleCat(c.id)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                  active ? "text-white" : "text-zinc-500 hover:opacity-80"
+                }`}
+                style={active ? { backgroundColor: c.color, borderColor: c.color } : { borderColor: c.color }}
+              >
+                {c.name}
+              </button>
+            );
+          })}
+          {selectedCats.size > 0 ? (
+            <span className="text-xs text-zinc-400">{t("reports.filteredBy", { count: selectedCats.size })}</span>
+          ) : null}
+        </div>
+      )}
+
+      {networth ? (
+        <div className={grid}>
+          {/* net worth history */}
+          <Card>
+            <CardHeader
+              title={`${t("reports.netWorthHistory")} (${displayCurrency})`}
+              action={
+                <Button variant="ghost" onClick={() => takeSnapshot.mutate(undefined as never)} title={t("reports.snapshotHint")}>
+                  ⊙ {t("reports.snapshotNow")}
+                </Button>
+              }
+            />
+            <div className="h-64 p-3">
+              {historyData.length === 0 ? (
+                <EmptyState>{t("reports.noSnapshots")}</EmptyState>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={historyData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+                    <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
+                    <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
+                      tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
+                    <Line type="monotone" dataKey="total" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card>
+
+          {/* allocation donut */}
+          <Card>
+            <CardHeader title={`${t("reports.allocation")} (${displayCurrency})`} />
+            <div className="pocket-auto-h flex h-64 flex-wrap items-center justify-center gap-4 p-3">
+              <div className="h-52 w-52">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={allocation}
+                      dataKey="value"
+                      nameKey="currency"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={58}
+                      outerRadius={92}
+                      paddingAngle={2}
+                      stroke="var(--viz-tooltip-bg)"
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    >
+                      {allocation.map((entry) => (
+                        <Cell key={entry.currency} fill={CURRENCY_SLOT[entry.currency]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="w-44 space-y-1.5 pocket:w-full">
+                {allocation.map((entry) => (
+                  <div key={entry.currency} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CURRENCY_SLOT[entry.currency] }} />
+                      {entry.currency === "XAU_G" ? "GOLD" : entry.currency}
+                    </span>
+                    <span className="tabular-nums text-zinc-500">
+                      {allocationTotal > 0 ? Math.round((entry.value / allocationTotal) * 100) : 0}% · {fmt(entry.value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {spending ? (
+        <div className={grid}>
+          {/* category trends */}
+          <Card>
+            <CardHeader title={`${t("reports.categoryTrends")} (${displayCurrency})`} />
+            <div className="h-64 p-3">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={historyData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+                <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
                   <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
                   <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
                     tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-                  <Line type="monotone" dataKey="total" name={t("dashboard.netWorth")} stroke="var(--viz-series-1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} activeDot={{ r: 5 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  {topCategories.map((c, i) => (
+                    <Line
+                      key={c.id}
+                      type="monotone"
+                      dataKey={c.id}
+                      name={categoryName(c.id)}
+                      stroke={TREND_SLOTS[i]}
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
-            )}
-          </div>
-        </Card>
-
-        {/* allocation donut */}
-        <Card>
-          <CardHeader title={`${t("reports.allocation")} (${displayCurrency})`} />
-          <div className="pocket-auto-h flex h-64 flex-wrap items-center justify-center gap-4 p-3">
-            <div className="h-52 w-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={allocation}
-                    dataKey="value"
-                    nameKey="currency"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={58}
-                    outerRadius={92}
-                    paddingAngle={2}
-                    stroke="var(--viz-tooltip-bg)"
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                  >
-                    {allocation.map((entry) => (
-                      <Cell key={entry.currency} fill={CURRENCY_SLOT[entry.currency]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-                </PieChart>
-              </ResponsiveContainer>
             </div>
-            <div className="w-44 space-y-1.5 pocket:w-full">
-              {allocation.map((entry) => (
-                <div key={entry.currency} className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CURRENCY_SLOT[entry.currency] }} />
-                    {entry.currency === "XAU_G" ? "GOLD" : entry.currency}
-                  </span>
-                  <span className="tabular-nums text-zinc-500">
-                    {allocationTotal > 0 ? Math.round((entry.value / allocationTotal) * 100) : 0}% · {fmt(entry.value)}
-                  </span>
-                </div>
-              ))}
+          </Card>
+
+          {/* income split */}
+          <Card>
+            <CardHeader title={`${t("reports.incomeSplit")} — ${thisYear} (${displayCurrency})`} />
+            <div className="space-y-2 p-4">
+              {incomeSplit.length === 0 ? (
+                <p className="text-sm text-zinc-400">—</p>
+              ) : (
+                incomeSplit.map((s) => (
+                  <div key={s.name}>
+                    <div className="mb-0.5 flex justify-between text-xs">
+                      <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                        {s.name}
+                      </span>
+                      <span className="font-medium tabular-nums">{fmt(s.total)}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                      <div className="h-full rounded-full" style={{ width: `${(s.total / incomeMax) * 100}%`, backgroundColor: s.color }} />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-          </div>
-        </Card>
-
-        {/* category trends */}
-        <Card>
-          <CardHeader title={`${t("reports.categoryTrends")} (${displayCurrency})`} />
-          <div className="h-64 p-3">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
-                <CartesianGrid stroke="var(--viz-grid)" strokeWidth={1} vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={{ stroke: "var(--viz-axis)" }} />
-                <YAxis tick={{ fontSize: 11, fill: "var(--viz-muted)" }} tickLine={false} axisLine={false} width={70}
-                  tickFormatter={(v: number) => Intl.NumberFormat(locale, { notation: "compact" }).format(v)} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                {topCategories.map((c, i) => (
-                  <Line
-                    key={c.id}
-                    type="monotone"
-                    dataKey={c.id}
-                    name={categoryName(c.id)}
-                    stroke={TREND_SLOTS[i]}
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                    activeDot={{ r: 4 }}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* income split */}
-        <Card>
-          <CardHeader title={`${t("reports.incomeSplit")} — ${thisYear} (${displayCurrency})`} />
-          <div className="space-y-2 p-4">
-            {incomeSplit.length === 0 ? (
-              <p className="text-sm text-zinc-400">—</p>
-            ) : (
-              incomeSplit.map((s) => (
-                <div key={s.name}>
-                  <div className="mb-0.5 flex justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                      {s.name}
-                    </span>
-                    <span className="font-medium tabular-nums">{fmt(s.total)}</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <div className="h-full rounded-full" style={{ width: `${(s.total / incomeMax) * 100}%`, backgroundColor: s.color }} />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      </div>
+          </Card>
+        </div>
+      ) : null}
 
       {/* FX insights */}
-      <Card>
-        <CardHeader title={`${t("reports.fxInsights")} (${displayCurrency})`} />
-        {fx.conversions.length === 0 ? (
-          <div className="p-4">
-            <EmptyState>{t("reports.noConversions")}</EmptyState>
-          </div>
-        ) : (
-          <div className="space-y-3 p-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
-                <div className="text-xs text-zinc-500">{t("reports.avgSpread")}</div>
-                <div className={`text-lg font-bold tabular-nums ${(fx.avgSpreadPct ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                  {fx.avgSpreadPct != null ? `${fx.avgSpreadPct.toFixed(2)}%` : "—"}
-                </div>
-              </div>
-              <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
-                <div className="text-xs text-zinc-500">{t("reports.totalSpreadCost")}</div>
-                <div className="text-lg font-bold tabular-nums text-red-600">{fmt(fx.totalSpreadCost)}</div>
-              </div>
-              <div className="rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800/60">
-                <div className="text-zinc-500">
-                  {t("reports.bestConversion")}:{" "}
-                  <span className="font-medium text-emerald-600">{fx.best?.spread != null ? `${fx.best.spread.toFixed(2)}%` : "—"}</span>
-                </div>
-                <div className="mt-1 text-zinc-500">
-                  {t("reports.worstConversion")}:{" "}
-                  <span className="font-medium text-red-600">{fx.worst?.spread != null ? `${fx.worst.spread.toFixed(2)}%` : "—"}</span>
-                </div>
-              </div>
+      {networth ? (
+        <Card>
+          <CardHeader title={`${t("reports.fxInsights")} (${displayCurrency})`} />
+          {fx.conversions.length === 0 ? (
+            <div className="p-4">
+              <EmptyState>{t("reports.noConversions")}</EmptyState>
             </div>
-            <div className="overflow-x-auto">
-              <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold pocket:max-sm:[&_td:nth-child(2)]:col-span-2">
-                <thead>
-                  <tr className="text-left text-xs text-zinc-400">
-                    <th className="px-2 py-1 font-medium">{t("common.date")}</th>
-                    <th className="px-2 py-1 font-medium">{t("reports.conversions")}</th>
-                    <th className="px-2 py-1 text-right font-medium">{t("reports.yourRate")}</th>
-                    <th className="px-2 py-1 text-right font-medium">{t("reports.marketRate")}</th>
-                    <th className="px-2 py-1 text-right font-medium">{t("transfer.spread")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fx.conversions.slice(0, 20).map((c, i) => (
-                    <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800">
-                      <td className="px-2 py-1.5" data-label={t("common.date")}>{c.date}</td>
-                      <td className="px-2 py-1.5" data-label={t("reports.conversions")}>
-                        {formatAmount(c.fromAmount, c.fromCurrency, locale)} → {formatAmount(c.toAmount, c.toCurrency, locale)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right" data-label={t("reports.yourRate")}>{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
-                      <td className="px-2 py-1.5 text-right" data-label={t("reports.marketRate")}>{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
-                      <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`} data-label={t("transfer.spread")}>
-                        {c.spread != null ? `${c.spread.toFixed(2)}%` : "—"}
-                      </td>
+          ) : (
+            <div className="space-y-3 p-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                  <div className="text-xs text-zinc-500">{t("reports.avgSpread")}</div>
+                  <div className={`text-lg font-bold tabular-nums ${(fx.avgSpreadPct ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    {fx.avgSpreadPct != null ? `${fx.avgSpreadPct.toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                  <div className="text-xs text-zinc-500">{t("reports.totalSpreadCost")}</div>
+                  <div className="text-lg font-bold tabular-nums text-red-600">{fmt(fx.totalSpreadCost)}</div>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800/60">
+                  <div className="text-zinc-500">
+                    {t("reports.bestConversion")}:{" "}
+                    <span className="font-medium text-emerald-600">{fx.best?.spread != null ? `${fx.best.spread.toFixed(2)}%` : "—"}</span>
+                  </div>
+                  <div className="mt-1 text-zinc-500">
+                    {t("reports.worstConversion")}:{" "}
+                    <span className="font-medium text-red-600">{fx.worst?.spread != null ? `${fx.worst.spread.toFixed(2)}%` : "—"}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:[&_tr]:grid! pocket:max-sm:[&_tr]:grid-cols-2 pocket:max-sm:[&_tr]:gap-x-5 pocket:max-sm:[&_td]:flex-wrap pocket:max-sm:[&_td]:gap-y-0! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:py-1! pocket:max-sm:[&_td:not(:first-child)]:justify-end! pocket:max-sm:[&_td:not(:first-child)::before]:mr-auto pocket:max-sm:[&_td:first-child]:col-span-2 pocket:max-sm:[&_td:first-child]:justify-start! pocket:max-sm:[&_td:first-child]:font-semibold pocket:max-sm:[&_td:nth-child(2)]:col-span-2">
+                  <thead>
+                    <tr className="text-left text-xs text-zinc-400">
+                      <th className="px-2 py-1 font-medium">{t("common.date")}</th>
+                      <th className="px-2 py-1 font-medium">{t("reports.conversions")}</th>
+                      <th className="px-2 py-1 text-right font-medium">{t("reports.yourRate")}</th>
+                      <th className="px-2 py-1 text-right font-medium">{t("reports.marketRate")}</th>
+                      <th className="px-2 py-1 text-right font-medium">{t("transfer.spread")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {fx.conversions.slice(0, 20).map((c, i) => (
+                      <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="px-2 py-1.5" data-label={t("common.date")}>{c.date}</td>
+                        <td className="px-2 py-1.5" data-label={t("reports.conversions")}>
+                          {formatAmount(c.fromAmount, c.fromCurrency, locale)} → {formatAmount(c.toAmount, c.toCurrency, locale)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right" data-label={t("reports.yourRate")}>{c.effective.toLocaleString(locale, { maximumFractionDigits: 4 })}</td>
+                        <td className="px-2 py-1.5 text-right" data-label={t("reports.marketRate")}>{c.market != null ? c.market.toLocaleString(locale, { maximumFractionDigits: 4 }) : "—"}</td>
+                        <td className={`px-2 py-1.5 text-right font-medium ${c.spread != null && c.spread < -0.05 ? "text-red-600" : "text-zinc-500"}`} data-label={t("transfer.spread")}>
+                          {c.spread != null ? `${c.spread.toFixed(2)}%` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
-      </Card>
+          )}
+        </Card>
+      ) : null}
 
       {/* month by month table */}
-      <Card>
-        <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
-        <div className="overflow-x-auto p-2">
-          <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:table! pocket:max-sm:[&_thead]:table-header-group! pocket:max-sm:[&_tbody]:table-row-group! pocket:max-sm:[&_tr]:table-row! pocket:max-sm:[&_tr]:border-0! pocket:max-sm:[&_tbody_tr]:border-t! pocket:max-sm:[&_td]:table-cell! pocket:max-sm:[&_td]:w-auto! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:p-1.5! pocket:max-sm:[&_td]:whitespace-nowrap pocket:max-sm:[&_td:first-child]:text-left! pocket:max-sm:[&_td::before]:hidden pocket:max-sm:[&_th]:px-1.5">
-            <thead>
-              <tr className="text-left text-xs text-zinc-400">
-                <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
-                <th className="px-2 py-1 text-right font-medium">{t("reports.income")}</th>
-                <th className="px-2 py-1 text-right font-medium">{t("reports.expenses")}</th>
-                <th className="px-2 py-1 text-right font-medium">{t("reports.net")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...totals].reverse().map((row) => (
-                <tr key={row.month} className="border-t border-zinc-100 dark:border-zinc-800">
-                  <td className="px-2 py-1.5 font-medium" data-label={t("projections.month")}>{row.month}</td>
-                  <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("reports.income")}>{fmt(row.income)}</td>
-                  <td className="px-2 py-1.5 text-right" data-label={t("reports.expenses")}>{fmt(row.expense)}</td>
-                  <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("reports.net")}>
-                    {fmt(row.income - row.expense)}
-                  </td>
+      {cashflow ? (
+        <Card>
+          <CardHeader title={`${t("reports.monthlyTable")} (${displayCurrency})`} />
+          <div className="overflow-x-auto p-2">
+            <table className="stack-sm sticky-head w-full text-sm tabular-nums pocket:max-sm:table! pocket:max-sm:[&_thead]:table-header-group! pocket:max-sm:[&_tbody]:table-row-group! pocket:max-sm:[&_tr]:table-row! pocket:max-sm:[&_tr]:border-0! pocket:max-sm:[&_tbody_tr]:border-t! pocket:max-sm:[&_td]:table-cell! pocket:max-sm:[&_td]:w-auto! pocket:max-sm:[&_td]:border-0! pocket:max-sm:[&_td]:p-1.5! pocket:max-sm:[&_td]:whitespace-nowrap pocket:max-sm:[&_td:first-child]:text-left! pocket:max-sm:[&_td::before]:hidden pocket:max-sm:[&_th]:px-1.5">
+              <thead>
+                <tr className="text-left text-xs text-zinc-400">
+                  <th className="px-2 py-1 font-medium">{t("projections.month")}</th>
+                  <th className="px-2 py-1 text-right font-medium">{t("reports.income")}</th>
+                  <th className="px-2 py-1 text-right font-medium">{t("reports.expenses")}</th>
+                  <th className="px-2 py-1 text-right font-medium">{t("reports.net")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody>
+                {[...totals].reverse().map((row) => (
+                  <tr key={row.month} className="border-t border-zinc-100 dark:border-zinc-800">
+                    <td className="px-2 py-1.5 font-medium" data-label={t("projections.month")}>{row.month}</td>
+                    <td className="px-2 py-1.5 text-right text-emerald-600" data-label={t("reports.income")}>{fmt(row.income)}</td>
+                    <td className="px-2 py-1.5 text-right" data-label={t("reports.expenses")}>{fmt(row.expense)}</td>
+                    <td className={`px-2 py-1.5 text-right font-medium ${row.income - row.expense >= 0 ? "text-emerald-600" : "text-red-600"}`} data-label={t("reports.net")}>
+                      {fmt(row.income - row.expense)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }
