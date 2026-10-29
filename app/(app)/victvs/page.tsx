@@ -27,6 +27,7 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { initialFold } from "@/lib/ui/monthFold";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { pocketable } from "@/components/pocket/pocketable";
 import { unpaidSplit } from "@/lib/ui/pocket/victvsRanges";
@@ -147,19 +148,19 @@ function VictvsPage() {
   const selectedPaid = selectedSessions.filter((s) => s.status === "paid");
   const selectedTotal = sumAmounts("USD", selectedUnpaid.map((s) => s.amount));
 
-  // history collapses by default: only the current year is open on arrival
-  const currentYear = todayISO().slice(0, 4);
+  // on arrival sessions ahead are folded (months and years after this one),
+  // and earlier years too while history collapses
+  const thisMonth = todayISO().slice(0, 7);
+  const currentYear = thisMonth.slice(0, 4);
   const [collapseInit, setCollapseInit] = useState(false);
   if (!collapseInit && collapseHistory.loaded && (groups.length > 0 || payoutGroups.length > 0)) {
     setCollapseInit(true);
-    if (collapseHistory.value) {
-      setCollapsed(
-        new Set([
-          ...groups.map(([year]) => year).filter((year) => year !== currentYear),
-          ...payoutGroups.map(([year]) => `payouts-${year}`).filter((k) => k !== `payouts-${currentYear}`),
-        ])
-      );
-    }
+    setCollapsed(
+      new Set([
+        ...initialFold(groups, thisMonth, collapseHistory.value),
+        ...(collapseHistory.value ? payoutGroups.map(([year]) => `payouts-${year}`).filter((k) => k !== `payouts-${currentYear}`) : []),
+      ])
+    );
   }
 
   if (sessions.isLoading || accounts.isLoading || settings.isLoading) return <Spinner />;
@@ -302,7 +303,12 @@ function VictvsPage() {
                     return (
                       <Card key={month}>
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--edge-soft)] px-4 py-2.5">
-                          <button onClick={() => toggleCollapsed(month)} className="flex items-center gap-2 text-sm font-semibold">
+                          <button
+                            onClick={() => toggleCollapsed(month)}
+                            aria-expanded={!monthCollapsed}
+                            data-month-toggle={month}
+                            className="flex items-center gap-2 text-sm font-semibold"
+                          >
                             <span>{monthCollapsed ? "▸" : "▾"}</span>
                             {monthLabel(month)}
                             <span className="font-normal text-zinc-400">

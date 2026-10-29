@@ -6,7 +6,7 @@ import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
 import { buildCardBook, CardBook, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
-import { convert } from "@/lib/domain/fx";
+import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { findDueCardPayments } from "@/lib/domain/purchases";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
@@ -30,6 +30,10 @@ export interface DashboardData {
   accounts: Account[];
   transactions: Transaction[];
   today: string;
+  /** today's rates, for what's still to come */
+  usdPer: UsdPerMap;
+  /** Reports' legacy toggle: the month's figures count legacy rows unless it's off */
+  includeLegacy: boolean;
 }
 
 /**
@@ -112,6 +116,8 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     flow,
     unpaidVictvs,
     scheduledVictvs: victvsSplit.scheduled,
+    usdPer: rates.data.usdPer,
+    includeLegacy,
     accounts: accounts.data,
     transactions: transactions.data,
     today,

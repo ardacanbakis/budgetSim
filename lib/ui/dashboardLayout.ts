@@ -81,7 +81,7 @@ export const CARD_SPECS = [
   spec("gold-lens", { defaultOn: { classic: false, v2: true }, span: "sm:col-span-1" }),
   // the optional cards (components/dashboardCards.tsx): off everywhere until
   // turned on, so no layout saved before them changes
-  spec("this-month", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2 xl:col-span-1" }),
+  spec("this-month", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2" }),
   spec("card-statements", { defaultOn: OFF, route: "/cards", span: "sm:col-span-2" }),
   spec("trend", { defaultOn: OFF, route: "/reports", span: "sm:col-span-2" }),
   // what's owed lives in the Portfolio's Debts view, so it leaves with the Portfolio

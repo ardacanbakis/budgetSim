@@ -27,6 +27,23 @@ async function enterDemo(page: Page) {
   await expect(page.getByText(/Net worth|Toplam varlık/)).toBeVisible({ timeout: 15_000 });
 }
 
+/** Opens every folded year and month on Transactions or VICTVS: what's ahead starts folded. */
+async function unfoldMonths(page: Page) {
+  for (let i = 0; i < 40; i++) {
+    const year = page.getByText(/^▸ \d{4}$/).first();
+    if ((await year.count()) > 0) {
+      await year.click();
+      continue;
+    }
+    const month = page.locator('[data-month-toggle][aria-expanded="false"]').first();
+    if ((await month.count()) > 0) {
+      await month.click();
+      continue;
+    }
+    break;
+  }
+}
+
 for (const vp of VIEWPORTS) {
   test(`demo mode renders at ${vp.name}`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -352,6 +369,7 @@ test("cards: a recorded statement counts against the limit until it's paid, and 
 
   // on the ledger it's an expense, not a neutral transfer
   await page.goto("/transactions");
+  await unfoldMonths(page);
   const row = page.locator("li").filter({ hasText: "CC EnPara statement" }).first();
   await expect(row).toContainText(/Card payment|Kart ödemesi/);
   await expect(row).toContainText("−₺10,019.54");
@@ -561,8 +579,7 @@ test("cards: a big purchase's installments stay off Transactions and are paid wi
   await expect(fridge()).toContainText(/0 of 3 paid|0\/3/);
 
   await page.goto("/transactions");
-  const folded = page.getByText(/^▸ \d{4}$/);
-  if ((await folded.count()) > 0) await folded.first().click();
+  await unfoldMonths(page);
   const payment = page.locator("li").filter({ hasText: "Bonus Card statement" }).filter({ hasText: /Planned|Planlı/ }).first();
   await payment.getByRole("button", { name: /^complete$|tamamla/i }).click();
   await page.locator(".fixed.inset-0").getByRole("button", { name: /^confirm$|^onayla$/i }).click();
@@ -709,16 +726,17 @@ test("planner: year jumps on the slider and expandable month detail", async ({ p
   await expect(page.getByRole("button", { name: "Single column" })).toBeVisible();
 });
 
-test("part1: current month first, history collapsed, legacy shown apart", async ({ page }) => {
+test("part1: what's ahead folded above now, history collapsed, legacy shown apart", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await enterDemo(page);
 
-  // the ledger opens on now, with other years folded away
+  // the ledger opens with what's ahead folded on top, then now, open; other years folded away
   await page.goto("/transactions");
   await page.waitForTimeout(500);
   const heads = await page.getByText(/^[\u25b8\u25be] 20\d\d$/).allTextContents();
-  expect(heads[0]).toMatch(/\u25be/); // current year expanded
-  expect(heads.slice(1).every((h) => h.startsWith("\u25b8"))).toBe(true);
+  const year = String(new Date().getFullYear());
+  expect(heads.find((h) => h.endsWith(year))).toMatch(/\u25be/); // current year expanded
+  expect(heads.filter((h) => !h.endsWith(year)).every((h) => h.startsWith("\u25b8"))).toBe(true);
   const thisMonth = new Date().toLocaleDateString("en-US", { month: "long" });
   await expect(page.getByText(thisMonth).first()).toBeVisible();
 
@@ -985,9 +1003,11 @@ test("part2: history folding can be turned off in settings", async ({ page }) =>
 
   await page.goto("/transactions");
   await page.waitForTimeout(500);
-  // with folding off, every year header opens expanded
-  const collapsedYears = await page.getByText(/^▸ \d{4}$/).count();
-  expect(collapsedYears).toBe(0);
+  // with folding off, every year up to this one opens expanded; only years ahead stay folded
+  const folded = await page.getByText(/^▸ \d{4}$/).allTextContents();
+  const year = new Date().getFullYear();
+  expect(folded.every((h) => Number(h.slice(2)) > year)).toBe(true);
+  expect(await page.getByText(`▾ ${year}`).count()).toBe(1);
 });
 
 test("part3: phone bar shows five targets and a More sheet", async ({ page }) => {
@@ -1505,10 +1525,8 @@ test("cards: a scheduled payment doesn't leave the account until its date", asyn
   // and it's waiting in the ledger as planned
   await page.goto("/transactions");
   await page.waitForTimeout(500);
-  // next year opens folded, so unfold it before looking
-  const folded = page.getByText(/^▸ \d{4}$/);
-  if ((await folded.count()) > 0) await folded.first().click();
-  await page.waitForTimeout(300);
+  // what's ahead opens folded, so unfold it before looking
+  await unfoldMonths(page);
   const row = page.locator("li").filter({ hasText: /statement/ }).first();
   await expect(row).toContainText("Planned");
 });
@@ -2330,6 +2348,7 @@ test("cards: a draft statement becomes a card payment, and the plan stops paying
     { due }
   );
   await page.goto("/transactions");
+  await unfoldMonths(page);
   const draft = page.locator("li").filter({ hasText: "draft next month - Bonus" });
   await draft.getByRole("button", { name: "This is a card payment" }).click();
   const dialog = page.locator(".fixed.inset-0").filter({ hasText: "Make it a card payment" });
@@ -2663,4 +2682,37 @@ test("portfolio: dollars converted via a middleman land in lira at their rate, w
   await expect(page.locator("[data-account-history]").first()).toContainText("Middleman conversion @ 40");
   await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
   await expect(page.locator("[data-account-history]").first()).toContainText("+₺3,990.00");
+});
+
+test("months: what's ahead comes first, folded; this month and what's behind it open below", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  const now = new Date();
+  const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonth = ym(now);
+  const nextMonth = ym(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const lastMonth = ym(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+
+  await page.goto("/transactions");
+  const current = page.locator(`[data-month-toggle="${thisMonth}"]`);
+  await expect(current).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(`[data-month-toggle="${lastMonth}"]`)).toHaveAttribute("aria-expanded", "true");
+  // next month (or its whole year, in December) waits above, folded
+  const toggles = await page.locator("[data-month-toggle]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-month-toggle"), e.getAttribute("aria-expanded")]));
+  const ahead = toggles.filter(([m]) => m! > thisMonth);
+  expect(ahead.every(([, open]) => open === "false")).toBe(true);
+  const order = toggles.map(([m]) => m);
+  if (order.includes(nextMonth)) expect(order.indexOf(nextMonth)).toBeLessThan(order.indexOf(thisMonth));
+  // a folded month opens on a click
+  if (ahead.length > 0) {
+    const first = page.locator(`[data-month-toggle="${ahead[0][0]}"]`);
+    await first.click();
+    await expect(first).toHaveAttribute("aria-expanded", "true");
+  }
+
+  // VICTVS: sessions booked ahead are folded too
+  await page.goto("/victvs");
+  await expect(page.locator(`[data-month-toggle="${thisMonth}"]`)).toHaveAttribute("aria-expanded", "true");
+  const victvs = await page.locator("[data-month-toggle]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-month-toggle"), e.getAttribute("aria-expanded")]));
+  expect(victvs.filter(([m]) => m! > thisMonth).every(([, open]) => open === "false")).toBe(true);
 });
