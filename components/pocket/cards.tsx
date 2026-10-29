@@ -13,8 +13,9 @@ import { Account, Purchase, Transaction } from "@/lib/data/types";
 import { buildCardBook, CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable, UsdPerMap } from "@/lib/domain/fx";
-import { CardStanding, cardStandings, DueCardPayment, findDueCardPayments, purchaseProgress } from "@/lib/domain/purchases";
+import { CardStanding, cardStandings, DueCardPayment, findDueCardPayments, purchaseInstallments, purchaseProgress } from "@/lib/domain/purchases";
 import { addDays, parseISODate, todayISO } from "@/lib/domain/recurrence";
+import { CardDetailsModal } from "@/components/cardDetails";
 import { useI18n } from "@/lib/i18n";
 import { CARDS_TAB_KEY, useLocalChoice } from "@/lib/prefs";
 import { statementFigure } from "@/lib/ui/pocket/attention";
@@ -185,6 +186,7 @@ function CardsScreen() {
   const [editingCard, setEditingCard] = useState<Account | null>(null);
   const [creatingCard, setCreatingCard] = useState(false);
   const [menuFor, setMenuFor] = useState<Account | null>(null);
+  const [detailsFor, setDetailsFor] = useState<Account | null>(null);
   const [purchaseId, setPurchaseId] = useState<string | null>(null);
   const [retiredOpen, setRetiredOpen] = useState(false);
 
@@ -350,9 +352,18 @@ function CardsScreen() {
           menuFor
             ? [
                 {
+                  label: t("cards.openDetails"),
+                  icon: "card",
+                  tone: "primary",
+                  onSelect: () => {
+                    const card = menuFor;
+                    setMenuFor(null);
+                    setDetailsFor(card);
+                  },
+                },
+                {
                   label: t("common.edit"),
                   icon: "edit",
-                  tone: "primary",
                   onSelect: () => {
                     const card = menuFor;
                     setMenuFor(null);
@@ -385,6 +396,23 @@ function CardsScreen() {
               ]
             : []
         }
+      />
+
+      <CardDetailsModal
+        key={detailsFor?.id ?? "none"}
+        card={detailsFor}
+        book={book}
+        purchases={purchases.data ?? []}
+        transactions={transactions.data ?? []}
+        onClose={() => setDetailsFor(null)}
+        onPay={(card) => {
+          setDetailsFor(null);
+          setPaying(card);
+        }}
+        onOpenPurchase={(p) => {
+          setDetailsFor(null);
+          setPurchaseId(p.id);
+        }}
       />
 
       <PurchaseSheet
@@ -911,6 +939,7 @@ function PurchaseSheet({
   if (!purchase) return null;
   const currency = account?.currency ?? "TRY";
   const info = meta(purchase, account, book, transactions);
+  const installments = purchaseInstallments(purchase, book, transactions, todayISO());
   const nextReflected = !purchase.reflected;
 
   return (
@@ -924,6 +953,30 @@ function PurchaseSheet({
           <p className="text-[13px] text-zinc-500 dark:text-zinc-400">{info.text}</p>
           {purchase.details ? <p className="mt-1 text-[13px] text-zinc-400">{purchase.details}</p> : null}
         </div>
+
+        {/* every installment and the statement that pays it */}
+        {installments.length > 1 ? (
+          <ul className="divide-y divide-[var(--edge-soft)] rounded-[var(--ui-card-radius)] border border-[var(--edge)]" data-installments>
+            {installments.map((r) => (
+              <li key={r.tx.id} className="flex items-center gap-3 px-4 py-2 text-[13px]">
+                <span className="w-6 shrink-0 tabular-nums text-zinc-400">{r.n}</span>
+                <span className="min-w-0 flex-1">{shortDate(r.tx.dueDate, locale, true)}</span>
+                <Money amount={r.tx.amount} currency={currency} sign="none" className="shrink-0" />
+                <span
+                  className={`w-24 shrink-0 text-right text-xs ${
+                    r.status === "paid"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : r.status === "late"
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-500 dark:text-zinc-400"
+                  }`}
+                >
+                  {t(`purchases.status_${r.status}`)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         <div className="overflow-hidden rounded-[var(--ui-card-radius)] border border-[var(--edge)]">
           <button

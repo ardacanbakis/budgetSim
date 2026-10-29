@@ -529,8 +529,7 @@ test("cards: a big purchase's installments stay off Transactions and are paid wi
   await page.getByRole("button", { name: /^save$|kaydet/i }).click();
   await page.waitForTimeout(700);
 
-  const fridge = () =>
-    page.getByText("Fridge", { exact: true }).locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
+  const fridge = () => page.locator("[data-purchase='Fridge']");
   await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
   await expect(fridge()).toContainText(/0 of 3 paid|0\/3/);
 
@@ -2458,4 +2457,52 @@ test("data check: finds what makes the numbers wrong, fixes one, dismisses anoth
   // dismissed stays dismissed, and the dashboard stops nudging
   await page.goto("/");
   await expect(page.locator("[data-datacheck-nudge]")).toHaveCount(0);
+});
+
+test("cards: a card's details show every statement, and its charges can be changed there", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /^cards$|^kartlar$/i }).click();
+  const bonus = page.getByRole("heading", { name: /^Bonus Card/ }).locator("xpath=ancestor::div[contains(@class,'border')][1]");
+  await bonus.getByRole("button", { name: "Details" }).click();
+  const details = page.locator("[data-card-details='Bonus Card']");
+  await expect(details).toBeVisible();
+  // this month's statement is due, the phone's installments are months ahead
+  await expect(details.locator("[data-statement-month]").first()).toContainText(/Upcoming|Due/);
+  await expect(details.getByText(/iPhone 17 \(\d\/6\)/).first()).toBeVisible();
+  await expect(details.getByText("Big purchases on this card")).toBeVisible();
+
+  // a plain card charge can be deleted from here (the ledger never lists it)
+  const charge = details.locator("[data-charge]").filter({ hasNotText: "iPhone" }).first();
+  const name = (await charge.getAttribute("data-charge"))!;
+  page.once("dialog", (d) => d.accept());
+  await charge.getByRole("button", { name: "Delete" }).click();
+  await expect(details.locator(`[data-charge="${name}"]`)).toHaveCount(0);
+
+  // the phone opens its own details, with every installment
+  await details.getByRole("button", { name: /iPhone 17/ }).first().click();
+  const purchase = page.locator("[data-purchase-details='iPhone 17']");
+  await expect(purchase.locator("[data-installment]")).toHaveCount(6);
+  await expect(purchase.locator("[data-installment='6']")).toContainText("Upcoming");
+});
+
+test("big purchases: details edit the name, and the grid takes one, two or three columns", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await enterDemo(page);
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /big purchases|büyük alışverişler/i }).click();
+  await page.locator("[data-purchase='iPhone 17']").click();
+  const purchase = page.locator("[data-purchase-details='iPhone 17']");
+  await purchase.getByLabel(/^name$|^ad$/i).fill("iPhone 17 Pro");
+  await purchase.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.locator("[data-purchase='iPhone 17 Pro']")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const grid = page.locator("[data-purchase-grid]").first();
+  const columns = page.getByRole("group", { name: "Columns" });
+  await columns.getByRole("button", { name: "3", exact: true }).click();
+  await expect(grid).toHaveClass(/lg:grid-cols-3/);
+  await columns.getByRole("button", { name: "1", exact: true }).click();
+  await expect(grid).not.toHaveClass(/grid-cols-2/);
 });

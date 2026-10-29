@@ -38,6 +38,7 @@ import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { pocketable } from "@/components/pocket/pocketable";
+import { CardDetailsModal, PurchaseDetailsModal } from "@/components/cardDetails";
 
 const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) => m.PocketCards), {
   ssr: false,
@@ -63,7 +64,11 @@ function PurchasesPage() {
   const [paying, setPaying] = useState<Account | null>(null);
   const [showRetired, setShowRetired] = useState(false);
   const [editingCard, setEditingCard] = useState<Account | null>(null);
+  // the card or purchase whose details are open
+  const [detailsCard, setDetailsCard] = useState<Account | null>(null);
+  const [detailsPurchase, setDetailsPurchase] = useState<Purchase | null>(null);
   const { columns, setColumns } = useColumns("renovator-cols-purchases");
+  const purchaseColumns = useColumns("renovator-cols-bigpurchases", 2);
   const view = useSurfaceView("cards");
   const tab = useLocalChoice<(typeof TABS)[number]>(CARDS_TAB_KEY, TABS, "cards");
 
@@ -74,15 +79,6 @@ function PurchasesPage() {
   const setArchived = useAppMutation(
     (v: { id: string; archived: boolean }) => repo.updateAccount(v.id, { archived: v.archived }),
     [KEYS.accounts]
-  );
-  const setReflected = useAppMutation(
-    (v: { id: string; reflected: boolean }) =>
-      repo.setPurchaseReflected(v.id, v.reflected, rates.data ? snapshotFromTable(rates.data) : null),
-    PURCHASE_KEYS
-  );
-  const deletePurchase = useAppMutation(
-    (v: { id: string; deleteTransactions: boolean }) => repo.deletePurchase(v.id, v.deleteTransactions),
-    PURCHASE_KEYS
   );
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
@@ -138,7 +134,14 @@ function PurchasesPage() {
     const isInstallment = purchase.installmentCount > 1;
     const pct = isInstallment && purchase.reflected ? Math.round((progress.paidCount / progress.totalCount) * 100) : 0;
     return (
-      <div key={purchase.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+      <button
+        key={purchase.id}
+        type="button"
+        onClick={() => setDetailsPurchase(purchase)}
+        aria-label={`${purchase.name} — ${t("cards.openDetails")}`}
+        data-purchase={purchase.name}
+        className="w-full rounded-lg border border-zinc-200 p-3 text-left transition-colors hover:border-teal-500/60 hover:bg-[var(--edge-soft)] dark:border-zinc-800"
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -163,33 +166,7 @@ function PurchasesPage() {
             </div>
             {purchase.details ? <div className="mt-1 text-xs text-zinc-400">{purchase.details}</div> : null}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-500">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-teal-600"
-                checked={purchase.reflected}
-                disabled={!purchase.accountId || setReflected.isPending}
-                onChange={(e) => {
-                  const on = e.target.checked;
-                  const warning = on ? t("purchases.reflectOnWarning") : t("purchases.reflectOffWarning");
-                  if (window.confirm(warning)) setReflected.mutate({ id: purchase.id, reflected: on });
-                }}
-              />
-              {t("purchases.reflect")}
-            </label>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                if (!window.confirm(t("common.confirmDelete"))) return;
-                const alsoTx =
-                  purchase.reflected && window.confirm(`${t("purchases.deleteTitle")}: ${t("purchases.deleteAlsoTx")}?`);
-                deletePurchase.mutate({ id: purchase.id, deleteTransactions: alsoTx });
-              }}
-            >
-              ✕
-            </Button>
-          </div>
+          <span aria-hidden className="shrink-0 text-zinc-400">›</span>
         </div>
         {isInstallment && purchase.reflected ? (
           <div className="mt-2">
@@ -204,9 +181,17 @@ function PurchasesPage() {
             </div>
           </div>
         ) : null}
-      </div>
+      </button>
     );
   }
+
+  // the big purchases grid: one, two or three across, the user's choice
+  const purchaseGrid =
+    purchaseColumns.columns === 1
+      ? "grid gap-3 p-4"
+      : purchaseColumns.columns === 2
+        ? "grid gap-3 p-4 sm:grid-cols-2"
+        : "grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3"
 
   /**
    * Every card on one line. The full cards answer "what is going on with this
@@ -237,7 +222,9 @@ function PurchasesPage() {
               return (
                 <tr key={card.id} className="border-b border-[var(--edge-soft)]">
                   <td className="px-3 py-1.5 font-medium" data-label={t("cards.title")}>
-                    {card.name}
+                    <button type="button" className="text-left hover:underline" onClick={() => setDetailsCard(card)}>
+                      {card.name}
+                    </button>
                   </td>
                   <td
                     className={`px-3 py-1.5 text-right tnum ${next?.date != null && next.date < today ? "text-red-600" : ""}`}
@@ -288,7 +275,11 @@ function PurchasesPage() {
             columns={view.columns}
             onColumns={view.setColumns}
           />
-          <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
+          {tab.value === "purchases" ? (
+            <ColumnsToggle columns={purchaseColumns.columns} onChange={purchaseColumns.setColumns} />
+          ) : (
+            <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
+          )}
           <Button variant="primary" onClick={() => setModalOpen(true)}>
             + {t("purchases.newPurchase")}
           </Button>
@@ -326,7 +317,7 @@ function PurchasesPage() {
             .map((card) => (
               <Card key={card.id}>
                 <CardHeader title={card.name} />
-                <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
+                <div className={purchaseGrid} data-purchase-grid>
                   {(byAccount.get(card.id) ?? []).map((p) => renderPurchase(p, card))}
                 </div>
               </Card>
@@ -411,6 +402,9 @@ function PurchasesPage() {
                       {t("cards.markInactive")}
                     </Button>
                   ) : null}
+                  <Button variant="ghost" onClick={() => setDetailsCard(card)}>
+                    {t("cards.openDetails")}
+                  </Button>
                   <Button variant="ghost" onClick={() => setEditingCard(card)}>
                     {t("common.edit")}
                   </Button>
@@ -474,7 +468,7 @@ function PurchasesPage() {
       {tab.value === "purchases" && nonCardPurchases.length > 0 ? (
         <Card>
           <CardHeader title={t("purchases.otherAccounts")} />
-          <div className="grid gap-3 p-4 sm:grid-cols-2 3xl:grid-cols-3">
+          <div className={purchaseGrid}>
             {nonCardPurchases.map((p) =>
               renderPurchase(
                 p,
@@ -522,6 +516,26 @@ function PurchasesPage() {
 
       <PurchaseModal open={modalOpen} onClose={() => setModalOpen(false)} />
 
+      <CardDetailsModal
+        key={detailsCard?.id ?? "none"}
+        card={detailsCard}
+        book={book}
+        purchases={purchases.data ?? []}
+        transactions={transactions.data ?? []}
+        onClose={() => setDetailsCard(null)}
+        onPay={(card) => setPaying(card)}
+        onOpenPurchase={(p) => {
+          setDetailsCard(null);
+          setDetailsPurchase(p);
+        }}
+      />
+      <PurchaseDetailsModal
+        key={detailsPurchase?.id ?? "none"}
+        purchase={detailsPurchase}
+        book={book}
+        transactions={transactions.data ?? []}
+        onClose={() => setDetailsPurchase(null)}
+      />
       <CardPaymentModal
         card={paying}
         suggested={paying ? Math.max(0, coversFor(paying.id).reduce((sum, c) => sum + chargeAmount(c), 0)) : 0}

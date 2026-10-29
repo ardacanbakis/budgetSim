@@ -268,6 +268,68 @@ export function cardSchedule(book: CardBook, cardId: string, fromMonth: string):
     .map(([month, total]) => ({ month, total }));
 }
 
+export interface CardStatement {
+  /** yyyy-mm */
+  month: string;
+  /** the recorded payment's date, else the card's payment day that month */
+  date: string | null;
+  /** payments recorded for this month, made or not */
+  payments: CardPayment[];
+  /** the charges this month's statement pays (or will pay), by date */
+  charges: Transaction[];
+  /** what's paid or due: the recorded payments when there are any, else the charges */
+  amount: number;
+  /**
+   * paid: every payment made · recorded: a payment set down, not all made ·
+   * due: this month or earlier with nothing recorded · upcoming: later months
+   */
+  status: "paid" | "recorded" | "due" | "upcoming";
+}
+
+/**
+ * A card's statements, month by month and newest first: what each payment
+ * paid for, and what each month still to come will charge. Charges no payment
+ * covers fall in the month they'll be paid (paidInMonth); one already late
+ * folds into this month. Legacy history isn't a charge (CardBook.charges), so
+ * only what's been tracked shows.
+ */
+export function cardStatements(book: CardBook, card: Account, today: string): CardStatement[] {
+  const thisMonth = today.slice(0, 7);
+  const byMonth = new Map<string, { payments: CardPayment[]; charges: Transaction[] }>();
+  const slot = (month: string) => {
+    let entry = byMonth.get(month);
+    if (!entry) byMonth.set(month, (entry = { payments: [], charges: [] }));
+    return entry;
+  };
+  for (const p of book.payments(card.id)) slot(p.date.slice(0, 7)).payments.push(p);
+  for (const c of book.charges(card.id)) {
+    const cover = book.coverOf(c);
+    const month = cover ? cover.date.slice(0, 7) : book.paidInMonth(c);
+    slot(!cover && month < thisMonth ? thisMonth : month).charges.push(c);
+  }
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([month, { payments, charges }]) => {
+      const recorded = payments.length > 0;
+      return {
+        month,
+        date: payments[0]?.date ?? paymentDateIn(month, card.paymentDay),
+        payments,
+        charges,
+        amount: recorded
+          ? payments.reduce((sum, p) => sum + p.amount, 0)
+          : charges.reduce((sum, c) => sum + chargeAmount(c), 0),
+        status: recorded
+          ? payments.every((p) => p.made)
+            ? ("paid" as const)
+            : ("recorded" as const)
+          : month <= thisMonth
+            ? ("due" as const)
+            : ("upcoming" as const),
+      };
+    });
+}
+
 export interface NextCardPayment {
   /** yyyy-mm of the statement */
   month: string;

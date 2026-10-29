@@ -529,3 +529,19 @@ test.describe("Pocket cards and VICTVS, dark", () => {
     await page.screenshot({ path: `${SHOTS}/pocket-cards-victvs-selected-dark.png` });
   });
 });
+
+test.describe("Pocket card and purchase details", () => {
+  test("⋯ → Details shows the statements; a purchase's sheet lists its installments", async ({ page }) => {
+    await openCards(page);
+    await tile(page, "Bonus Card").getByRole("button", { name: "Options for Bonus Card" }).click();
+    await sheet(page).getByRole("button", { name: "Details" }).click();
+    const details = page.locator("[data-card-details='Bonus Card']");
+    await expect(details).toBeVisible();
+    await expect(details.locator("[data-statement-month]").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await tile(page, "Bonus Card").getByRole("button", { name: "1 big purchase on this card" }).click();
+    await page.locator('[data-purchase-row="iPhone 17"]').click();
+    await expect(sheet(page).locator("[data-installments] li")).toHaveCount(6);
+  });
+});
