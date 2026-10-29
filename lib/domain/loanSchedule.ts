@@ -24,7 +24,12 @@ export const SCHEDULE_KINDS = [
   "zeroInterest",
   "custom",
 ] as const;
-export type ScheduleKind = (typeof SCHEDULE_KINDS)[number];
+/**
+ * The simulator's kinds, and lumpSum: a debt repaid in one payment on
+ * `payoffDate` (a friend's loan, mostly), with simple interest when it has a
+ * rate. Without a date ("when I can") it has no schedule yet.
+ */
+export type ScheduleKind = (typeof SCHEDULE_KINDS)[number] | "lumpSum";
 
 /** Statutory rates as they stand for consumer loans; both are parameters. */
 export const KKDF_CONSUMER_PCT = 15;
@@ -52,6 +57,8 @@ export interface ScheduleInput {
    * worth reverse-engineering — you have the paper, so you type what it says.
    */
   customInstalments?: number[];
+  /** For `lumpSum`: the day it's repaid; none = no schedule yet. */
+  payoffDate?: string | null;
 }
 
 export interface TaxedScheduleRow extends ScheduleRow {
@@ -106,6 +113,7 @@ function emptyResult(): ScheduleResult {
  * differs, which is why they live in one function rather than five.
  */
 export function buildSchedule(input: ScheduleInput): ScheduleResult {
+  if (input.kind === "lumpSum") return lumpSum(input);
   const term = Math.max(0, Math.floor(input.termMonths));
   const { currency, principal } = input;
   if (term <= 0 || !(principal > 0)) return emptyResult();
@@ -181,6 +189,31 @@ export function buildSchedule(input: ScheduleInput): ScheduleResult {
     totalInterest,
     totalTaxes,
     level,
+  };
+}
+
+/** Whole months from one date to another, at least one: a debt repaid in the month it's taken still ran a month. */
+function monthsFor(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const months = (ty - fy) * 12 + (tm - fm) - (td < fd ? 1 : 0);
+  return Math.max(1, months);
+}
+
+/** One payment on the payoff date: what was borrowed, plus simple interest at the monthly rate for the months it ran. */
+function lumpSum(input: ScheduleInput): ScheduleResult {
+  const { currency, principal, payoffDate } = input;
+  if (!payoffDate || !(principal > 0)) return emptyResult();
+  const months = monthsFor(input.startDate, payoffDate);
+  const interest = roundTo((principal * Math.max(0, input.monthlyRatePct)) / 100 * months, currency);
+  const payment = roundTo(principal + interest, currency);
+  return {
+    rows: [{ n: 1, date: payoffDate, payment, interest, principalPart: principal, remaining: 0, taxes: 0 }],
+    installment: payment,
+    totalPaid: payment,
+    totalInterest: interest,
+    totalTaxes: 0,
+    level: true,
   };
 }
 

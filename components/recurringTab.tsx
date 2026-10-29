@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ReactNode, useMemo, useState } from "react";
+import { DebtModal } from "@/components/debtModal";
 import { LabelColorSettings } from "@/components/labelColorPicker";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
@@ -54,6 +55,7 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
   const rates = useRates();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
+  const [moving, setMoving] = useState<RecurringTemplate | null>(null);
   const [deleting, setDeleting] = useState<RecurringTemplate | null>(null);
   const [colorsOpen, setColorsOpen] = useState(false);
   const statusFilter = useLocalChoice<StatusFilter>(RECURRING_STATUS_FILTER_KEY, STATUS_FILTERS, "all");
@@ -214,7 +216,12 @@ export function RecurringTab({ tabs }: { tabs: ReactNode }) {
               }
             : undefined
         }
+        onMoveToDebts={() => {
+          setMoving(editing);
+          setEditing(null);
+        }}
       />
+      <DebtModal open={moving != null} onClose={() => setMoving(null)} from={moving ? { kind: "template", template: moving } : null} />
 
       {/* Three explicit answers. A yes/no "also delete its planned items?"
           read as "cancel the delete" on No, and quietly left every future
@@ -364,6 +371,7 @@ export function TemplateModal({
   onClose,
   onSave,
   onDelete,
+  onMoveToDebts,
 }: {
   open: boolean;
   initial: RecurringTemplate | null;
@@ -371,6 +379,8 @@ export function TemplateModal({
   /** backfill: what to do with the dates already passed; null when there are none to ask about */
   onSave: (input: NewTemplate, backfill: BackfillMode | null) => Promise<void>;
   onDelete?: () => Promise<void>;
+  /** offered on a monthly item that isn't a debt yet: its payments become a debt's (components/debtModal.tsx) */
+  onMoveToDebts?: () => void;
 }) {
   const { t } = useI18n();
   const formatDate = useFormatDate();
@@ -538,14 +548,19 @@ export function TemplateModal({
             {replacing === 1 ? t("recurring.updatesUpcomingOne") : t("recurring.updatesUpcoming", { count: replacing })}
           </p>
         ) : null}
-        <div className="flex justify-between gap-2 pt-1">
-          {onDelete ? (
-            <Button type="button" variant="danger" onClick={onDelete}>
-              {t("common.delete")}
-            </Button>
-          ) : (
-            <span />
-          )}
+        <div className="flex flex-wrap justify-between gap-2 pt-1">
+          <div className="flex flex-wrap gap-2">
+            {onDelete ? (
+              <Button type="button" variant="danger" onClick={onDelete}>
+                {t("common.delete")}
+              </Button>
+            ) : null}
+            {onMoveToDebts && initial && initial.frequency === "monthly" && !initial.loanId ? (
+              <Button type="button" onClick={onMoveToDebts} title={t("debts.moveHint")}>
+                {t("debts.moveToDebts")}
+              </Button>
+            ) : null}
+          </div>
           <div className="flex gap-2">
             <Button type="button" onClick={onClose}>
               {t("common.cancel")}

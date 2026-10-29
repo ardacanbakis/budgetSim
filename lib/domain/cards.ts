@@ -371,13 +371,25 @@ export function netWorthNow(params: {
   return { total: held.total - owed, owed, skippedAccountIds: held.skippedAccountIds, balances };
 }
 
-/** Counts as spending: an ordinary expense, or a payment into a card. */
+/**
+ * The money of a debt itself, which moves a balance but is neither income nor
+ * spending: what you borrowed or lent (Transaction.loanPrincipal), and any
+ * money in on a debt, which is what you lent coming back. Repaying a debt you
+ * owe isn't: that's spending, as it always was (lib/domain/debt.ts).
+ */
+export function isDebtPrincipal(t: Pick<Transaction, "loanPrincipal" | "loanId" | "direction">): boolean {
+  return t.loanPrincipal === true || (t.loanId != null && t.direction === "income");
+}
+
+/** Counts as spending: an ordinary expense, or a payment into a card; not money you lend. */
 export function isSpending(t: Transaction, book: CardBook): boolean {
+  if (isDebtPrincipal(t)) return false;
   const role = book.roleOf(t);
   return role === "payment" || (role === "regular" && t.direction === "expense");
 }
 
-/** Counts as income: an ordinary income; never a transfer leg or anything on a card. */
+/** Counts as income: an ordinary income; never a transfer leg, anything on a card, or money in on a debt. */
 export function isIncome(t: Transaction, book: CardBook): boolean {
+  if (isDebtPrincipal(t)) return false;
   return book.roleOf(t) === "regular" && t.direction === "income";
 }

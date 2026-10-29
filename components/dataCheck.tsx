@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DebtModal } from "@/components/debtModal";
 import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useRates, useTransactions, useVictvsSessions } from "@/lib/data/queries";
+import { Transaction } from "@/lib/data/types";
 import { checkData, DataFix, DataIssue, openIssues } from "@/lib/domain/dataCheck";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
@@ -92,6 +94,7 @@ export function DataCheckCard() {
   const accounts = useAccounts();
   const issues = useDataIssues();
   const { dismiss } = useDismissedIssues();
+  const [moving, setMoving] = useState<Transaction | null>(null);
 
   const apply = useAppMutation(
     async (fix: DataFix) => {
@@ -202,6 +205,11 @@ export function DataCheckCard() {
                       <Button variant="ghost" onClick={() => dismiss(issue.id)}>
                         {t("datacheck.dismiss")}
                       </Button>
+                      {issue.kind === "borrowedAsIncome" && issue.txs[0] ? (
+                        <Button variant="primary" onClick={() => setMoving(issue.txs[0])}>
+                          {t("debts.moveToDebts")}
+                        </Button>
+                      ) : null}
                       {issue.fix ? (
                         <Button
                           variant={issue.fix.kind === "delete" ? "danger" : "primary"}
@@ -219,6 +227,7 @@ export function DataCheckCard() {
           )
         )}
       </div>
+      <DebtModal open={moving != null} onClose={() => setMoving(null)} from={moving ? { kind: "transaction", tx: moving } : null} />
     </Card>
   );
 }

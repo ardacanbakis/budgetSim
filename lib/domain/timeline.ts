@@ -1,10 +1,10 @@
 import { Account, Loan, Purchase, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { computeBalances } from "./balances";
-import { CardBook, chargeAmount, paymentDateIn } from "./cards";
+import { CardBook, chargeAmount, isDebtPrincipal, paymentDateIn } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { GoldRatios } from "./gold";
-import { buildSchedule } from "./loanSchedule";
+import { repaymentDirection, scheduleOf } from "./debt";
 import { fromMinor, roundTo, toMinor } from "./money";
 import { buildInstallmentPlan, lastDueDate } from "./purchases";
 import { addDays } from "./recurrence";
@@ -176,7 +176,8 @@ export function ledgerEvents(
       accountId: tx.accountId,
       amount: tx.amount,
       currency: account.currency,
-      direction: role === "transfer" ? "none" : role === "payment" ? "expense" : tx.direction,
+      // a debt's own money is neither in nor out, as on the ledger (isDebtPrincipal)
+      direction: role === "transfer" || isDebtPrincipal(tx) ? "none" : role === "payment" ? "expense" : tx.direction,
       tx,
       legacy: tx.legacy || undefined,
       early: tx.status === "completed" && tx.dueDate > today ? true : undefined,
@@ -270,35 +271,28 @@ export function debtMilestones(params: {
 
   const tracked = new Set<string>();
   for (const loan of loans) {
-    const schedule = buildSchedule({
-      kind: loan.scheduleKind,
-      principal: loan.principal,
-      monthlyRatePct: loan.monthlyRatePct,
-      termMonths: loan.termMonths,
-      startDate: loan.startDate,
-      currency: loan.currency,
-      kkdfPct: loan.kkdfPct,
-      bsmvPct: loan.bsmvPct,
-      customInstalments: loan.customInstalments ?? undefined,
-    });
+    const schedule = scheduleOf(loan);
     const last = schedule.rows.at(-1);
+    // "when I can" has no last payment to mark yet
     if (!last) continue;
     tracked.add(loan.id);
     const template = loan.recurringTemplateId ? templates.find((t) => t.id === loan.recurringTemplateId) : undefined;
+    // one payment frees nothing each month; an early payoff ends the monthly ones on its day
+    const once = loan.scheduleKind === "lumpSum";
     events.push(
       marker(
-        last.date,
+        loan.payoffDate ?? last.date,
         {
           what: "loan",
           id: loan.id,
           name: loan.name,
-          frees: last.payment,
+          frees: once ? null : last.payment,
           currency: loan.currency,
-          direction: "expense",
+          direction: repaymentDirection(loan),
           frequency: "monthly",
-          count: schedule.rows.length,
+          count: once ? null : schedule.rows.length,
         },
-        template?.accountId ?? null
+        loan.payAccountId ?? template?.accountId ?? null
       )
     );
   }

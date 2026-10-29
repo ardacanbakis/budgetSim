@@ -436,11 +436,12 @@ function PortfolioScreen() {
     );
   }
 
-  /** A tracked loan: what's left of it; it opens in the right-hand pane. */
+  /** A debt: what's left of it, owed or owed to you; it opens in the right-hand pane. */
   function loanRow(line: LoanLine) {
     const { item, amount, converted } = line;
     const loan = (loans.data ?? []).find((l) => l.id === item.id);
     const active = openLoan?.id === item.id;
+    const lent = item.direction === "lent";
     return (
       <button
         key={item.id}
@@ -457,12 +458,16 @@ function PortfolioScreen() {
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium">{item.name}</span>
             <span className="block truncate text-[11px] text-zinc-400">
-              {item.endDate ? `${t("debt.debtFree")}: ${fmtDate(item.endDate)}` : item.currency}
+              {item.endDate
+                ? `${lent ? t("pages.lastPayment") : t("debt.debtFree")}: ${fmtDate(item.endDate)}`
+                : t("debts.whenICan")}
             </span>
           </span>
         </span>
         <span className="text-right">
-          <span className="block text-sm font-semibold tabular-nums text-red-600">{formatSigned(amount, item.currency, locale)}</span>
+          <span className={`block text-sm font-semibold tabular-nums ${lent ? "text-green-600" : "text-red-600"}`}>
+            {formatSigned(amount, item.currency, locale)}
+          </span>
           {item.currency !== displayCurrency && converted != null ? (
             <span className="block text-[11px] tabular-nums text-zinc-400">≈ {formatSigned(converted, displayCurrency, locale)}</span>
           ) : null}
@@ -543,10 +548,18 @@ function PortfolioScreen() {
               <div className="space-y-0.5 p-2">{cardLines.map(cardRow)}</div>
             </Card>
           ) : null}
-          {loanLines.length > 0 ? (
+          {loanLines.some((l) => l.item.direction !== "lent") ? (
             <Card>
               <CardHeader title={t("loans.title")} />
-              <div className="space-y-0.5 p-2">{loanLines.map(loanRow)}</div>
+              <div className="space-y-0.5 p-2">{loanLines.filter((l) => l.item.direction !== "lent").map(loanRow)}</div>
+            </Card>
+          ) : null}
+          {loanLines.some((l) => l.item.direction === "lent") ? (
+            <Card>
+              <CardHeader title={t("debts.owedToYou")} />
+              <div className="space-y-0.5 p-2" data-owed-to-you-list>
+                {loanLines.filter((l) => l.item.direction === "lent").map(loanRow)}
+              </div>
             </Card>
           ) : null}
           {nothingListed ? (

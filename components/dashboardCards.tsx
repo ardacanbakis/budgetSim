@@ -377,13 +377,23 @@ function DebtBody({ d }: { d: DashboardData }) {
     [loans.data, usdPer, d.accounts, d.balances, d.transactions, displayCurrency, d.today]
   );
   if (!debt) return <Spinner />;
-  if (debt.items.length === 0) return <p className={muted}>{t("dashboard.noDebt")}</p>;
+  const owed = debt.items.some((i) => i.direction === "owe");
+  if (!owed && debt.lentInDisplay <= 0) return <p className={muted}>{t("dashboard.noDebt")}</p>;
   const target = debt.avalancheTarget;
   return (
     <div className="space-y-1">
-      <Line label={t("dashboard.debtTotal")}>
-        <Money amount={debt.totalInDisplay} currency={displayCurrency} sign="out" />
-      </Line>
+      {owed ? (
+        <Line label={t("dashboard.debtTotal")}>
+          <Money amount={debt.totalInDisplay} currency={displayCurrency} sign="out" />
+        </Line>
+      ) : (
+        <p className={muted}>{t("dashboard.noDebt")}</p>
+      )}
+      {debt.lentInDisplay > 0 ? (
+        <Line label={t("debts.owedToYou")}>
+          <Money amount={debt.lentInDisplay} currency={displayCurrency} sign="in" />
+        </Line>
+      ) : null}
       {debt.debtFreeDate ? <p className={muted}>{t("dashboard.debtFree", { date: fmtDate(debt.debtFreeDate) })}</p> : null}
       {target ? (
         <Link href={target.kind === "loan" ? debtHref(target.id) : "/cards"} onClick={stop} className={`block ${linkClass}`}>

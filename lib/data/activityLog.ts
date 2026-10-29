@@ -6,6 +6,7 @@ type NewEntry = Omit<ActivityEntry, "id">;
 
 const TEMPLATE_FIELDS = ["name", "accountId", "direction", "categoryId", "amount", "frequency", "startDate", "endDate", "autoComplete"] as const;
 const PURCHASE_FIELDS = ["name", "details", "categoryId", "reflected"] as const;
+const LOAN_FIELDS = ["name", "kind", "counterparty", "depositAccountId", "payAccountId", "payoffDate"] as const;
 
 /**
  * The change history, written in one place for both repos: every write that
@@ -219,12 +220,27 @@ export function withActivityLog(inner: Repo): Repo {
 
     async createLoan(input) {
       const loan = await inner.createLoan(input);
-      await record([entry("loan", loan.id, input.accountId, "created", loan.name, { principal: [null, loan.principal], termMonths: [null, loan.termMonths] })]);
+      await record([
+        entry("loan", loan.id, input.accountId, "created", loan.name, {
+          principal: [null, loan.principal],
+          ...(loan.scheduleKind === "lumpSum" ? {} : { termMonths: [null, loan.termMonths] }),
+          ...(loan.direction === "lent" ? { direction: [null, "lent"] } : {}),
+          ...(loan.counterparty ? { counterparty: [null, loan.counterparty] } : {}),
+          ...(loan.payoffDate ? { payoffDate: [null, loan.payoffDate] } : {}),
+        }),
+      ]);
       return loan;
     },
-    async deleteLoan(id) {
+    async updateLoan(id, patch) {
       const before = (await inner.listLoans()).find((l) => l.id === id);
-      await inner.deleteLoan(id);
+      await inner.updateLoan(id, patch);
+      if (!before) return;
+      const changes = fieldChanges(before, { ...before, ...patch }, LOAN_FIELDS);
+      if (Object.keys(changes).length > 0) await record([entry("loan", id, before.payAccountId, "edited", before.name, changes)]);
+    },
+    async deleteLoan(id, keepRows) {
+      const before = (await inner.listLoans()).find((l) => l.id === id);
+      await inner.deleteLoan(id, keepRows);
       if (before) await record([entry("loan", id, null, "deleted", before.name, { principal: [before.principal, null] })]);
     },
 

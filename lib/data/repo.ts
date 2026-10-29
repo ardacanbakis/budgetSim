@@ -10,6 +10,7 @@ import {
   Frequency,
   Goal,
   Loan,
+  LoanDirection,
   LoanKind,
   NetWorthSnapshot,
   PlanRecord,
@@ -64,6 +65,8 @@ export interface NewTransaction {
   legacy?: boolean;
   /** true = a manual balance correction (see lib/domain/adjustments.ts) */
   adjustment?: boolean;
+  /** true = the money of a debt itself, neither income nor spending (Transaction.loanPrincipal) */
+  loanPrincipal?: boolean;
 }
 
 export interface NewTransfer {
@@ -142,6 +145,40 @@ export interface NewLoan {
   kkdfPct?: number;
   bsmvPct?: number;
   customInstalments?: number[] | null;
+  /** the rates for the money's own row when it's already happened */
+  fxSnapshot?: FxSnapshot | null;
+  /** defaults to "owe"; a "lent" debt's repayments come in to `accountId` */
+  direction?: LoanDirection;
+  counterparty?: string | null;
+  /**
+   * where the money landed (owe) or left from (lent): a row for it is made
+   * on `startDate`, completed when that's today or earlier, else planned.
+   * Leave it out when the money is already on the ledger, or not wanted.
+   */
+  depositAccountId?: string | null;
+  /** a row already on the ledger that is the money itself ("Move to Debts"): tagged, not duplicated */
+  receivedTxId?: string | null;
+  /** a lumpSum debt's payment date; null = "when I can" */
+  payoffDate?: string | null;
+  /**
+   * a recurring item already planning the repayments ("Move to Debts"): it
+   * and its rows are linked to the debt as they are, and nothing new is planned
+   */
+  templateId?: string | null;
+}
+
+/** What can change on a debt once it exists; the schedule's shape stays. */
+export interface LoanPatch {
+  name?: string;
+  kind?: LoanKind;
+  counterparty?: string | null;
+  depositAccountId?: string | null;
+  payAccountId?: string | null;
+  /**
+   * present (even unchanged) = re-plan what's left: one payment on this date;
+   * null = back to the schedule, or "when I can"
+   */
+  payoffDate?: string | null;
 }
 
 /**
@@ -262,7 +299,13 @@ export interface Repo {
   listLoans(): Promise<Loan[]>;
   /** creates the loan + a linked auto recurring template for installments */
   createLoan(input: NewLoan): Promise<Loan>;
-  deleteLoan(id: string): Promise<void>;
+  /** edits a debt; a payoff date re-plans its future rows and a new paying account moves them; paid rows stay */
+  updateLoan(id: string, patch: LoanPatch): Promise<void>;
+  /**
+   * removes a debt; its paid rows stay (no longer tagged). Its planned rows
+   * and recurring item go too, unless `keepRows`: then they stay, unlinked.
+   */
+  deleteLoan(id: string, keepRows?: boolean): Promise<void>;
 
   /** what changed and when, newest first (see ActivityEntry) */
   listActivity(): Promise<ActivityEntry[]>;

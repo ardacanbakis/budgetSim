@@ -79,6 +79,12 @@ export interface Transaction {
    * sum, flagged only so the screens can label it. See lib/domain/adjustments.ts.
    */
   adjustment?: boolean;
+  /**
+   * the money borrowed or lent itself, or money you lent coming back
+   * (loanId says which debt): it moves the balance like any row, but it is
+   * neither income nor spending (lib/domain/cards.ts isIncome / isSpending)
+   */
+  loanPrincipal?: boolean;
   createdAt: string;
 }
 
@@ -159,7 +165,9 @@ export interface VictvsPayout {
   createdAt: string;
 }
 
-export type LoanKind = "house" | "car" | "other";
+export type LoanKind = "house" | "car" | "other" | "personal";
+/** "owe": you borrowed it; "lent": someone owes you */
+export type LoanDirection = "owe" | "lent";
 
 export interface Loan {
   id: string;
@@ -182,6 +190,20 @@ export interface Loan {
   customInstalments: number[] | null;
   /** set only for a level schedule, which one template can represent */
   recurringTemplateId: string | null;
+  /** loans before migration 0019 are all "owe" */
+  direction: LoanDirection;
+  /** the bank or the person */
+  counterparty: string | null;
+  /** where the money landed (owe) or left from (lent) */
+  depositAccountId: string | null;
+  /** where repayments leave from (owe) or land in (lent) */
+  payAccountId: string | null;
+  /**
+   * the day what's left is repaid in one payment: a lumpSum debt's only
+   * payment, or an early payoff of an installment loan; null on a lumpSum
+   * debt = "when I can"
+   */
+  payoffDate: string | null;
   createdAt: string;
 }
 

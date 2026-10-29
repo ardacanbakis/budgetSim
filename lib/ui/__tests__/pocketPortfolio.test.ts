@@ -103,6 +103,11 @@ const loan: Loan = {
   kkdfPct: 0,
   bsmvPct: 0,
   customInstalments: null,
+  direction: "owe",
+  counterparty: null,
+  depositAccountId: null,
+  payAccountId: null,
+  payoffDate: null,
   recurringTemplateId: null,
   createdAt: "2026-06-01T00:00:00.000Z",
 };

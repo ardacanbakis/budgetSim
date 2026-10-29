@@ -168,7 +168,7 @@ export function buildDemoSeed(): DemoStore {
   };
   templates.push(loanTemplate);
   const loans: Loan[] = [
-    { id: loanId, name: "Car loan — Garanti", kind: "car", currency: "TRY", principal: 800000, monthlyRatePct: 2.79, termMonths: 36, startDate: loanStart, installment: schedule.installment, scheduleKind: "annuity", kkdfPct: 0, bsmvPct: 0, customInstalments: null, recurringTemplateId: loanTemplate.id, createdAt: nowIso },
+    { id: loanId, name: "Car loan — Garanti", kind: "car", currency: "TRY", principal: 800000, monthlyRatePct: 2.79, termMonths: 36, startDate: loanStart, installment: schedule.installment, scheduleKind: "annuity", kkdfPct: 0, bsmvPct: 0, customInstalments: null, recurringTemplateId: loanTemplate.id, direction: "owe", counterparty: "Garanti", depositAccountId: null, payAccountId: loanTemplate.accountId, payoffDate: null, createdAt: nowIso },
   ];
   // first three installments already paid
   for (const row of schedule.rows.slice(0, 3)) {
