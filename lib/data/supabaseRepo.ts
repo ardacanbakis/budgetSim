@@ -106,6 +106,8 @@ const txFromRow = (r: Row): Transaction => ({
   adjustment: r.adjustment === true,
   // absent before migration 0019
   ...(r.loan_principal === true ? { loanPrincipal: true } : {}),
+  // absent before migration 0021
+  ...(r.converts_id ? { convertsId: r.converts_id } : {}),
   createdAt: r.created_at,
 });
 
@@ -123,6 +125,9 @@ const templateFromRow = (r: Row): RecurringTemplate => ({
   loanId: r.loan_id,
   // absent before migration 0020
   series: r.series ?? null,
+  // absent before migration 0021
+  convertToAccountId: r.convert_to_account_id ?? null,
+  convertFrom: r.convert_from ?? null,
   createdAt: r.created_at,
 });
 
@@ -483,6 +488,8 @@ export class SupabaseRepo implements Repo {
       fx_snapshot: settled ? input.fxSnapshot : null,
       transfer_group_id: groupId,
       transfer_market_rate: input.marketRate,
+      // sent only when set: only a converted payday needs migration 0021
+      ...(input.convertsId ? { converts_id: input.convertsId } : {}),
     };
     const { error } = await this.db.from("transactions").insert([
       { ...base, account_id: input.fromAccountId, direction: "expense", amount: input.fromAmount, description: input.description },
@@ -510,6 +517,8 @@ export class SupabaseRepo implements Repo {
       loan_id: input.loanId ?? null,
       // sent only when set: only a raise or Combine needs migration 0020
       ...(input.series ? { series: input.series } : {}),
+      // likewise 0021, for an income converted into another account
+      ...(input.convertToAccountId ? { convert_to_account_id: input.convertToAccountId, convert_from: input.convertFrom ?? null } : {}),
     };
   }
 
@@ -573,6 +582,8 @@ export class SupabaseRepo implements Repo {
     if (patch.endDate !== undefined) row.end_date = patch.endDate;
     if (patch.autoComplete != null) row.auto_complete = patch.autoComplete;
     if (patch.series !== undefined) row.series = patch.series;
+    if (patch.convertToAccountId !== undefined) row.convert_to_account_id = patch.convertToAccountId;
+    if (patch.convertFrom !== undefined) row.convert_from = patch.convertFrom;
     const { data, error } = await this.db.from("recurring_templates").update(row).eq("id", id).select().single();
     throwIf(error);
     // joining a series changes nothing it plans
@@ -1334,6 +1345,11 @@ export class SupabaseRepo implements Repo {
       const { error } = await this.db.from("recurring_templates").select("series").limit(0);
       throwIf(error);
     }
+    // and converted income (0021)
+    if (backup.templates.some((t) => t.convertToAccountId) || backup.transactions.some((t) => t.convertsId)) {
+      const { error } = await this.db.from("transactions").select("converts_id").limit(0);
+      throwIf(error);
+    }
     await this.deleteAllData();
     const u = this.userId;
     const insert = async (table: string, rows: Row[]) => {
@@ -1389,6 +1405,7 @@ export class SupabaseRepo implements Repo {
       category_id: tpl.categoryId, amount: tpl.amount, frequency: tpl.frequency, start_date: tpl.startDate,
       end_date: tpl.endDate, auto_complete: tpl.autoComplete, loan_id: tpl.loanId, created_at: tpl.createdAt,
       ...(tpl.series ? { series: tpl.series } : {}),
+      ...(tpl.convertToAccountId ? { convert_to_account_id: tpl.convertToAccountId, convert_from: tpl.convertFrom ?? null } : {}),
     })));
     for (const l of backup.loans) {
       if (l.recurringTemplateId) {
@@ -1409,6 +1426,7 @@ export class SupabaseRepo implements Repo {
       loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
       ...(t.adjustment ? { adjustment: true } : {}),
       ...(t.loanPrincipal ? { loan_principal: true } : {}),
+      ...(t.convertsId ? { converts_id: t.convertsId } : {}),
     })));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {

@@ -41,7 +41,7 @@ export function useChangeText() {
       if (v == null || v === "") return "—";
       if (MONEY.has(field) && typeof v === "number") return formatAmount(field === "usd" ? v : Math.abs(v), field === "usd" ? "USD" : currency, locale);
       if (field === "dueDate" || field === "startDate" || field === "endDate" || field === "firstDue" || field === "payoffDate") return fmtDate(String(v));
-      if (field === "accountId" || field === "paymentAccountId" || field === "depositAccountId" || field === "payAccountId") {
+      if (field === "accountId" || field === "paymentAccountId" || field === "depositAccountId" || field === "payAccountId" || field === "convertToAccountId") {
         return accountById.get(String(v))?.name ?? "—";
       }
       if (entry.entityType === "loan" && field === "kind") return t(`loans.${String(v)}`);

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { ReactNode, Suspense, useMemo, useState } from "react";
 import { redirect, useSearchParams } from "next/navigation";
+import { PendingConversions } from "@/components/convertedIncome";
 import { Badge, Button, Card, EmptyState, Select, Spinner } from "@/components/ui";
 import { TransactionModal } from "@/components/transactionModal";
 import { TransferModal } from "@/components/transferModal";
@@ -255,6 +256,7 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
       </div>
 
       {tabs}
+      <PendingConversions />
 
       <div className="flex flex-wrap gap-2">
         <Select className="!w-auto" value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>

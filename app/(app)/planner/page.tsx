@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner }
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
+import { conversionCut } from "@/lib/domain/convertedIncome";
 import { victvsForecastFlows } from "@/lib/domain/victvsForecast";
 import { TxDirection } from "@/lib/data/types";
 import { CURRENCIES, Currency, formatAmount } from "@/lib/domain/currencies";
@@ -287,6 +288,8 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     routine: plan.funding?.routine ?? [],
   };
 
+  // a converted income lands where it's converted into, less the middleman's usual cut
+  const cut = conversionCut(transactions.data, accounts.data, rates.data.usdPer);
   const base = projectCashflow({
     accounts: accounts.data,
     transactions: transactions.data,
@@ -296,6 +299,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     display: displayCurrency,
     fromDate: todayISO(),
     months,
+    conversionCut: cut,
   });
   // the plan re-runs the same engine with its own rate path and flows, so the
   // two lines differ only by the assumptions themselves
@@ -321,6 +325,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     display: displayCurrency,
     fromDate: todayISO(),
     months,
+    conversionCut: cut,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
     extraFlows: [...planExtraFlows(plan, months, firstMonth), ...victvsFlows(plan), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
@@ -347,6 +352,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
         display: displayCurrency,
         fromDate: todayISO(),
         months,
+        conversionCut: cut,
         ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
         extraFlows: [...planExtraFlows(compareNormalized, months, firstMonth), ...victvsFlows(compareNormalized)],
         replaceCategories: planReplacedCategories(compareNormalized),

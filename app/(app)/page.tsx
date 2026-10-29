@@ -8,6 +8,7 @@ import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useS
 import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { PendingConversions } from "@/components/convertedIncome";
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
@@ -238,6 +239,7 @@ function DashboardPage() {
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
       {derived.duePayments.length > 0 ? <CardPaymentReminder duePayments={derived.duePayments} /> : null}
       <DataCheckNudge />
+      <PendingConversions />
 
       <div className="flex items-center justify-end gap-2">
         {editMode ? <span className="text-xs text-zinc-400">{t("layout.dragHint")}</span> : null}

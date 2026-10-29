@@ -72,7 +72,8 @@ export function computeMissingOccurrences(
  * existed never arrived under it: they were backfilled for a schedule entered
  * late, like a loan already a year in, and posting them all on the next app
  * open would take a year of payments from the account at once. Those wait for
- * a tap instead.
+ * a tap instead, as does a converted income's payday: what arrived in the
+ * other currency has to be typed in (lib/domain/convertedIncome.ts).
  */
 export function findAutoCompletable(
   templates: RecurringTemplate[],
@@ -80,8 +81,12 @@ export function findAutoCompletable(
   today: string = todayISO()
 ): Transaction[] {
   const createdOn = new Map(templates.filter((t) => t.autoComplete).map((t) => [t.id, localDateOf(t.createdAt)] as const));
+  // a converted payday waits for what arrived (lib/domain/convertedIncome.ts)
+  const convertFrom = new Map(templates.filter((t) => t.convertToAccountId).map((t) => [t.id, t.convertFrom ?? ""] as const));
   return transactions.filter((t) => {
     if (t.status !== "planned" || t.recurringTemplateId == null || t.dueDate > today) return false;
+    const converted = convertFrom.get(t.recurringTemplateId);
+    if (converted != null && t.dueDate >= converted) return false;
     const since = createdOn.get(t.recurringTemplateId);
     return since != null && t.dueDate >= since;
   });

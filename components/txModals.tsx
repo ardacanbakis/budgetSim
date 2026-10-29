@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ArrivedField, useConversions } from "@/components/convertedIncome";
 import { Button, Field, Input, Modal, Select } from "@/components/ui";
 import { Account, Category, Transaction } from "@/lib/data/types";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
@@ -131,15 +132,23 @@ export function CompleteModal({
   onConfirm: (amount?: number, legacy?: boolean) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const conversions = useConversions();
   const [amount, setAmount] = useState("");
+  const [arrived, setArrived] = useState("");
   const [legacy, setLegacy] = useState(false);
   const [key, setKey] = useState<string | null>(null);
   if (tx && key !== tx.id) {
     setKey(tx.id);
     setAmount(String(tx.amount));
+    setArrived("");
     // pre-check for items due well in the past — assume they've long since settled
     setLegacy(tx.dueDate < addMonthsClamped(todayISO(), -LEGACY_AGE_MONTHS));
   }
+  // a converted payday (lib/domain/convertedIncome.ts): what arrived is recorded with it
+  const conversion = tx && !legacy ? conversions.forRow(tx) : null;
+  const paid = Number(amount) || tx?.amount || 0;
+  const suggestion = conversion ? conversions.expected(conversion, paid) : null;
+  const arrivedShown = arrived !== "" ? arrived : suggestion ? String(suggestion.value) : "";
   return (
     <Modal open={tx != null} onClose={onClose} title={t("tx.completeTitle")}>
       <div className="space-y-3">
@@ -147,6 +156,7 @@ export function CompleteModal({
         <Field label={`${t("tx.finalAmount")} (${accountCurrency ?? ""})`}>
           <Input type="number" step="any" min="0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        {conversion ? <ArrivedField conversion={conversion} value={arrivedShown} suggestion={suggestion} onChange={setArrived} /> : null}
         <label className="flex items-start gap-2 rounded-lg bg-[var(--edge-soft)] p-3">
           <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal-600" checked={legacy} onChange={(e) => setLegacy(e.target.checked)} />
           <span>
@@ -156,7 +166,17 @@ export function CompleteModal({
         </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={() => onConfirm(Number(amount) || undefined, legacy)}>
+          <Button
+            variant="primary"
+            disabled={conversions.record.isPending}
+            onClick={async () => {
+              const received = Number(arrivedShown);
+              await onConfirm(Number(amount) || undefined, legacy);
+              if (tx && conversion && received > 0) {
+                await conversions.record.mutateAsync({ row: { ...tx, status: "completed", amount: paid }, conversion, received, date: todayISO() });
+              }
+            }}
+          >
             {t("common.confirm")}
           </Button>
         </div>

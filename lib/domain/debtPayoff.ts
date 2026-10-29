@@ -60,6 +60,8 @@ export interface PayoffInput {
   threshold: number;
   /** months to look for a payoff in, this one first */
   months?: number;
+  /** what a middleman keeps converting a converted income (lib/domain/convertedIncome.ts) */
+  conversionCut?: (from: Currency, to: Currency) => number;
 }
 
 const NONE: PayoffSuggestion = { withoutSelling: null, ifSelling: null };
@@ -100,7 +102,7 @@ export function suggestPayoff(input: PayoffInput): PayoffSuggestion {
   const planned = repayments.filter((t) => t.status === "planned");
   const amountBased = loan.scheduleKind === "lumpSum" || loan.scheduleKind === "zeroInterest" || !(loan.monthlyRatePct > 0);
   const total = schedule.rows.length > 0 ? schedule.totalPaid : loan.principal;
-  const common = { accounts, usdPer, goldRatios, display, fromDate: today, months: horizon, funding };
+  const common = { accounts, usdPer, goldRatios, display, fromDate: today, months: horizon, funding, conversionCut: input.conversionCut };
 
   // the debt as it's planned now: what a payoff is measured against
   const asIs = projectCashflow({ ...common, transactions, templates });
