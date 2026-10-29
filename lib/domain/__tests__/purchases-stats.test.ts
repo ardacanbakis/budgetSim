@@ -6,6 +6,7 @@ import {
   defaultFirstDue,
   findDueCardPayments,
   findOverlappingCharges,
+  purchaseInstallments,
   lastDueDate,
   purchaseProgress,
 } from "../purchases";
@@ -291,5 +292,49 @@ describe("averageMonthlySpend", () => {
     });
     // converted at snapshot rate: 1000 * 0.05 = $50 → /2 months = 25
     expect(stats.totalMonthlyAverage).toBe(25);
+  });
+});
+
+describe("purchaseInstallments", () => {
+  const card = { ...account("card", "TRY", "credit_card"), paymentDay: 16 };
+  const accounts = [account("bank", "TRY"), card];
+  const purchase: Purchase = {
+    id: "akkiz",
+    name: "AkKız",
+    accountId: "card",
+    amount: 44249.72,
+    purchaseDate: "2026-09-02",
+    installmentCount: 4,
+    firstDue: "2026-09-15",
+    details: "",
+    reflected: true,
+    categoryId: null,
+    createdAt: "2026-09-02",
+  };
+  const rows = ["2026-09-15", "2026-10-15", "2026-11-15", "2026-12-15"].map((d, i) =>
+    tx({ accountId: "card", direction: "expense", amount: 11062.43, dueDate: d, purchaseId: "akkiz", description: `AkKız (${i + 1}/4)` })
+  );
+  const pay = (date: string, made: boolean) => [
+    tx({ accountId: "bank", direction: "expense", amount: 1, dueDate: date, transferGroupId: `g${date}`, status: made ? "completed" : "planned" }),
+    tx({ accountId: "card", direction: "income", amount: 1, dueDate: date, transferGroupId: `g${date}`, status: made ? "completed" : "planned" }),
+  ];
+
+  it("says which statement pays each installment and where it stands", () => {
+    // September paid, October's payment recorded but not made; November due, December ahead
+    const txs = [...rows, ...pay("2026-09-16", true), ...pay("2026-10-16", false)];
+    const list = purchaseInstallments(purchase, buildCardBook(accounts, txs), txs, "2026-11-02");
+    expect(list.map((r) => [r.n, r.statementMonth, r.status])).toEqual([
+      [1, "2026-09", "paid"],
+      [2, "2026-10", "paying"],
+      [3, "2026-11", "due"],
+      [4, "2026-12", "upcoming"],
+    ]);
+  });
+
+  it("calls an installment late when its statement passed with nothing recorded", () => {
+    const list = purchaseInstallments(purchase, buildCardBook(accounts, rows), rows, "2026-10-28");
+    // no payment recorded in September: that installment is late
+    expect(list[0].status).toBe("late");
+    expect(list[1].status).toBe("due");
   });
 });

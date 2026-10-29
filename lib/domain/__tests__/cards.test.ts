@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Account, Transaction } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, guessCardFor, isIncome, isSpending, totalOwed } from "../cards";
+import { buildCardBook, cardSchedule, cardStatements, guessCardFor, isIncome, isSpending, totalOwed } from "../cards";
 
 const account = (id: string, kind: Account["kind"] = "fiat"): Account => ({
   id,
@@ -258,5 +258,38 @@ describe("an installment is paid with the first statement due on or after it", (
     expect(book.coverOf(ikea[0])).toBeNull();
     expect(book.paidInMonth(ikea[0])).toBe("2026-11");
     expect(book.wouldCover("garanti", "2026-11")).toEqual([ikea[0]]);
+  });
+});
+
+describe("cardStatements", () => {
+  const akbank = { ...account("akbank", "credit_card"), paymentDay: 16 };
+  const all = [account("bank"), akbank];
+  const own = (d: string, n: number) => tx("akbank", d, 11062.43, { purchaseId: "akkiz", description: `AkKız (${n}/12)` });
+  const swipe = tx("akbank", "2026-10-03", 500, { status: "completed", description: "Market" });
+
+  it("says what each payment paid for, and what each month ahead will charge, newest first", () => {
+    const rows = [
+      own("2026-09-15", 1),
+      own("2026-10-15", 2),
+      own("2026-11-15", 3),
+      swipe,
+      ...payment("akbank", "2026-09-16", 11062.43, true),
+      ...payment("akbank", "2026-10-15", 11062.43, true),
+    ];
+    const book = buildCardBook(all, rows);
+    const statements = cardStatements(book, akbank, "2026-10-28");
+    expect(statements.map((s) => [s.month, s.status, Math.round(s.amount * 100) / 100, s.charges.map((c) => c.description)])).toEqual([
+      // November: its installment and October's swipe, nothing recorded yet
+      ["2026-11", "upcoming", 11562.43, ["Market", "AkKız (3/12)"]],
+      ["2026-10", "paid", 11062.43, ["AkKız (2/12)"]],
+      ["2026-09", "paid", 11062.43, ["AkKız (1/12)"]],
+    ]);
+    expect(statements[0].date).toBe("2026-11-16");
+    expect(statements[1].date).toBe("2026-10-15");
+  });
+
+  it("folds what's late into this month, due", () => {
+    const book = buildCardBook(all, [own("2026-09-15", 1)]);
+    expect(cardStatements(book, akbank, "2026-10-28").map((s) => [s.month, s.status])).toEqual([["2026-10", "due"]]);
   });
 });

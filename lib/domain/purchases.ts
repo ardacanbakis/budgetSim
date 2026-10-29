@@ -151,6 +151,48 @@ export function purchaseProgress(purchase: Purchase, book: CardBook, transaction
   };
 }
 
+export interface InstallmentStatus {
+  tx: Transaction;
+  /** 1-based, from the row's "(n/N)", else its place by date */
+  n: number;
+  /** yyyy-mm of the statement that pays it (the row's own month off a card) */
+  statementMonth: string;
+  /**
+   * paid · paying: a recorded payment covers it, not made yet · due: its
+   * statement is this month · upcoming: a later statement · late: its
+   * statement has passed and nothing paid it
+   */
+  status: "paid" | "paying" | "due" | "upcoming" | "late";
+}
+
+/** Every installment of a purchase with where it stands, in order. */
+export function purchaseInstallments(purchase: Purchase, book: CardBook, transactions: Transaction[], today: string): InstallmentStatus[] {
+  const thisMonth = today.slice(0, 7);
+  return transactions
+    .filter((t) => t.purchaseId === purchase.id)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .map((tx, i) => {
+      const n = Number(/\((\d+)\/\d+\)\s*$/.exec(tx.description)?.[1] ?? i + 1);
+      if (!book.isCard(tx.accountId)) {
+        const month = tx.dueDate.slice(0, 7);
+        const status = tx.status === "completed" ? "paid" : tx.dueDate < today ? "late" : month === thisMonth ? "due" : "upcoming";
+        return { tx, n, statementMonth: month, status };
+      }
+      const cover = book.coverOf(tx);
+      const statementMonth = cover ? cover.date.slice(0, 7) : book.paidInMonth(tx);
+      const status = book.isPaid(tx)
+        ? "paid"
+        : cover
+          ? "paying"
+          : statementMonth < thisMonth
+            ? "late"
+            : statementMonth === thisMonth
+              ? "due"
+              : "upcoming";
+      return { tx, n, statementMonth, status };
+    });
+}
+
 export interface DueCardPayment {
   account: Account;
   /** what this month's payment would cover (CardBook.wouldCover) */
