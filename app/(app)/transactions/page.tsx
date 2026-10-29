@@ -23,6 +23,7 @@ import { CompleteModal, EditModal } from "@/components/txModals";
 import { canBeCardPayment, ConvertToCardPaymentModal } from "@/components/convertToCardPayment";
 import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
+import { initialFold } from "@/lib/ui/monthFold";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { timelineHref } from "@/lib/ui/timeline";
@@ -105,7 +106,8 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
   const [filterStatus, setFilterStatus] = useState<"all" | TxStatus>("all");
   const [filterDirection, setFilterDirection] = useState<"all" | TxDirection>("all");
   const [latestFirst, setLatestFirst] = useState(true);
-  const [monthOrder, setMonthOrder] = useState<MonthOrder>("now");
+  // what's ahead above, folded, then now, then what's behind it, open
+  const [monthOrder, setMonthOrder] = useState<MonthOrder>("latest");
   const [txModal, setTxModal] = useState(false);
   const [transferModal, setTransferModal] = useState(false);
   const [completing, setCompleting] = useState<Transaction | null>(null);
@@ -225,14 +227,12 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
     return [...byYear.entries()];
   }, [filtered, accounts.data, rates.data, displayCurrency, thisMonth, book, monthOrder]);
 
-  // history collapses by default: only the current year is open on arrival
-  const currentYear = thisMonth.slice(0, 4);
+  // on arrival what's ahead is folded (months and years after this one), and
+  // earlier years too while history collapses
   const [collapseInit, setCollapseInit] = useState(false);
   if (!collapseInit && collapseHistory.loaded && groups.length > 0) {
     setCollapseInit(true);
-    if (collapseHistory.value) {
-      setCollapsed(new Set(groups.map(([year]) => year).filter((year) => year !== currentYear)));
-    }
+    setCollapsed(initialFold(groups, thisMonth, collapseHistory.value));
   }
 
   const toggleCollapsed = (key: string) =>
@@ -349,6 +349,8 @@ function LedgerTab({ tabs }: { tabs: ReactNode }) {
                       <Card key={month}>
                         <button
                           onClick={() => toggleCollapsed(month)}
+                          aria-expanded={!monthCollapsed}
+                          data-month-toggle={month}
                           className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-[var(--edge-soft)] px-4 py-2.5 text-left"
                         >
                           <span className="flex items-center gap-2 text-sm font-semibold">
