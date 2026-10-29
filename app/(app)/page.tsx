@@ -11,6 +11,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { DataCheckNudge } from "@/components/dataCheck";
 import { GoalsCard } from "@/components/goalsCard";
 import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
 import { AccountsLeftOut } from "@/components/dashboardParts";
@@ -152,6 +153,14 @@ function DashboardPage() {
       <Card className="h-full p-4">
         <div className="text-xs text-zinc-500">{t("dashboard.unpaidVictvs")}</div>
         <div className="mt-1 text-3xl font-bold">{formatAmount(unpaidVictvs, "USD", locale)}</div>
+        {derived && derived.scheduledVictvs.count > 0 ? (
+          <div className="text-xs text-zinc-500" data-victvs-scheduled>
+            {t("victvs.scheduledLine", {
+              amount: formatAmount(derived.scheduledVictvs.total, "USD", locale),
+              count: derived.scheduledVictvs.count,
+            })}
+          </div>
+        ) : null}
         <Link href="/victvs" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
           {t("dashboard.seeAll")} →
         </Link>
@@ -228,6 +237,7 @@ function DashboardPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
       {derived.duePayments.length > 0 ? <CardPaymentReminder duePayments={derived.duePayments} /> : null}
+      <DataCheckNudge />
 
       <div className="flex items-center justify-end gap-2">
         {editMode ? <span className="text-xs text-zinc-400">{t("layout.dragHint")}</span> : null}

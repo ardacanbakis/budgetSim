@@ -7,10 +7,10 @@ import { safeToSpend } from "@/lib/domain/budgets";
 import { buildCardBook, CardBook, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert } from "@/lib/domain/fx";
-import { sumAmounts } from "@/lib/domain/money";
 import { findDueCardPayments } from "@/lib/domain/purchases";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { unpaidSplit } from "@/lib/ui/pocket/victvsRanges";
 import { REPORT_LEGACY_KEY, useLocalToggle } from "@/lib/prefs";
 
 export interface DashboardData {
@@ -23,7 +23,10 @@ export interface DashboardData {
   duePayments: ReturnType<typeof findDueCardPayments>;
   safe: ReturnType<typeof safeToSpend>;
   flow: Array<{ month: string; income: number; expense: number }>;
+  /** VICTVS sessions held and not yet paid, USD */
   unpaidVictvs: number;
+  /** unpaid sessions booked ahead: not owed until they're held, USD */
+  scheduledVictvs: { count: number; total: number };
   accounts: Account[];
   transactions: Transaction[];
   today: string;
@@ -45,10 +48,9 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const includeLegacy = useLocalToggle(REPORT_LEGACY_KEY, true).value;
   const today = todayISO();
 
-  const unpaidVictvs = sumAmounts(
-    "USD",
-    (victvs.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount)
-  );
+  // owed now is what's been held; a session booked for next week isn't owed yet
+  const victvsSplit = unpaidSplit(victvs.data ?? [], today);
+  const unpaidVictvs = victvsSplit.now.total;
 
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
@@ -108,6 +110,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     safe,
     flow,
     unpaidVictvs,
+    scheduledVictvs: victvsSplit.scheduled,
     accounts: accounts.data,
     transactions: transactions.data,
     today,

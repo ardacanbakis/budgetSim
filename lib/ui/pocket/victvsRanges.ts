@@ -111,6 +111,23 @@ export function victvsYears(sessions: readonly VictvsSession[], filter: VictvsFi
   }));
 }
 
+/**
+ * Unpaid sessions split by whether they've happened: what you're owed now,
+ * and sessions booked ahead that aren't owed until they're held.
+ */
+export function unpaidSplit(
+  sessions: readonly VictvsSession[],
+  today: string
+): { now: { count: number; total: number }; scheduled: { count: number; total: number } } {
+  const unpaid = sessions.filter((s) => s.status === "unpaid");
+  const held = unpaid.filter((s) => s.date <= today);
+  const ahead = unpaid.filter((s) => s.date > today);
+  return {
+    now: { count: held.length, total: sumAmounts("USD", held.map((s) => s.amount)) },
+    scheduled: { count: ahead.length, total: sumAmounts("USD", ahead.map((s) => s.amount)) },
+  };
+}
+
 export function unpaidSummary(sessions: readonly VictvsSession[]): { count: number; total: number; ids: string[] } {
   const unpaid = sessions.filter((s) => s.status === "unpaid");
   return {

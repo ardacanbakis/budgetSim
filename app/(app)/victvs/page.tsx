@@ -27,6 +27,7 @@ import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { pocketable } from "@/components/pocket/pocketable";
+import { unpaidSplit } from "@/lib/ui/pocket/victvsRanges";
 
 const PocketVictvs = dynamic(() => import("@/components/pocket/victvs").then((m) => m.PocketVictvs), {
   ssr: false,
@@ -137,7 +138,8 @@ function VictvsPage() {
     return [...byYear.entries()].sort((a, b) => (latestFirst ? (a[0] < b[0] ? 1 : -1) : a[0] > b[0] ? 1 : -1));
   }, [payouts.data, latestFirst]);
 
-  const unpaidTotal = sumAmounts("USD", (sessions.data ?? []).filter((s) => s.status === "unpaid").map((s) => s.amount));
+  // owed now is what's been held; sessions booked ahead aren't owed yet
+  const unpaid = unpaidSplit(sessions.data ?? [], todayISO());
   const selectedSessions = (sessions.data ?? []).filter((s) => selected.has(s.id));
   const selectedUnpaid = selectedSessions.filter((s) => s.status === "unpaid");
   const selectedPaid = selectedSessions.filter((s) => s.status === "paid");
@@ -202,7 +204,12 @@ function VictvsPage() {
         <div>
           <h1 className="text-xl font-bold">{t("victvs.title")}</h1>
           <p className="text-sm text-zinc-500">
-            {t("victvs.unpaid")}: <span className="font-semibold text-green-600 tabular-nums">{formatAmount(unpaidTotal, "USD", locale)}</span>
+            {t("victvs.unpaid")}: <span className="font-semibold text-green-600 tabular-nums">{formatAmount(unpaid.now.total, "USD", locale)}</span>
+            {unpaid.scheduled.count > 0 ? (
+              <span className="ml-2 text-xs" data-victvs-scheduled>
+                {t("victvs.scheduledLine", { amount: formatAmount(unpaid.scheduled.total, "USD", locale), count: unpaid.scheduled.count })}
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-2">

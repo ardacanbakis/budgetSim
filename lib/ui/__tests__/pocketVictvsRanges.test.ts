@@ -6,6 +6,7 @@ import {
   halfMonthRanges,
   lastDayOfMonth,
   toggleRange,
+  unpaidSplit,
   unpaidSummary,
   victvsYears,
 } from "../pocket/victvsRanges";
@@ -160,5 +161,21 @@ describe("unpaidSummary", () => {
     expect(s.total).toBe(187.5);
     expect(s.ids).toHaveLength(4);
     expect(new Set(s.ids).size).toBe(4);
+  });
+});
+
+describe("unpaidSplit", () => {
+  it("owed now is what's been held; sessions booked ahead are counted apart", () => {
+    const sessions = [
+      session("2026-07-22", { amount: 52.5 }),
+      session("2026-10-28", { amount: 22.5 }),
+      session("2026-11-02", { amount: 60 }),
+      session("2026-11-18", { amount: 60 }),
+      session("2026-10-01", { amount: 99, status: "paid" }),
+    ];
+    expect(unpaidSplit(sessions, "2026-10-28")).toEqual({
+      now: { count: 2, total: 75 },
+      scheduled: { count: 2, total: 120 },
+    });
   });
 });
