@@ -2550,3 +2550,55 @@ test("history: an account's edits and deletions show where they happened, and in
   await page.getByLabel("Type").selectOption("account");
   await expect(list).not.toContainText("Weekly market");
 });
+
+test("history and upcoming: tabs or side by side, for accounts, cards and debts, remembered on this device", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+
+  // both by default, and the pane is wide enough for them side by side: past left, planned right
+  const lists = page.locator("[data-history-layout]").first();
+  await expect(lists).toHaveAttribute("data-history-layout", "both");
+  const history = lists.locator("[data-history-column=history]");
+  const upcoming = lists.locator("[data-history-column=upcoming]");
+  await expect(history.locator("li").first()).toBeVisible();
+  await expect(upcoming.locator("li").first()).toBeVisible();
+  const [h, u] = [(await history.boundingBox())!, (await upcoming.boundingBox())!];
+  expect(u.x).toBeGreaterThan(h.x + h.width - 1);
+  expect(Math.abs(u.y - h.y)).toBeLessThan(2);
+
+  // a tab shows one list
+  const control = lists.getByRole("group", { name: "History or upcoming" });
+  await control.getByRole("button", { name: /^Upcoming/ }).click();
+  await expect(history).toHaveCount(0);
+  await expect(upcoming.locator("li").first()).toBeVisible();
+  await control.getByRole("button", { name: /^History/ }).click();
+  await expect(upcoming).toHaveCount(0);
+  await expect(history.locator("li").first()).toBeVisible();
+
+  // the choice holds for every item, and after a reload
+  await page.reload();
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+  await expect(page.locator("[data-history-layout]").first()).toHaveAttribute("data-history-layout", "history");
+
+  // a card's statements: paid ones are history, the rest are upcoming
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /^cards$|^kartlar$/i }).click();
+  const bonus = page.getByRole("heading", { name: /^Bonus Card/ }).locator("xpath=ancestor::div[contains(@class,'border')][1]");
+  await bonus.getByRole("button", { name: "Details" }).click();
+  const details = page.locator("[data-card-details='Bonus Card']");
+  await expect(details.locator("[data-history-layout]")).toHaveAttribute("data-history-layout", "history");
+  await details.getByRole("button", { name: /Side by side/ }).click();
+  await expect(details.locator("[data-history-column=upcoming] [data-statement-month]").first()).toContainText(/Upcoming|Due/);
+  await expect(details.locator("[data-history-column=history]")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // a debt's payments: made ones are history, planned ones upcoming
+  await page.goto("/accounts?view=debts");
+  await page.locator("[data-debt-row]").filter({ hasText: "Car loan" }).first().click();
+  const rows = page.locator("[data-debt-rows]");
+  await expect(rows.locator("[data-history-layout]")).toHaveAttribute("data-history-layout", "both");
+  await expect(rows.locator("[data-history-column=upcoming] [data-debt-row-status=planned]").first()).toBeVisible();
+  await expect(rows.locator("[data-history-column=upcoming] [data-debt-row-status=completed]")).toHaveCount(0);
+});

@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { DebtModal, RecordDebtPaymentModal } from "@/components/debtModal";
 import { EntityChanges } from "@/components/history";
+import { HistoryUpcoming } from "@/components/historyUpcoming";
 import { PayoffSuggestionCard } from "@/components/payoffSuggestion";
 import { Badge } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation } from "@/lib/data/queries";
 import { Loan } from "@/lib/data/types";
-import { loanProgress } from "@/lib/domain/debt";
+import { debtRows, loanProgress } from "@/lib/domain/debt";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { formatSigned } from "@/lib/ui/pocket/format";
@@ -98,6 +99,13 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
         .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0)),
     [base.transactions, loan.id]
   );
+  // what's happened, newest first: the money borrowed or lent, and each repayment made
+  const happened = useMemo(() => {
+    const { money, repayments } = debtRows(loan, base.transactions ?? []);
+    return [...money, ...repayments.filter((tx) => tx.status === "completed")].sort((a, b) =>
+      a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0
+    );
+  }, [loan, base.transactions]);
   const fmt = (n: number) => formatSigned(n, loan.currency, locale, "none");
   const cardClass =
     "overflow-hidden rounded-[var(--ui-card-radius)] border border-[length:var(--ui-card-border)] border-[var(--edge)] bg-[var(--surface)] shadow-sm";
@@ -178,15 +186,31 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
           </div>
         )}
 
-        {planned.length > 0 ? (
-          <Section title={t("portfolio.upcoming")} flush>
-            <ul className="divide-y divide-[var(--edge-soft)]" data-loan-upcoming>
-              {planned.slice(0, UPCOMING_ROWS).map((tx) => (
-                <PocketTxRow key={tx.id} tx={tx} lookup={lookup} onTap={txSheet.open} onComplete={txSheet.complete} due />
-              ))}
-            </ul>
-          </Section>
-        ) : null}
+        <HistoryUpcoming
+          pocket
+          className="space-y-3"
+          emptyClassName="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-4 text-sm text-zinc-500 dark:text-zinc-400"
+          historyCount={happened.length}
+          upcomingCount={planned.length}
+          upcoming={
+            <Section flush>
+              <ul className="divide-y divide-[var(--edge-soft)]" data-loan-upcoming>
+                {planned.slice(0, UPCOMING_ROWS).map((tx) => (
+                  <PocketTxRow key={tx.id} tx={tx} lookup={lookup} onTap={txSheet.open} onComplete={txSheet.complete} due />
+                ))}
+              </ul>
+            </Section>
+          }
+          history={
+            <Section flush>
+              <ul className="divide-y divide-[var(--edge-soft)]" data-loan-history>
+                {happened.map((tx) => (
+                  <PocketTxRow key={tx.id} tx={tx} lookup={lookup} onTap={txSheet.open} />
+                ))}
+              </ul>
+            </Section>
+          }
+        />
 
         {once || term === 0 ? null : (
           <Section flush>

@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { EditModal } from "@/components/txModals";
 import { EntityChanges, RecentChanges } from "@/components/history";
+import { HistoryUpcoming, useHistoryLayout } from "@/components/historyUpcoming";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates } from "@/lib/data/queries";
 import type { Account, Purchase, Transaction } from "@/lib/data/types";
-import { CardBook, cardStatements, chargeAmount, nextCardPayment } from "@/lib/domain/cards";
+import { CardBook, CardStatement, cardStatements, chargeAmount, nextCardPayment } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { purchaseInstallments, purchaseProgress } from "@/lib/domain/purchases";
@@ -63,6 +64,9 @@ export function CardDetailsModal({
   const categories = useCategories();
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [showAllAhead, setShowAllAhead] = useState(false);
+  // side by side wants a wider window than one list does
+  const [layout, setLayout] = useHistoryLayout();
   const deleteTx = useAppMutation((id: string) => repo.deleteTransaction(id), [KEYS.transactions, KEYS.accounts]);
   const updateTx = useAppMutation(
     (v: { id: string; patch: Parameters<typeof repo.updateTransaction>[1] }) => repo.updateTransaction(v.id, v.patch),
@@ -75,12 +79,80 @@ export function CardDetailsModal({
   const next = nextCardPayment(book, card, today);
   const owed = book.owed(card.id, today);
   const statements = cardStatements(book, card, today);
-  const shown = showAll ? statements : statements.slice(0, 6);
+  // paid statements are history, newest first; the rest (due, recorded but
+  // not all made, months ahead) are what's coming, soonest first
+  const past = statements.filter((s) => s.status === "paid");
+  const ahead = statements.filter((s) => s.status !== "paid").reverse();
   const own = purchases.filter((p) => p.accountId === card.id);
   const purchaseById = new Map(own.map((p) => [p.id, p]));
 
+  function statementItem(s: CardStatement) {
+    return (
+      <li key={s.month} className="rounded-lg border border-[var(--edge)] p-3" data-statement-month={s.month}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium">
+            {monthLabel(s.month)}
+            {s.date ? <span className="ml-1.5 text-xs font-normal text-zinc-400">{fmtDate(s.date)}</span> : null}
+          </span>
+          <span className="flex items-center gap-2">
+            <Badge tone={statusTone[s.status]}>{t(`cards.statement_${s.status}`)}</Badge>
+            <span className="text-sm font-semibold tabular-nums">{money(s.amount)}</span>
+          </span>
+        </div>
+        {s.charges.length > 0 ? (
+          <ul className="mt-2 space-y-1 border-t border-[var(--edge-soft)] pt-2">
+            {s.charges.map((c) => {
+              const purchase = c.purchaseId ? purchaseById.get(c.purchaseId) : undefined;
+              return (
+                <li key={c.id} className="flex items-center gap-2 text-xs" data-charge={c.description}>
+                  <span className="w-20 shrink-0 text-zinc-400">{fmtDate(c.dueDate)}</span>
+                  <span className="min-w-0 flex-1 truncate">{c.description || "—"}</span>
+                  <span className="shrink-0 tabular-nums">{money(chargeAmount(c))}</span>
+                  {purchase ? (
+                    <Button variant="ghost" title={t("cards.openDetails")} aria-label={t("cards.openDetails")} onClick={() => onOpenPurchase(purchase)}>
+                      ↗
+                    </Button>
+                  ) : (
+                    <>
+                      <Button variant="ghost" aria-label={t("tx.editTitle")} title={t("tx.editTitle")} onClick={() => setEditing(c)}>
+                        ✎
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={t("common.delete")}
+                        onClick={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(c.id)}
+                      >
+                        ✕
+                      </Button>
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : s.payments.length > 0 ? (
+          <p className="mt-1 text-xs text-zinc-400">{t("cards.noChargesTracked")}</p>
+        ) : null}
+      </li>
+    );
+  }
+
+  function statementList(list: CardStatement[], all: boolean, onShowAll: () => void) {
+    const visible = all ? list : list.slice(0, 6);
+    return (
+      <div className="space-y-2 px-4 pt-2">
+        <ul className="space-y-2">{visible.map(statementItem)}</ul>
+        {list.length > visible.length ? (
+          <button type="button" onClick={onShowAll} className="text-xs text-teal-600 hover:underline">
+            {t("cards.showAllStatements", { count: list.length })}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <Modal open onClose={onClose} title={card.name} wide>
+    <Modal open onClose={onClose} title={card.name} wide={layout === "both" ? "xl" : true}>
       <div className="space-y-5" data-card-details={card.name}>
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div>
@@ -107,62 +179,21 @@ export function CardDetailsModal({
 
         <section className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("cards.statements")}</h3>
-          {statements.length === 0 ? <p className="text-sm text-zinc-500">{t("cards.noStatements")}</p> : null}
-          <ul className="space-y-2">
-            {shown.map((s) => (
-              <li key={s.month} className="rounded-lg border border-[var(--edge)] p-3" data-statement-month={s.month}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium">
-                    {monthLabel(s.month)}
-                    {s.date ? <span className="ml-1.5 text-xs font-normal text-zinc-400">{fmtDate(s.date)}</span> : null}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Badge tone={statusTone[s.status]}>{t(`cards.statement_${s.status}`)}</Badge>
-                    <span className="text-sm font-semibold tabular-nums">{money(s.amount)}</span>
-                  </span>
-                </div>
-                {s.charges.length > 0 ? (
-                  <ul className="mt-2 space-y-1 border-t border-[var(--edge-soft)] pt-2">
-                    {s.charges.map((c) => {
-                      const purchase = c.purchaseId ? purchaseById.get(c.purchaseId) : undefined;
-                      return (
-                        <li key={c.id} className="flex items-center gap-2 text-xs" data-charge={c.description}>
-                          <span className="w-20 shrink-0 text-zinc-400">{fmtDate(c.dueDate)}</span>
-                          <span className="min-w-0 flex-1 truncate">{c.description || "—"}</span>
-                          <span className="shrink-0 tabular-nums">{money(chargeAmount(c))}</span>
-                          {purchase ? (
-                            <Button variant="ghost" title={t("cards.openDetails")} aria-label={t("cards.openDetails")} onClick={() => onOpenPurchase(purchase)}>
-                              ↗
-                            </Button>
-                          ) : (
-                            <>
-                              <Button variant="ghost" aria-label={t("tx.editTitle")} title={t("tx.editTitle")} onClick={() => setEditing(c)}>
-                                ✎
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                aria-label={t("common.delete")}
-                                onClick={() => window.confirm(t("common.confirmDelete")) && deleteTx.mutate(c.id)}
-                              >
-                                ✕
-                              </Button>
-                            </>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : s.payments.length > 0 ? (
-                  <p className="mt-1 text-xs text-zinc-400">{t("cards.noChargesTracked")}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {statements.length > shown.length ? (
-            <button type="button" onClick={() => setShowAll(true)} className="text-xs text-teal-600 hover:underline">
-              {t("cards.showAllStatements", { count: statements.length })}
-            </button>
-          ) : null}
+          {statements.length === 0 ? (
+            <p className="text-sm text-zinc-500">{t("cards.noStatements")}</p>
+          ) : (
+            <HistoryUpcoming
+              className="-mx-4"
+              layout={layout}
+              onLayout={setLayout}
+              historyEmpty={t("cards.noPaidStatements")}
+              emptyClassName="px-4 py-2 text-sm text-zinc-400"
+              historyCount={past.length}
+              upcomingCount={ahead.length}
+              upcoming={statementList(ahead, showAllAhead, () => setShowAllAhead(true))}
+              history={statementList(past, showAll, () => setShowAll(true))}
+            />
+          )}
         </section>
 
         {/* what's been changed on this card: edits, deletions, payments done or undone */}

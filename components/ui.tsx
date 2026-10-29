@@ -260,7 +260,8 @@ export function Modal({
   onClose: () => void;
   title: ReactNode;
   children: ReactNode;
-  wide?: boolean;
+  /** true: room for a table; "xl": room for two lists side by side */
+  wide?: boolean | "xl";
   /** when given, the body becomes a form so Enter saves from any field */
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -306,7 +307,7 @@ export function Modal({
         ref={body}
         className={cx(
           "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl sm:rounded-2xl sm:pb-4",
-          wide ? "sm:max-w-2xl" : "sm:max-w-md"
+          wide === "xl" ? "sm:max-w-4xl" : wide ? "sm:max-w-2xl" : "sm:max-w-md"
         )}
         onClick={(e) => e.stopPropagation()}
       >

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { DebtModal, DeleteDebtModal, RecordDebtPaymentModal } from "@/components/debtModal";
 import { EntityChanges } from "@/components/history";
+import { HistoryUpcoming } from "@/components/historyUpcoming";
 import { PayoffSuggestionCard } from "@/components/payoffSuggestion";
 import { Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { PlanCard } from "@/components/plannerCard";
@@ -100,13 +101,14 @@ export function DebtSummary({ overview, display }: { overview: DebtOverview | nu
   );
 }
 
-/** Planned repayments listed ahead of what's paid; the schedule below has the rest. */
-const NEXT_PLANNED = 3;
+/** Planned repayments listed under Upcoming; the schedule below has the rest. */
+const NEXT_PLANNED = 6;
 
 /**
- * A debt's own rows: the next few repayments still planned (soonest first),
- * then what's happened, newest first: repayments made and the money borrowed
- * or lent. Each says what it is without repeating the debt's name.
+ * A debt's own rows, as Upcoming and History (or both): the next repayments
+ * still planned, soonest first, and what's happened, newest first: repayments
+ * made and the money borrowed or lent. Each says what it is without repeating
+ * the debt's name.
  */
 function DebtRows({ loan }: { loan: Loan }) {
   const { t, locale } = useI18n();
@@ -116,7 +118,6 @@ function DebtRows({ loan }: { loan: Loan }) {
   const { money, repayments } = debtRows(loan, transactions.data ?? []);
   const planned = repayments.filter((r) => r.status === "planned").sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const happened = [...money, ...repayments.filter((r) => r.status === "completed")].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
-  const rows = [...planned.slice(0, NEXT_PLANNED), ...happened];
   const more = planned.length - NEXT_PLANNED;
   const label = (description: string) => {
     const rest = description.startsWith(loan.name) ? description.slice(loan.name.length).trim() : description.trim();
@@ -124,36 +125,50 @@ function DebtRows({ loan }: { loan: Loan }) {
   };
   const currencyOf = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? loan.currency;
   const nameOf = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? "—";
+  const row = (r: (typeof happened)[number]) => {
+    const isMoney = money.includes(r);
+    return (
+      <li key={r.id} className="flex items-baseline justify-between gap-2 text-sm" data-debt-row-status={r.status}>
+        <span className="min-w-0 truncate">
+          {r.status === "completed" ? <span aria-label={t("pages.paid")}>✓ </span> : null}
+          {isMoney ? (loan.direction === "lent" ? t("debts.moneyLent") : t("debts.moneyBorrowed")) : label(r.description)}
+          <span className="ml-2 text-[11px] text-zinc-400">
+            {fmtDate(r.dueDate)} · {nameOf(r.accountId)}
+          </span>
+          {r.status === "planned" ? (
+            <span className="ml-1.5">
+              <Badge tone="zinc">{t("tx.planned")}</Badge>
+            </span>
+          ) : null}
+        </span>
+        <span className={`shrink-0 tabular-nums ${r.direction === "income" ? "text-green-600" : ""}`}>
+          {r.direction === "income" ? "+" : "−"}
+          {formatAmount(r.amount, currencyOf(r.accountId), locale)}
+        </span>
+      </li>
+    );
+  };
   return (
-    <section className="space-y-1.5 border-t border-[var(--edge-soft)] p-4" data-debt-rows>
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("debts.payments")}</h3>
-      {repayments.every((r) => r.status !== "completed") ? <p className="text-xs text-zinc-400">{t("debts.noPayments")}</p> : null}
-      <ul className="space-y-1">
-        {rows.map((r) => {
-          const isMoney = money.includes(r);
-          return (
-            <li key={r.id} className="flex items-baseline justify-between gap-2 text-sm" data-debt-row-status={r.status}>
-              <span className="min-w-0 truncate">
-                {r.status === "completed" ? <span aria-label={t("pages.paid")}>✓ </span> : null}
-                {isMoney ? (loan.direction === "lent" ? t("debts.moneyLent") : t("debts.moneyBorrowed")) : label(r.description)}
-                <span className="ml-2 text-[11px] text-zinc-400">
-                  {fmtDate(r.dueDate)} · {nameOf(r.accountId)}
-                </span>
-                {r.status === "planned" ? (
-                  <span className="ml-1.5">
-                    <Badge tone="zinc">{t("tx.planned")}</Badge>
-                  </span>
-                ) : null}
-              </span>
-              <span className={`shrink-0 tabular-nums ${r.direction === "income" ? "text-green-600" : ""}`}>
-                {r.direction === "income" ? "+" : "−"}
-                {formatAmount(r.amount, currencyOf(r.accountId), locale)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      {more > 0 ? <p className="text-xs text-zinc-400">{t("debts.morePlanned", { count: more })}</p> : null}
+    <section className="space-y-1.5 border-t border-[var(--edge-soft)] pt-4" data-debt-rows>
+      <h3 className="px-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("debts.payments")}</h3>
+      <HistoryUpcoming
+        className="pb-4"
+        emptyClassName="px-4 py-2 text-xs text-zinc-400"
+        historyCount={happened.length}
+        upcomingCount={planned.length}
+        upcoming={
+          <div className="space-y-1.5 px-4 pt-2">
+            <ul className="space-y-1">{planned.slice(0, NEXT_PLANNED).map(row)}</ul>
+            {more > 0 ? <p className="text-xs text-zinc-400">{t("debts.morePlanned", { count: more })}</p> : null}
+          </div>
+        }
+        history={
+          <div className="space-y-1.5 px-4 pt-2">
+            {repayments.every((r) => r.status !== "completed") ? <p className="text-xs text-zinc-400">{t("debts.noPayments")}</p> : null}
+            <ul className="space-y-1">{happened.map(row)}</ul>
+          </div>
+        }
+      />
     </section>
   );
 }
