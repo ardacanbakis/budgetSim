@@ -5,6 +5,7 @@ import { Suspense, useMemo, useState } from "react";
 import { Spinner } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { timelineHref } from "@/lib/ui/timeline";
 import { parseTab } from "@/lib/ui/urlTab";
 import { ActivityLink, PocketActivity } from "./activity";
@@ -14,20 +15,21 @@ import { PocketRecurring } from "./recurring";
 
 /**
  * /transactions in Pocket: one large title over a segmented control,
- * Transactions | Recurring, with the open tab kept in the URL
- * (?tab=recurring) as the Classic page keeps it, so /recurring's redirect
- * and a link land on the right one. The Timeline is Reports' first report
- * now (/reports?tab=timeline); its old address lands there.
+ * Transactions | Income | Bills, with the open tab kept in the URL
+ * (?tab=income, ?tab=bills) as the Classic page keeps it, so a link lands on
+ * the right one; the old Recurring tab (?tab=recurring) lands on Income. The
+ * Timeline is Reports' first report now (/reports?tab=timeline); its old
+ * address lands there.
  *
  * The ledger tab is PocketActivity (components/pocket/activity.tsx), keyed by
  * its deep link (?show=due, ?filter=, ?account=, ?q=) so following a new link
- * starts from that link's filters. The recurring tab is PocketRecurring
- * (components/pocket/recurring.tsx); its + sits in the header.
+ * starts from that link's filters. Income and Bills are PocketRecurring
+ * (components/pocket/recurring.tsx); their + sits in the header.
  * On the ledger tab the header holds Select, which turns the ledger's
  * selection mode on and off (the bulk actions are PocketActivity's).
  */
 
-const TABS = ["ledger", "recurring"] as const;
+const TABS = ["ledger", "income", "bills"] as const;
 type Tab = (typeof TABS)[number];
 
 export function PocketTransactions() {
@@ -43,6 +45,7 @@ function TransactionsScreen() {
   const { t } = useI18n();
   const params = useSearchParams();
   if (params.get("tab") === "timeline") redirect(timelineHref(params.get("account")));
+  if (params.get("tab") === "recurring") redirect(RECURRING_HREF.income);
   const tab: Tab = parseTab(params.get("tab"), TABS, "ledger");
   const [creating, setCreating] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -63,11 +66,11 @@ function TransactionsScreen() {
         >
           <Icon name="checkCircle" size={22} />
         </button>
-      ) : tab === "recurring" ? (
+      ) : tab === "income" || tab === "bills" ? (
         <button
           type="button"
           onClick={() => setCreating(true)}
-          aria-label={t("recurring.newTemplate")}
+          aria-label={tab === "income" ? t("income.newIncome") : t("income.newBill")}
           aria-haspopup="dialog"
           className="flex h-11 w-11 items-center justify-center rounded-full text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400"
         >
@@ -91,12 +94,13 @@ function TransactionsScreen() {
         value={tab}
         options={[
           { value: "ledger", label: t("tx.tabLedger") },
-          { value: "recurring", label: t("pocket.timeline.tabRecurring") },
+          { value: "income", label: t("income.tabIncome") },
+          { value: "bills", label: t("income.tabBills") },
         ]}
         onChange={(next) => replaceQuery(next === "ledger" ? "/transactions" : `/transactions?tab=${next}`)}
       />
-      {tab === "recurring" ? (
-        <PocketRecurring creating={creating} onCreatingChange={setCreating} />
+      {tab === "income" || tab === "bills" ? (
+        <PocketRecurring key={tab} kind={tab} creating={creating} onCreatingChange={setCreating} />
       ) : (
         <PocketActivity
           key={[link.show, link.filter, link.account, link.q].join("|")}

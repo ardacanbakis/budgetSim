@@ -16,6 +16,7 @@ import { computeDebtOverview } from "@/lib/domain/debt";
 import { cardStandings } from "@/lib/domain/purchases";
 import { templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
+import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { CardId } from "@/lib/ui/dashboardLayout";
 import { debtHref, statementRows, thisMonthSummary, trendPoints } from "@/lib/ui/dashboardCards";
 import { monthlyCommitments } from "@/lib/ui/pocket/commitments";
@@ -435,7 +436,7 @@ function CommitmentsBody({ d }: { d: DashboardData }) {
       {totals.next ? <p className={muted}>{t("dashboard.nextCommitment", { name: totals.next.name, date: fmtDate(totals.next.due) })}</p> : null}
       {toConfirm > 0 ? (
         <Link
-          href="/transactions?tab=recurring"
+          href={RECURRING_HREF.bills}
           onClick={stop}
           className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:underline dark:bg-amber-950 dark:text-amber-200"
         >

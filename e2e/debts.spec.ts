@@ -212,7 +212,7 @@ test("Move to Debts from a recurring item: its payments are the debt's, and what
     },
     { key: DEMO_KEY, start: iso(start), end: iso(end) }
   );
-  await page.goto("/transactions?tab=recurring");
+  await page.goto("/transactions?tab=bills");
   const card = page.getByText("Semoş QNB 30k", { exact: true }).first().locator("xpath=ancestor::div[contains(@class,'border')][1]");
   await card.getByRole("button", { name: "Edit" }).click();
   await page.getByRole("button", { name: "Move to Debts" }).click();

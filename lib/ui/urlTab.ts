@@ -1,5 +1,5 @@
 /**
- * A tab kept in the URL (?tab=recurring): the value when it is one of the
+ * A tab kept in the URL (?tab=income): the value when it is one of the
  * allowed ones, else the fallback. Classic and Pocket read the Activity tabs
  * through this one rule, so a link means the same tab in both layouts.
  */

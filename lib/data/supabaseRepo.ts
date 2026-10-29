@@ -121,6 +121,8 @@ const templateFromRow = (r: Row): RecurringTemplate => ({
   endDate: r.end_date,
   autoComplete: r.auto_complete,
   loanId: r.loan_id,
+  // absent before migration 0020
+  series: r.series ?? null,
   createdAt: r.created_at,
 });
 
@@ -506,6 +508,8 @@ export class SupabaseRepo implements Repo {
       end_date: input.endDate,
       auto_complete: input.autoComplete,
       loan_id: input.loanId ?? null,
+      // sent only when set: only a raise or Combine needs migration 0020
+      ...(input.series ? { series: input.series } : {}),
     };
   }
 
@@ -568,8 +572,11 @@ export class SupabaseRepo implements Repo {
     if (patch.startDate != null) row.start_date = patch.startDate;
     if (patch.endDate !== undefined) row.end_date = patch.endDate;
     if (patch.autoComplete != null) row.auto_complete = patch.autoComplete;
+    if (patch.series !== undefined) row.series = patch.series;
     const { data, error } = await this.db.from("recurring_templates").update(row).eq("id", id).select().single();
     throwIf(error);
+    // joining a series changes nothing it plans
+    if (Object.keys(patch).every((k) => k === "series")) return;
     const endDate = templateFromRow(data!).endDate;
 
     // rowsReplacedByEdit as a query: planned rows from today on, and any
@@ -1322,6 +1329,11 @@ export class SupabaseRepo implements Repo {
       const { error } = await this.db.from("loans").select("direction").limit(0);
       throwIf(error);
     }
+    // and an income's periods (0020)
+    if (backup.templates.some((t) => t.series)) {
+      const { error } = await this.db.from("recurring_templates").select("series").limit(0);
+      throwIf(error);
+    }
     await this.deleteAllData();
     const u = this.userId;
     const insert = async (table: string, rows: Row[]) => {
@@ -1376,6 +1388,7 @@ export class SupabaseRepo implements Repo {
       id: tpl.id, user_id: u, name: tpl.name, account_id: tpl.accountId, direction: tpl.direction,
       category_id: tpl.categoryId, amount: tpl.amount, frequency: tpl.frequency, start_date: tpl.startDate,
       end_date: tpl.endDate, auto_complete: tpl.autoComplete, loan_id: tpl.loanId, created_at: tpl.createdAt,
+      ...(tpl.series ? { series: tpl.series } : {}),
     })));
     for (const l of backup.loans) {
       if (l.recurringTemplateId) {

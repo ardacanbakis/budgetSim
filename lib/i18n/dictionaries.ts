@@ -7,6 +7,7 @@ import * as pocketActivity from "./pocket/activity";
 import * as pocketTimeline from "./pocket/timeline";
 import * as timeline from "./timeline";
 import * as debts from "./debts";
+import * as income from "./income";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
@@ -519,6 +520,7 @@ export const en = {
   },
   timeline: timeline.en,
   debts: debts.en,
+  income: income.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -1710,6 +1712,7 @@ export const tr: Dictionary = {
   },
   timeline: timeline.tr,
   debts: debts.tr,
+  income: income.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",

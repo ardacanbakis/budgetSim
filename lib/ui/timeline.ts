@@ -4,6 +4,7 @@ import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { addDays, addMonthsClamped } from "@/lib/domain/recurrence";
 import { AccountSeries, balanceAt, compareEvents, lowestAhead, LowPoint, TimelineEvent, TimelineMilestone } from "@/lib/domain/timeline";
 import { loanHref } from "./portfolioUrl";
+import { recurringHref } from "./recurringUrl";
 
 /**
  * The timeline (lib/domain/timeline.ts) as the screens list it: filtered,
@@ -305,7 +306,7 @@ export function timelineHref(accountId?: string | null): string {
 export function milestoneHref(milestone: TimelineMilestone): string {
   if (milestone.what === "loan") return loanHref(milestone.id);
   if (milestone.what === "purchase") return "/cards";
-  return "/transactions?tab=recurring";
+  return recurringHref(milestone.direction);
 }
 
 export function shortDay(date: string, locale: string): string {

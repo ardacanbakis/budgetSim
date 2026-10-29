@@ -61,25 +61,35 @@ test("portfolio: selecting an item shows its history", async ({ page }) => {
   await page.screenshot({ path: "e2e/screenshots/portfolio-detail.png" });
 });
 
-test("recurring: a tab of Transactions, and the old address still lands there", async ({ page }) => {
+test("income and bills: tabs of Transactions, and the old Recurring addresses land on Income", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  // gone from the sidebar…
+  // not in the sidebar…
   await expect(page.getByRole("link", { name: /^recurring$|^düzenli$/i })).toHaveCount(0);
-  // …and a tab on the Transactions page instead
+  // …but two tabs on the Transactions page: what comes in, and what goes out
   await page.goto("/transactions");
-  const recurringTab = page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i });
+  await expect(page.getByRole("tablist", { name: "Transactions" }).getByRole("tab")).toHaveText(["Transactions", "Income", "Bills"]);
+  const incomeTab = page.getByRole("tab", { name: /^income$|^gelirler$/i });
+  const billsTab = page.getByRole("tab", { name: /^bills$|^faturalar$/i });
   await expect(page.getByRole("tab", { name: /^transactions$|^işlemler$/i })).toHaveAttribute("aria-selected", "true");
-  await recurringTab.click();
-  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
-  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  await billsTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=bills$/);
+  await expect(billsTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Rent", { exact: true })).toBeVisible();
+  await expect(page.getByText("VICTVS retainer", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "+ New bill" })).toBeVisible();
+  await incomeTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=income$/);
+  await expect(page.getByText("VICTVS retainer", { exact: true })).toBeVisible();
+  await expect(page.getByText("Rent", { exact: true })).toHaveCount(0);
 
-  // a bookmark to the old page redirects to the tab
+  // a bookmark to the old page, or the old tab, lands on Income
   await page.goto("/recurring");
-  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
-  await expect(page.getByRole("button", { name: /new recurring item|yeni düzenli/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/transactions\?tab=income$/);
+  await expect(page.getByRole("button", { name: "+ New income" })).toBeVisible();
+  await page.goto("/transactions?tab=recurring");
+  await expect(page).toHaveURL(/\/transactions\?tab=income$/);
 
   // and from there the tabs still switch (a production build once ignored a
   // router call to the same page after loading with a query: lib/ui/shallowUrl.ts)
@@ -87,13 +97,13 @@ test("recurring: a tab of Transactions, and the old address still lands there", 
   await ledgerTab.click();
   await expect(page).toHaveURL(/\/transactions$/);
   await expect(ledgerTab).toHaveAttribute("aria-selected", "true");
-  await recurringTab.click();
-  await expect(page).toHaveURL(/\/transactions\?tab=recurring$/);
-  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  await incomeTab.click();
+  await expect(page).toHaveURL(/\/transactions\?tab=income$/);
+  await expect(incomeTab).toHaveAttribute("aria-selected", "true");
 
   // nor does the old query come back by the sidebar, here or from another page
   await page.goto("/recurring");
-  await expect(recurringTab).toHaveAttribute("aria-selected", "true");
+  await expect(incomeTab).toHaveAttribute("aria-selected", "true");
   const sidebar = page.locator("aside nav");
   await sidebar.locator('a[href="/transactions"]').click();
   await expect(page).toHaveURL(/\/transactions$/);
@@ -110,8 +120,8 @@ test("recurring: a template started in the past backfills its earlier items", as
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterDemo(page);
 
-  await page.goto("/transactions?tab=recurring");
-  await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+  await page.goto("/transactions?tab=income");
+  await page.getByRole("button", { name: /new income|yeni gelir/i }).click();
   await page.getByLabel(/name|ad/i).first().fill("Backfill Salary");
   // scoped to the form: the page's own filter has an Income button too
   await page.locator("form").getByRole("button", { name: /^income$|gelir/i }).click();
@@ -139,14 +149,14 @@ test("recurring: a template started in the past backfills its earlier items", as
 test("recurring: finished items are labelled, filterable, and the label colour is adjustable", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/transactions?tab=recurring");
+  await page.goto("/transactions?tab=income");
 
   const monthsAgo = (n: number) => {
     const d = new Date(new Date().getFullYear(), new Date().getMonth() - n, 5);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-05`;
   };
   async function addTemplate(name: string, start: string, end: string, auto: boolean, backfill?: RegExp) {
-    await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+    await page.getByRole("button", { name: /new income|yeni gelir/i }).click();
     await page.getByLabel(/^name$|^ad$/i).fill(name);
     await page.locator("form").getByRole("button", { name: /^income$|^gelir$/i }).click();
     await page.getByLabel(/amount|tutar/i).first().fill("1679");
@@ -165,7 +175,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
   await addTemplate("Unconfirmed stipend", monthsAgo(6), monthsAgo(5), false);
 
   await page.reload();
-  await expect(page.getByRole("tab", { name: /^recurring$|düzenli işlemler/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: /^income$|^gelirler$/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText(/✓ (Completed|Tamamlandı)/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 to confirm|2 onay bekliyor/)).toBeVisible();
 
@@ -185,7 +195,7 @@ test("recurring: finished items are labelled, filterable, and the label colour i
 test("recurring: editing an item redoes its upcoming items, one a month", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/transactions?tab=recurring");
+  await page.goto("/transactions?tab=bills");
 
   // the demo's rent: due on the 10th, auto-completed, 12 months ahead
   const rentCard = page.getByText("Rent", { exact: true }).locator("xpath=ancestor::div[contains(@class,'p-4')][1]");
@@ -246,9 +256,9 @@ test("errors: a failed save says why and keeps the form open", async ({ page }) 
   await page.setViewportSize({ width: 1280, height: 900 });
   await failableSaves(page);
   await enterDemo(page);
-  await page.goto("/transactions?tab=recurring");
+  await page.goto("/transactions?tab=bills");
 
-  await page.getByRole("button", { name: /new recurring item|yeni düzenli/i }).click();
+  await page.getByRole("button", { name: /new bill|yeni fatura/i }).click();
   await page.getByLabel(/^name$|^ad$/i).fill("Gym");
   await page.getByLabel(/amount|tutar/i).first().fill("900");
   await setFailSaves(page, true);
@@ -1027,7 +1037,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=recurring", "/accounts?view=debts", "/reports", "/reports?tab=cashflow", "/reports?tab=spending", "/reports?tab=networth", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=income", "/transactions?tab=bills", "/accounts?view=debts", "/reports", "/reports?tab=cashflow", "/reports?tab=spending", "/reports?tab=networth", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -2257,7 +2267,7 @@ test("sidebar: middle handle, empty-space click and number-key shortcuts", async
 test("recurring: deleting asks what happens to its planned items, three clear answers", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await enterDemo(page);
-  await page.goto("/transactions?tab=recurring");
+  await page.goto("/transactions?tab=bills");
   const rowsOf = (name: string) =>
     page.evaluate((name) => {
       const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5") ?? "{}");

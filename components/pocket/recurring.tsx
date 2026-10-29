@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ReactNode, useId, useMemo, useState } from "react";
 import { DebtModal } from "@/components/debtModal";
-import { TemplateModal } from "@/components/recurringTab";
+import { RaiseModal, RecurringKind, TemplateModal } from "@/components/recurringTab";
 import { EmptyState } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
@@ -15,13 +15,11 @@ import { BackfillMode, MATERIALIZE_MONTHS_AHEAD } from "@/lib/domain/materialize
 import { todayISO } from "@/lib/domain/recurrence";
 import { TemplateProgress, templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
-import { RECURRING_DIRECTION_FILTER_KEY, RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
+import { RECURRING_STATUS_FILTER_KEY, useLocalChoice } from "@/lib/prefs";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { LabelColor, LabeledStatus, useLabelColor } from "@/lib/ui/labelColors";
 import {
   CommitmentPeriod,
-  DIRECTION_FILTERS,
-  DirectionFilter,
   dueOccurrences,
   monthlyCommitments,
   recurringList,
@@ -43,14 +41,15 @@ import { ActionItem, PocketActionSheet } from "./sheet";
 import { useTxActions } from "./txActions";
 
 /**
- * Pocket's Recurring (/transactions?tab=recurring): the templates that write
- * the ledger's planned rows.
+ * Pocket's Income and Bills (/transactions?tab=income, ?tab=bills): the
+ * templates that write the ledger's planned rows, those that bring money in
+ * on one tab and those that take it out on the other.
  *
- * 1. Commitments: what they take and bring a month (or a year: × 12) in the
- *    display currency, and which comes next (lib/ui/pocket/commitments.ts).
- * 2. Chips: All, To confirm (when there are any), Income, Expense — the
- *    Classic tab's own device-kept filters, so both layouts open on the same
- *    choice.
+ * 1. Commitments: what they bring (Income) or take (Bills) a month (or a
+ *    year: × 12) in the display currency, and which comes next
+ *    (lib/ui/pocket/commitments.ts).
+ * 2. Chips: All, To confirm (when there are any) — the Classic tab's own
+ *    device-kept filter, so both layouts open on the same choice.
  * 3. The list: templates with items to confirm first, then by next date;
  *    finished ones folded away. Each row keeps the Classic labels (Not
  *    started, n to confirm, Completed) in the label colours chosen in
@@ -59,6 +58,7 @@ import { useTxActions } from "./txActions";
  * A row opens a sheet: its due items, each with a ✓ (useTxActions: Undo in
  *    the snackbar) and "Paid a different amount…"; Edit (TemplateModal from
  *    the Classic tab, a sheet here), or for a loan's template a link to Debt;
+ *    on an income, Give a raise (RaiseModal from the Classic tab);
  *    and "See its items" (Activity, searched by name). Writes are the Classic
  *    tab's: createTemplate then materializeTemplates, updateTemplate,
  *    deleteTemplate, all invalidating [templates, transactions]. There's no
@@ -89,9 +89,11 @@ const PRIMARY_BUTTON =
   "flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white active:bg-teal-700 dark:bg-teal-500 dark:text-zinc-950";
 
 export function PocketRecurring({
+  kind,
   creating,
   onCreatingChange,
 }: {
+  kind: RecurringKind;
   /** the header's + asked for a new template */
   creating: boolean;
   onCreatingChange: (open: boolean) => void;
@@ -107,7 +109,7 @@ export function PocketRecurring({
   const rates = useRates();
   const actions = useTxActions();
   const statusFilter = useLocalChoice<StatusFilter>(RECURRING_STATUS_FILTER_KEY, STATUS_FILTERS, "all");
-  const directionFilter = useLocalChoice<DirectionFilter>(RECURRING_DIRECTION_FILTER_KEY, DIRECTION_FILTERS, "all");
+  const direction = kind === "income" ? "income" : "expense";
   const colors: Record<LabeledStatus, LabelColor> = {
     completed: useLabelColor("completed")[0],
     notStarted: useLabelColor("notStarted")[0],
@@ -116,6 +118,7 @@ export function PocketRecurring({
   const [period, setPeriod] = useState<CommitmentPeriod>("monthly");
   const [editing, setEditing] = useState<RecurringTemplate | null>(null);
   const [opened, setOpened] = useState<RecurringTemplate | null>(null);
+  const [raising, setRaising] = useState<RecurringTemplate | null>(null);
   const [paying, setPaying] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<RecurringTemplate | null>(null);
   const [moving, setMoving] = useState<RecurringTemplate | null>(null);
@@ -154,12 +157,12 @@ export function PocketRecurring({
     keys
   );
 
-  const all = templates.data ?? [];
+  const all = (templates.data ?? []).filter((tpl) => tpl.direction === direction);
   const commitments = scaleCommitments(
     monthlyCommitments({ templates: all, progressById, accountsById, usdPer, display: displayCurrency }),
     period
   );
-  const list = recurringList(all, progressById, { status: statusFilter.value, direction: directionFilter.value });
+  const list = recurringList(all, progressById, { status: statusFilter.value, direction });
 
   const closeForm = () => {
     onCreatingChange(false);
@@ -171,6 +174,7 @@ export function PocketRecurring({
       <TemplateModal
         open={creating || editing != null}
         initial={editing}
+        defaultDirection={direction}
         onClose={closeForm}
         onSave={async (input, backfill) => {
           if (editing) await updateTemplate.mutateAsync({ id: editing.id, patch: input });
@@ -195,6 +199,7 @@ export function PocketRecurring({
         }}
       />
       <DebtModal open={moving != null} onClose={() => setMoving(null)} from={moving ? { kind: "template", template: moving } : null} />
+      <RaiseModal tpl={raising} onClose={() => setRaising(null)} />
     </>
   );
 
@@ -232,15 +237,16 @@ export function PocketRecurring({
           action={
             <button type="button" onClick={() => onCreatingChange(true)} aria-haspopup="dialog" className={PRIMARY_BUTTON}>
               <Icon name="plus" size={18} />
-              {t("recurring.newTemplate")}
+              {kind === "income" ? t("income.newIncome") : t("income.newBill")}
             </button>
           }
         >
-          {t("recurring.empty")}
+          {kind === "income" ? t("income.emptyIncome") : t("income.emptyBills")}
         </EmptyState>
       ) : (
         <>
           <CommitmentsCard
+            kind={kind}
             out={commitments.out}
             income={commitments.in}
             next={commitments.next}
@@ -271,16 +277,6 @@ export function PocketRecurring({
                 <Icon name="close" size={14} className="-mr-1" />
               </Chip>
             ) : null}
-            {(["income", "expense"] as const).map((d) => (
-              <Chip
-                key={d}
-                active={directionFilter.value === d}
-                onClick={() => directionFilter.setValue(directionFilter.value === d ? "all" : d)}
-              >
-                {t(`tx.${d}`)}
-                {directionFilter.value === d ? <Icon name="close" size={14} className="-mr-1" /> : null}
-              </Chip>
-            ))}
           </ChipRow>
 
           {list.live.length === 0 && list.finished.length === 0 ? (
@@ -288,10 +284,7 @@ export function PocketRecurring({
               action={
                 <button
                   type="button"
-                  onClick={() => {
-                    statusFilter.setValue("all");
-                    directionFilter.setValue("all");
-                  }}
+                  onClick={() => statusFilter.setValue("all")}
                   className="flex min-h-[44px] items-center rounded-xl border border-[var(--edge)] bg-[var(--surface)] px-4 text-sm font-medium text-teal-700 active:bg-[var(--edge-soft)] dark:text-teal-300"
                 >
                   {t("recurring.showAll")}
@@ -364,6 +357,10 @@ export function PocketRecurring({
           // the loan's own page in the Portfolio's Debts view
           router.push(loanHref(tpl.loanId));
         }}
+        onRaise={(tpl) => {
+          setOpened(null);
+          setRaising(tpl);
+        }}
         onItems={(tpl) => {
           setOpened(null);
           // the same page, so the URL changes in place (lib/ui/shallowUrl.ts),
@@ -416,6 +413,7 @@ export function PocketRecurring({
 }
 
 function CommitmentsCard({
+  kind,
   out,
   income,
   next,
@@ -425,6 +423,8 @@ function CommitmentsCard({
   today,
   waiting,
 }: {
+  /** Income shows what comes in, Bills what goes out */
+  kind: RecurringKind;
   out: number;
   income: number;
   next: { name: string; due: string } | null;
@@ -460,18 +460,21 @@ function CommitmentsCard({
       }
     >
       <dl data-commitments className="space-y-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-sm text-zinc-500 dark:text-zinc-400">{t("pocket.activity.outLabel")}</dt>
-          <dd data-commitment="out">
-            <Money amount={out} currency={currency} sign="out" tone="auto" className="text-lg font-semibold" />
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-sm text-zinc-500 dark:text-zinc-400">{t("pocket.activity.inLabel")}</dt>
-          <dd data-commitment="in">
-            <Money amount={income} currency={currency} sign="in" tone="auto" className="text-lg font-semibold" />
-          </dd>
-        </div>
+        {kind === "bills" ? (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-zinc-500 dark:text-zinc-400">{t("pocket.activity.outLabel")}</dt>
+            <dd data-commitment="out">
+              <Money amount={out} currency={currency} sign="out" tone="auto" className="text-lg font-semibold" />
+            </dd>
+          </div>
+        ) : (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-zinc-500 dark:text-zinc-400">{t("pocket.activity.inLabel")}</dt>
+            <dd data-commitment="in">
+              <Money amount={income} currency={currency} sign="in" tone="auto" className="text-lg font-semibold" />
+            </dd>
+          </div>
+        )}
       </dl>
       {waiting ? (
         <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("pocket.lists.waitingRates")}</p>
@@ -601,6 +604,7 @@ function TemplateSheet({
   onEdit,
   onLoans,
   onItems,
+  onRaise,
 }: {
   tpl: RecurringTemplate | null;
   progress: TemplateProgress | undefined;
@@ -614,6 +618,8 @@ function TemplateSheet({
   onEdit: (tpl: RecurringTemplate) => void;
   onLoans: (tpl: RecurringTemplate) => void;
   onItems: (tpl: RecurringTemplate) => void;
+  /** an income still running: its next amount */
+  onRaise?: (tpl: RecurringTemplate) => void;
 }) {
   const { t, locale } = useI18n();
   const dueLabel = useDueLabel();
@@ -629,6 +635,9 @@ function TemplateSheet({
           onSelect: () => onLoans(tpl),
         }
       : { label: t("common.edit"), icon: "edit", tone: due.length ? undefined : "primary", onSelect: () => onEdit(tpl) },
+    ...(onRaise && tpl.direction === "income" && progress?.status !== "completed"
+      ? [{ label: t("income.giveRaise"), icon: "arrowUp" as const, onSelect: () => onRaise(tpl) }]
+      : []),
     { label: t("pocket.activity.seeItems"), icon: "activity", onSelect: () => onItems(tpl) },
   ];
 

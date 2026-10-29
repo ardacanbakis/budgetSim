@@ -23,6 +23,7 @@ import { canBeCardPayment, ConvertToCardPaymentModal } from "@/components/conver
 import { pocketable } from "@/components/pocket/pocketable";
 import { COLLAPSE_HISTORY_KEY, useLocalToggle } from "@/lib/prefs";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
+import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { timelineHref } from "@/lib/ui/timeline";
 import { parseTab } from "@/lib/ui/urlTab";
 
@@ -33,7 +34,7 @@ const PocketTransactions = dynamic(() => import("@/components/pocket/transaction
 
 export default pocketable(TransactionsPage, PocketTransactions);
 
-const TABS = ["ledger", "recurring"] as const;
+const TABS = ["ledger", "income", "bills"] as const;
 type Tab = (typeof TABS)[number];
 
 function TransactionsPage() {
@@ -46,16 +47,19 @@ function TransactionsPage() {
 }
 
 /**
- * The ledger and the recurring items that fill it, as two tabs. The open tab
- * lives in the URL (?tab=recurring), so /recurring can redirect here and a
- * link opens the right one. Switching replaces the history entry
- * (replaceQuery), so Back leaves the page rather than stepping between tabs.
- * The Timeline is Reports' first report now; its old address lands there.
+ * The ledger and the recurring items that fill it, as three tabs: the
+ * ledger, Income and Bills. The open tab lives in the URL (?tab=income,
+ * ?tab=bills), so a link opens the right one. Switching replaces the history
+ * entry (replaceQuery), so Back leaves the page rather than stepping between
+ * tabs. The old Recurring tab (?tab=recurring, and /recurring) lands on
+ * Income; the Timeline is Reports' first report now, and its old address
+ * lands there.
  */
 function TransactionsScreen() {
   const { t } = useI18n();
   const params = useSearchParams();
   if (params.get("tab") === "timeline") redirect(timelineHref(params.get("account")));
+  if (params.get("tab") === "recurring") redirect(RECURRING_HREF.income);
   const tab: Tab = parseTab(params.get("tab"), TABS, "ledger");
 
   const tabs = (
@@ -73,13 +77,13 @@ function TransactionsScreen() {
               : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          {id === "ledger" ? t("tx.tabLedger") : t("recurring.title")}
+          {id === "ledger" ? t("tx.tabLedger") : id === "income" ? t("income.tabIncome") : t("income.tabBills")}
         </button>
       ))}
     </div>
   );
 
-  if (tab === "recurring") return <RecurringTab tabs={tabs} />;
+  if (tab === "income" || tab === "bills") return <RecurringTab key={tab} tabs={tabs} kind={tab} />;
   return <LedgerTab tabs={tabs} />;
 }
 

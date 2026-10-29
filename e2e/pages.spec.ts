@@ -206,7 +206,7 @@ test.describe("Debt split", () => {
 
   test("a loan's recurring item links to the loan", async ({ page }) => {
     await enterDemo(page);
-    await page.goto("/transactions?tab=recurring");
+    await page.goto("/transactions?tab=bills");
     await page.getByRole("link", { name: /Linked to loan/ }).first().click();
     await expect(page).toHaveURL(/\/accounts\?view=debts&loan=[^&]+$/);
     await expect(page.locator("[data-loan-pane]").getByText(CAR_LOAN).first()).toBeVisible();

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 
-/** Recurring is a tab of the Transactions page now; old links and bookmarks land there. */
+/** Recurring items are Transactions' Income and Bills tabs now; old links and bookmarks land on Income. */
 export default function RecurringPage() {
-  redirect("/transactions?tab=recurring");
+  redirect(RECURRING_HREF.income);
 }

@@ -6,6 +6,7 @@ import { useAccounts } from "@/lib/data/queries";
 import { useI18n } from "@/lib/i18n";
 import { NAV } from "@/components/shell.nav";
 import { rankByLabel } from "@/lib/ui/rank";
+import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { timelineHref } from "@/lib/ui/timeline";
 
 export interface Command {
@@ -50,13 +51,15 @@ export function CommandPalette({
       hint: t("palette.page"),
       run: go(item.href),
     }));
-    // a tab of Transactions now, not a page of its own, but still a place to jump to
-    pages.push({
-      id: "nav:/transactions?tab=recurring",
-      label: t("recurring.title"),
-      hint: t("palette.page"),
-      run: go("/transactions?tab=recurring"),
-    });
+    // tabs of Transactions, not pages of their own, but still places to jump to
+    for (const kind of ["income", "bills"] as const) {
+      pages.push({
+        id: `nav:${RECURRING_HREF[kind]}`,
+        label: kind === "income" ? t("income.tabIncome") : t("income.tabBills"),
+        hint: t("palette.page"),
+        run: go(RECURRING_HREF[kind]),
+      });
+    }
     // the dashboard's cards and accounts, chosen in Settings
     pages.push({
       id: "nav:/settings?tab=dashboard",
