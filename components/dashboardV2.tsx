@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
 import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { DataCheckNudge } from "@/components/dataCheck";
 import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
 import { AccountsLeftOut } from "@/components/dashboardParts";
 import { UpcomingCard, useUpcomingItems } from "@/components/dashboardUpcoming";
@@ -201,6 +202,7 @@ export function DashboardV2() {
       </Card>
 
       {d.duePayments.length > 0 ? <CardPaymentReminder duePayments={d.duePayments} /> : null}
+      <DataCheckNudge />
 
       {on("accounts") && on("upcoming") ? (
         <div className="grid gap-[var(--ui-gap)] lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

@@ -2397,3 +2397,65 @@ test("cards: a new purchase warns about the same installment already on the card
     )
     .toBe(false);
 });
+
+test("data check: finds what makes the numbers wrong, fixes one, dismisses another", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 15);
+  const ahead = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-15`;
+  const now = new Date();
+  const thisMonth1st = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  await page.evaluate(
+    ({ ahead, thisMonth1st }) => {
+      const store = JSON.parse(window.localStorage.getItem("renovator-demo-v5")!);
+      const ziraat = store.accounts.find((a: { name: string }) => a.name === "Ziraat TRY");
+      const base = {
+        accountId: ziraat.id,
+        categoryId: null,
+        completedAt: null,
+        fxSnapshot: null,
+        transferGroupId: null,
+        transferMarketRate: null,
+        recurringTemplateId: null,
+        loanId: null,
+        victvsPayoutId: null,
+        purchaseId: null,
+        legacy: false,
+        createdAt: new Date().toISOString(),
+      };
+      store.transactions.push(
+        // done, but dated next month: it already came off the balance
+        { ...base, id: "e2e-ahead", direction: "expense", amount: 5256.46, status: "completed", dueDate: ahead, description: "draft next - Semoş CC" },
+        // borrowed money booked as income
+        { ...base, id: "e2e-advance", direction: "income", amount: 12500, status: "completed", dueDate: thisMonth1st, description: "nakit avans 12.5k" }
+      );
+      window.localStorage.setItem("renovator-demo-v5", JSON.stringify(store));
+    },
+    { ahead, thisMonth1st }
+  );
+  await page.reload();
+  const nudge = page.locator("[data-datacheck-nudge]");
+  await expect(nudge).toContainText("Data check found 2 things that change your numbers.");
+  await nudge.click();
+  await expect(page).toHaveURL(/\/settings\?tab=check$/);
+
+  const future = page.locator('[data-issue="completedInFuture"]');
+  await expect(future).toContainText("draft next - Semoş CC");
+  await future.getByRole("button", { name: "Move back to planned" }).click();
+  await expect(future).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(window.localStorage.getItem("renovator-demo-v5")!).transactions.find((t: { id: string }) => t.id === "e2e-ahead").status
+      )
+    )
+    .toBe("planned");
+
+  const borrowed = page.locator('[data-issue="borrowedAsIncome"]');
+  await borrowed.getByRole("button", { name: "Dismiss" }).click();
+  await expect(borrowed).toHaveCount(0);
+  await expect(page.getByText("Nothing to look at: your records add up.")).toBeVisible();
+  // dismissed stays dismissed, and the dashboard stops nudging
+  await page.goto("/");
+  await expect(page.locator("[data-datacheck-nudge]")).toHaveCount(0);
+});

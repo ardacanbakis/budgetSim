@@ -30,6 +30,7 @@ import {
   halfMonthRanges,
   lastDayOfMonth,
   toggleRange,
+  unpaidSplit,
   unpaidSummary,
   VictvsFilter,
   VictvsMonth,
@@ -219,6 +220,8 @@ function VictvsScreen() {
   const all = useMemo(() => sessions.data ?? [], [sessions.data]);
   const years = useMemo(() => victvsYears(all, filter), [all, filter]);
   const summary = useMemo(() => unpaidSummary(all), [all]);
+  // the figure is what's owed now; sessions booked ahead are a line under it
+  const split = useMemo(() => unpaidSplit(all, todayISO()), [all]);
   // only unpaid sessions are ever selected; one paid or deleted elsewhere drops out
   const selectedUnpaid = all.filter((s) => s.status === "unpaid" && selected.has(s.id));
   const selectedTotal = sumAmounts("USD", selectedUnpaid.map((s) => s.amount));
@@ -252,7 +255,7 @@ function VictvsScreen() {
   );
 
   const loading = sessions.isLoading || accounts.isLoading || settings.isLoading;
-  const condensed = loading ? undefined : t("pocket.cards.unpaidTotal", { amount: hideAmounts ? MASK : usd(summary.total) });
+  const condensed = loading ? undefined : t("pocket.cards.unpaidTotal", { amount: hideAmounts ? MASK : usd(split.now.total) });
   const sessionsText = (count: number) =>
     count === 1 ? t("pocket.cards.sessionsOne") : t("pocket.cards.sessionsMany", { count });
 
@@ -299,10 +302,15 @@ function VictvsScreen() {
         </EmptyState>
       ) : (
         <>
-          <section className={`${cardClass} p-4`} aria-label={t("pocket.cards.unpaidTotal", { amount: usd(summary.total) })} data-victvs-summary>
+          <section className={`${cardClass} p-4`} aria-label={t("pocket.cards.unpaidTotal", { amount: usd(split.now.total) })} data-victvs-summary>
             <p className="text-[13px] text-zinc-500 dark:text-zinc-400">{t("victvs.unpaid")} · USD</p>
-            <FitFigure>{usd(summary.total)}</FitFigure>
-            <p className="text-[13px] text-zinc-500 dark:text-zinc-400">{sessionsText(summary.count)}</p>
+            <FitFigure>{usd(split.now.total)}</FitFigure>
+            <p className="text-[13px] text-zinc-500 dark:text-zinc-400">{sessionsText(split.now.count)}</p>
+            {split.scheduled.count > 0 ? (
+              <p className="text-[13px] text-zinc-500 dark:text-zinc-400" data-victvs-scheduled>
+                {t("victvs.scheduledLine", { amount: usd(split.scheduled.total), count: split.scheduled.count })}
+              </p>
+            ) : null}
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
