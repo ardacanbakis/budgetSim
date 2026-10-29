@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Account, Transaction, VictvsSession } from "@/lib/data/types";
-import { checkData, DataIssueKind } from "../dataCheck";
+import { checkData } from "../dataCheck";
 
 const account = (id: string, overrides: Partial<Account> = {}): Account => ({
   id,
@@ -48,8 +48,6 @@ const akbank = account("akbank", { kind: "credit_card", paymentAccountId: "enpar
 const garanti = account("garanti", { kind: "credit_card", paymentDay: 10, name: "CC Tansu Garanti" });
 const tazminat = account("tazminat", { archived: true });
 const accounts = [enparaTry, akbank, garanti, tazminat];
-
-const kinds = (issues: { kind: DataIssueKind }[]) => issues.map((i) => i.kind);
 
 describe("checkData, on the shapes found in a real backup", () => {
   it("finds the old recurring copy of a big purchase's installment, and offers to delete it", () => {
