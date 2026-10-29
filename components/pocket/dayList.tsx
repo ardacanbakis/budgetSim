@@ -2,7 +2,7 @@
 
 import { Fragment, ReactNode, useCallback, useId, useMemo } from "react";
 import { useApp } from "@/lib/data/provider";
-import { useAccounts, useCategories, useRates, useTransactions } from "@/lib/data/queries";
+import { useAccounts, useCardEstimates, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { Account, Category, Transaction } from "@/lib/data/types";
 import { buildCardBook, CardBook } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
@@ -82,6 +82,7 @@ export function useTxLookup(): TxLookup {
   const categories = useCategories();
   const transactions = useTransactions();
   const rates = useRates();
+  const estimates = useCardEstimates();
   const today = todayISO();
   const usdPer = rates.data?.usdPer;
   const ratesReady = rates.data != null;
@@ -95,7 +96,7 @@ export function useTxLookup(): TxLookup {
     return {
       accountsById: new Map(accountList.map((a) => [a.id, a])),
       categoriesById: new Map((categories.data ?? []).map((c) => [c.id, c])),
-      book: buildCardBook(accountList, txs),
+      book: buildCardBook(accountList, txs, estimates.data),
       counterpartOf: (tx: Transaction) =>
         tx.transferGroupId ? (tx.direction === "income" ? leaving : landing).get(tx.transferGroupId) : undefined,
       usdPer,
@@ -104,7 +105,7 @@ export function useTxLookup(): TxLookup {
       today,
       loading,
     };
-  }, [accounts.data, categories.data, transactions.data, usdPer, displayCurrency, ratesReady, today, loading]);
+  }, [accounts.data, categories.data, transactions.data, estimates.data, usdPer, displayCurrency, ratesReady, today, loading]);
 }
 
 export interface TxDescription {

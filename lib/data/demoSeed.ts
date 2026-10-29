@@ -6,6 +6,7 @@ import {
   Account,
   ActivityEntry,
   Budget,
+  CardEstimate,
   Category,
   Goal,
   Loan,
@@ -37,6 +38,8 @@ export interface DemoStore {
   savingsPlans?: PlanRecord[];
   /** the change history, newest last (absent in older sandboxes) */
   activity?: ActivityEntry[];
+  /** expected card statements (absent in older sandboxes) */
+  cardEstimates?: CardEstimate[];
 }
 
 const uuid = () =>

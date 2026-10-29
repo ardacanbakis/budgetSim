@@ -30,6 +30,7 @@ import {
   Account,
   ActivityEntry,
   Budget,
+  CardEstimate,
   Category,
   Goal,
   Loan,
@@ -131,6 +132,7 @@ export class DemoRepo implements Repo {
     this.store.templates = this.store.templates.filter((t) => t.accountId !== id);
     for (const a of this.store.accounts) if (a.paymentAccountId === id) a.paymentAccountId = null;
     for (const p of this.store.purchases) if (p.accountId === id) p.accountId = null;
+    this.store.cardEstimates = (this.store.cardEstimates ?? []).filter((e) => e.accountId !== id);
     this.save();
   }
 
@@ -629,6 +631,22 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
+  async listCardEstimates(): Promise<CardEstimate[]> {
+    return copy(this.store.cardEstimates ?? []);
+  }
+
+  async addCardEstimate(input: Omit<CardEstimate, "id" | "createdAt">): Promise<CardEstimate> {
+    const estimate: CardEstimate = { id: uuid(), ...input, createdAt: new Date().toISOString() };
+    this.store.cardEstimates = [...(this.store.cardEstimates ?? []), estimate];
+    this.save();
+    return copy(estimate);
+  }
+
+  async deleteCardEstimate(id: string): Promise<void> {
+    this.store.cardEstimates = (this.store.cardEstimates ?? []).filter((e) => e.id !== id);
+    this.save();
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return copy(this.store.snapshots);
   }
@@ -918,6 +936,7 @@ export class DemoRepo implements Repo {
       goals: this.store.goals,
       snapshots: this.store.snapshots,
       activity: this.store.activity ?? [],
+      cardEstimates: this.store.cardEstimates ?? [],
     };
   }
 
@@ -937,6 +956,7 @@ export class DemoRepo implements Repo {
       settings: this.store.settings,
       // the backup lists it newest first, as listActivity does; kept oldest first here
       activity: [...(backup.activity ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
+      cardEstimates: backup.cardEstimates ?? [],
     };
     this.save();
   }

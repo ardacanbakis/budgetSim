@@ -1,4 +1,4 @@
-import { Account, Transaction } from "@/lib/data/types";
+import { Account, CardEstimate, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "./balances";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
@@ -26,8 +26,13 @@ import { GoldPrices, goldRatiosOf } from "./gold";
  *   the whole taksit against the limit. A recurring item billed to the card
  *   isn't owed before its date.
  *
- * Nothing here is stored: it's all read off the ledger, so every screen and
- * every device agrees.
+ * - What you expect a statement to be (CardEstimate) stands in for what the
+ *   app can't see yet: until that month's payment is recorded, the month
+ *   pays the larger of the latest expectation and the charges tracked. What
+ *   the card is owed never includes it; that's only what's been charged.
+ *
+ * Nothing here is stored but the expectations: the rest is read off the
+ * ledger, so every screen and every device agrees.
  */
 
 export type CardRole =
@@ -76,6 +81,10 @@ export interface CardBook {
   paidInMonth(charge: Transaction): string;
   /** uncovered charges a payment made in `month` (yyyy-mm) would cover */
   wouldCover(cardId: string, month: string): Transaction[];
+  /** every expectation noted for this card, oldest noted first */
+  estimates(cardId: string): CardEstimate[];
+  /** the expectation that counts for a statement month: the latest noted (on or before `asOf`, when given) */
+  expected(cardId: string, month: string, asOf?: string): CardEstimate | null;
 }
 
 /** + for a charge, − for a refund landing on the card */
@@ -97,7 +106,10 @@ function nextMonth(month: string): string {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
-export function buildCardBook(accounts: Account[], transactions: Transaction[]): CardBook {
+/** noted first, then entered first: the order an expectation's history reads in */
+const byNoted = (a: CardEstimate, b: CardEstimate) => a.notedOn.localeCompare(b.notedOn) || a.createdAt.localeCompare(b.createdAt);
+
+export function buildCardBook(accounts: Account[], transactions: Transaction[], estimates: readonly CardEstimate[] = []): CardBook {
   const cards = new Set(accounts.filter((a) => a.kind === "credit_card").map((a) => a.id));
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
   const paymentDayOf = new Map(accounts.map((a) => [a.id, a.paymentDay ?? null] as const));
@@ -160,6 +172,14 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
 
   const uncovered = (cardId: string) => (chargesOf.get(cardId) ?? []).filter((c) => coverOf(c) == null);
 
+  const estimatesOf = new Map<string, CardEstimate[]>();
+  for (const e of [...estimates].sort(byNoted)) {
+    if (!cards.has(e.accountId)) continue;
+    const list = estimatesOf.get(e.accountId);
+    if (list) list.push(e);
+    else estimatesOf.set(e.accountId, [e]);
+  }
+
   return {
     isCard: (accountId) => cards.has(accountId),
     roleOf,
@@ -186,6 +206,9 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[]):
       return covers(charge, own) ? own : nextMonth(own);
     },
     wouldCover: (cardId, month) => uncovered(cardId).filter((c) => covers(c, month)),
+    estimates: (cardId) => estimatesOf.get(cardId) ?? [],
+    expected: (cardId, month, asOf) =>
+      (estimatesOf.get(cardId) ?? []).filter((e) => e.month === month && (asOf == null || e.notedOn <= asOf)).at(-1) ?? null,
   };
 }
 
@@ -247,14 +270,8 @@ export function totalOwed(
   return total;
 }
 
-/**
- * A card's bills month by month: payments recorded but not yet made, in the
- * month they're due, and charges no payment covers yet, in the month they'll
- * be paid (see paidInMonth). Anything that fell due before `fromMonth` is
- * still owed, so it's folded into `fromMonth` rather than dropped. In the
- * card's own currency.
- */
-export function cardSchedule(book: CardBook, cardId: string, fromMonth: string): { month: string; total: number }[] {
+/** What's tracked for each month: unmade payments and uncovered charges, earlier months folded into `fromMonth`. */
+function trackedByMonth(book: CardBook, cardId: string, fromMonth: string): Map<string, number> {
   const months = new Map<string, number>();
   const add = (month: string, amount: number) => {
     const due = month < fromMonth ? fromMonth : month;
@@ -262,6 +279,39 @@ export function cardSchedule(book: CardBook, cardId: string, fromMonth: string):
   };
   for (const p of book.payments(cardId)) if (!p.made) add(p.date.slice(0, 7), p.amount);
   for (const c of book.uncovered(cardId)) add(book.paidInMonth(c), chargeAmount(c));
+  return months;
+}
+
+/**
+ * How much an expectation adds to a month: what it expects beyond what's
+ * tracked, for each month from `fromMonth` whose payment isn't recorded yet.
+ * The plan pays these on top of the tracked charges.
+ */
+export function estimateTopUps(book: CardBook, cardId: string, fromMonth: string): { month: string; amount: number; estimate: CardEstimate }[] {
+  const tracked = trackedByMonth(book, cardId, fromMonth);
+  const recorded = new Set(book.payments(cardId).map((p) => p.date.slice(0, 7)));
+  const months = new Set(book.estimates(cardId).map((e) => e.month));
+  const out: { month: string; amount: number; estimate: CardEstimate }[] = [];
+  for (const month of [...months].sort()) {
+    if (month < fromMonth || recorded.has(month)) continue;
+    const estimate = book.expected(cardId, month)!;
+    const amount = estimate.amount - (tracked.get(month) ?? 0);
+    if (amount > 0.005) out.push({ month, amount, estimate });
+  }
+  return out;
+}
+
+/**
+ * A card's bills month by month: payments recorded but not yet made, in the
+ * month they're due, and charges no payment covers yet, in the month they'll
+ * be paid (see paidInMonth). Anything that fell due before `fromMonth` is
+ * still owed, so it's folded into `fromMonth` rather than dropped. A month
+ * with an expectation and no payment recorded is the larger of the two. In
+ * the card's own currency.
+ */
+export function cardSchedule(book: CardBook, cardId: string, fromMonth: string): { month: string; total: number }[] {
+  const months = trackedByMonth(book, cardId, fromMonth);
+  for (const { month, amount } of estimateTopUps(book, cardId, fromMonth)) months.set(month, (months.get(month) ?? 0) + amount);
   return [...months.entries()]
     .filter(([, total]) => Math.abs(total) > 0.005)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -277,8 +327,16 @@ export interface CardStatement {
   payments: CardPayment[];
   /** the charges this month's statement pays (or will pay), by date */
   charges: Transaction[];
-  /** what's paid or due: the recorded payments when there are any, else the charges */
+  /** what's paid or due: the recorded payments when there are any, else the charges or the expectation, whichever is more */
   amount: number;
+  /** the charges' total, without the expectation */
+  tracked: number;
+  /**
+   * the expectation that counts: for a month with a payment recorded, the
+   * latest noted by that payment's date (what it's measured against); else
+   * the latest noted
+   */
+  estimate: CardEstimate | null;
   /**
    * paid: every payment made · recorded: a payment set down, not all made ·
    * due: this month or earlier with nothing recorded · upcoming: later months
@@ -307,18 +365,22 @@ export function cardStatements(book: CardBook, card: Account, today: string): Ca
     const month = cover ? cover.date.slice(0, 7) : book.paidInMonth(c);
     slot(!cover && month < thisMonth ? thisMonth : month).charges.push(c);
   }
+  // a month ahead you've only an expectation for is a statement too
+  for (const e of book.estimates(card.id)) if (e.month >= thisMonth) slot(e.month);
   return [...byMonth.entries()]
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([month, { payments, charges }]) => {
       const recorded = payments.length > 0;
+      const tracked = charges.reduce((sum, c) => sum + chargeAmount(c), 0);
+      const estimate = book.expected(card.id, month, recorded ? payments[0].date : undefined);
       return {
         month,
         date: payments[0]?.date ?? paymentDateIn(month, card.paymentDay),
         payments,
         charges,
-        amount: recorded
-          ? payments.reduce((sum, p) => sum + p.amount, 0)
-          : charges.reduce((sum, c) => sum + chargeAmount(c), 0),
+        amount: recorded ? payments.reduce((sum, p) => sum + p.amount, 0) : Math.max(tracked, estimate?.amount ?? 0),
+        tracked,
+        estimate,
         status: recorded
           ? payments.every((p) => p.made)
             ? ("paid" as const)
@@ -327,7 +389,9 @@ export function cardStatements(book: CardBook, card: Account, today: string): Ca
             ? ("due" as const)
             : ("upcoming" as const),
       };
-    });
+    })
+    // an expectation of nothing, with nothing tracked, is no statement
+    .filter((s) => s.payments.length > 0 || s.charges.length > 0 || s.amount > 0.005);
 }
 
 export interface NextCardPayment {

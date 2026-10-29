@@ -1,6 +1,6 @@
 "use client";
 
-import { useAccounts, useRates, useTransactions, useVictvsSessions } from "@/lib/data/queries";
+import { useAccounts, useCardEstimates, useRates, useTransactions, useVictvsSessions } from "@/lib/data/queries";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
@@ -45,6 +45,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const transactions = useTransactions();
   const victvs = useVictvsSessions();
   const rates = useRates();
+  const estimates = useCardEstimates();
   const includeLegacy = useLocalToggle(REPORT_LEGACY_KEY, true).value;
   const today = todayISO();
 
@@ -55,7 +56,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
   const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
-  const book = buildCardBook(accounts.data, transactions.data);
+  const book = buildCardBook(accounts.data, transactions.data, estimates.data);
   const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
   // what the cards are owed counts as debt now (current stat only — the
   // projector pays it out month by month, so it starts from what you hold)

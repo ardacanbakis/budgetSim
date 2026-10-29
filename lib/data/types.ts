@@ -277,6 +277,24 @@ export interface ActivityEntry {
   changes: Record<string, [unknown, unknown]>;
 }
 
+/**
+ * What you expect one of a card's statements to be (migration 0022): the
+ * bank shows the months ahead before the app knows what's in them. Noting a
+ * month again adds another; the latest noted is the one that counts.
+ */
+export interface CardEstimate {
+  id: string;
+  /** the card */
+  accountId: string;
+  /** yyyy-mm of the statement */
+  month: string;
+  /** the statement's expected total, in the card's currency */
+  amount: number;
+  /** yyyy-mm-dd: the day it was noted */
+  notedOn: string;
+  createdAt: string;
+}
+
 export interface NetWorthSnapshot {
   id: string;
   /** yyyy-mm-dd; unique per month per user */

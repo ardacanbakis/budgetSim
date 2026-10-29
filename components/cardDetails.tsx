@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { EditModal } from "@/components/txModals";
 import { EntityChanges, RecentChanges } from "@/components/history";
+import { CardEstimatesEditor, EstimateLine } from "@/components/cardEstimates";
 import { HistoryUpcoming, useHistoryLayout } from "@/components/historyUpcoming";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCategories, useRates } from "@/lib/data/queries";
@@ -75,7 +76,8 @@ export function CardDetailsModal({
 
   if (!card) return null;
   const today = todayISO();
-  const money = (amount: number) => formatAmount(amount, card.currency, locale);
+  const currency = card.currency;
+  const money = (amount: number) => formatAmount(amount, currency, locale);
   const next = nextCardPayment(book, card, today);
   const owed = book.owed(card.id, today);
   const statements = cardStatements(book, card, today);
@@ -99,6 +101,7 @@ export function CardDetailsModal({
             <span className="text-sm font-semibold tabular-nums">{money(s.amount)}</span>
           </span>
         </div>
+        <EstimateLine statement={s} currency={currency} />
         {s.charges.length > 0 ? (
           <ul className="mt-2 space-y-1 border-t border-[var(--edge-soft)] pt-2">
             {s.charges.map((c) => {
@@ -176,6 +179,8 @@ export function CardDetailsModal({
             {t("cards.recordPayment")}
           </Button>
         </div>
+
+        <CardEstimatesEditor card={card} book={book} />
 
         <section className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("cards.statements")}</h3>

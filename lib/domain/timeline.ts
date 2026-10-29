@@ -1,6 +1,6 @@
 import { Account, Loan, Purchase, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { computeBalances } from "./balances";
-import { CardBook, chargeAmount, isDebtPrincipal, paymentDateIn } from "./cards";
+import { CardBook, chargeAmount, estimateTopUps, isDebtPrincipal, paymentDateIn } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { GoldRatios } from "./gold";
@@ -210,9 +210,16 @@ export function statementEvents(
       if (list) list.push(c);
       else byMonth.set(month, [c]);
     }
+    // what you expect beyond what's tracked: a month you've only an expectation for is a statement too
+    const extra = new Map<string, number>();
+    for (const { month, amount } of estimateTopUps(book, card.id, thisMonth)) {
+      if (month > toMonth) continue;
+      extra.set(month, amount);
+      if (!byMonth.has(month)) byMonth.set(month, []);
+    }
     const payer = card.paymentAccountId ? accountsById.get(card.paymentAccountId) : undefined;
     for (const [month, charges] of byMonth) {
-      let minor = 0;
+      let minor = toMinor(extra.get(month) ?? 0, card.currency);
       for (const c of charges) minor += toMinor(chargeAmount(c), card.currency);
       const total = fromMinor(minor, card.currency);
       // nothing to pay, or a refund the card owes back

@@ -4,18 +4,10 @@ import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import {
-  KEYS,
-  useAccounts,
-  useAppMutation,
-  useCategories,
-  usePurchases,
-  useRates,
-  useTransactions,
-} from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewPurchase } from "@/lib/data/repo";
 import { Account, Purchase } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, chargeAmount, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
+import { buildCardBook, cardSchedule, chargeAmount, estimateTopUps, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import {
@@ -82,9 +74,10 @@ function PurchasesPage() {
   );
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
+  const estimates = useCardEstimates();
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? []),
-    [accounts.data, transactions.data]
+    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
+    [accounts.data, transactions.data, estimates.data]
   );
 
   const stats = useMemo(() => {
@@ -354,6 +347,8 @@ function PurchasesPage() {
                     <span title={t("cards.nextPaymentHint")} data-card-next>
                       <Badge tone={next.date != null && next.date < today ? "red" : "amber"}>
                         {t("cards.nextPayment", { amount: formatAmount(next.amount, card.currency, locale), date: nextWhen(next) })}
+                        {/* your expectation, not only what's tracked, makes this figure */}
+                        {estimateTopUps(book, card.id, next.month).some((u) => u.month === next.month) ? ` · ${t("cards.expectedBadge")}` : null}
                       </Badge>
                     </span>
                   ) : null}

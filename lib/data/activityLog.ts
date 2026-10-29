@@ -179,6 +179,29 @@ export function withActivityLog(inner: Repo): Repo {
       ]);
     },
 
+    // an expected statement is the card's: its history says what was expected, and when
+    async addCardEstimate(input) {
+      const before = (await inner.listCardEstimates())
+        .filter((e) => e.accountId === input.accountId && e.month === input.month)
+        .sort((a, b) => (a.notedOn + a.createdAt).localeCompare(b.notedOn + b.createdAt))
+        .at(-1);
+      const estimate = await inner.addCardEstimate(input);
+      const card = (await inner.listAccounts()).find((a) => a.id === input.accountId);
+      await record([
+        entry("account", input.accountId, input.accountId, before ? "edited" : "created", `${card?.name ?? ""} · ${input.month}`, {
+          expected: [before?.amount ?? null, input.amount],
+        }),
+      ]);
+      return estimate;
+    },
+    async deleteCardEstimate(id) {
+      const before = (await inner.listCardEstimates()).find((e) => e.id === id);
+      await inner.deleteCardEstimate(id);
+      if (!before) return;
+      const card = (await inner.listAccounts()).find((a) => a.id === before.accountId);
+      await record([entry("account", before.accountId, before.accountId, "deleted", `${card?.name ?? ""} · ${before.month}`, { expected: [before.amount, null] })]);
+    },
+
     async createPurchase(input, fxSnapshot) {
       const purchase = await inner.createPurchase(input, fxSnapshot);
       await record([

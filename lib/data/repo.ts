@@ -6,6 +6,7 @@ import {
   ActivityEntry,
   AccountKind,
   Budget,
+  CardEstimate,
   Category,
   Frequency,
   Goal,
@@ -295,6 +296,12 @@ export interface Repo {
   /** upserts a snapshot for its date (auto-taken monthly; manual any time) */
   takeSnapshot(input: Omit<NetWorthSnapshot, "id">): Promise<void>;
 
+  /** what you expect each card's statements to be (migration 0022; none without it) */
+  listCardEstimates(): Promise<CardEstimate[]>;
+  /** notes one; an earlier one for the same month stays, as history */
+  addCardEstimate(input: Omit<CardEstimate, "id" | "createdAt">): Promise<CardEstimate>;
+  deleteCardEstimate(id: string): Promise<void>;
+
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */
   createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase>;
@@ -345,6 +352,8 @@ export interface BackupFile {
   snapshots: NetWorthSnapshot[];
   /** the change history; absent in backups made before it existed */
   activity?: ActivityEntry[];
+  /** expected card statements; absent in backups made before them */
+  cardEstimates?: CardEstimate[];
 }
 
 export function isBackupFile(data: unknown): data is BackupFile {

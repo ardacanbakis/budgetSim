@@ -26,6 +26,7 @@ import {
   Account,
   ActivityEntry,
   Budget,
+  CardEstimate,
   Category,
   Goal,
   Loan,
@@ -893,6 +894,35 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  async listCardEstimates(): Promise<CardEstimate[]> {
+    const { data, error } = await this.db.from("card_estimates").select("*").order("created_at");
+    // migration 0022 not run yet: no expectations, and nothing else depends on them
+    if (error) return [];
+    return (data ?? []).map((r: Row) => ({
+      id: r.id,
+      accountId: r.account_id,
+      month: r.month,
+      amount: Number(r.amount),
+      notedOn: r.noted_on,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async addCardEstimate(input: Omit<CardEstimate, "id" | "createdAt">): Promise<CardEstimate> {
+    const { data, error } = await this.db
+      .from("card_estimates")
+      .insert({ user_id: this.userId, account_id: input.accountId, month: input.month, amount: input.amount, noted_on: input.notedOn })
+      .select()
+      .single();
+    throwIf(error);
+    return { id: data!.id, accountId: data!.account_id, month: data!.month, amount: Number(data!.amount), notedOn: data!.noted_on, createdAt: data!.created_at };
+  }
+
+  async deleteCardEstimate(id: string): Promise<void> {
+    const { error } = await this.db.from("card_estimates").delete().eq("id", id);
+    throwIf(error);
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return (await this.all("net_worth_snapshots", (q) => q.order("snapshot_date"))).map((r: Row) => ({
       id: r.id,
@@ -1300,10 +1330,12 @@ export class SupabaseRepo implements Repo {
     }
     // the history goes too; a database without migration 0018 has none to clear
     await this.db.from("activity_log").delete().eq("user_id", this.userId);
+    // and expected statements (0022), likewise
+    await this.db.from("card_estimates").delete().eq("user_id", this.userId);
   }
 
   async exportAll(): Promise<BackupFile> {
-    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity] =
+    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity, cardEstimates] =
       await Promise.all([
         this.listAccounts(),
         this.listCategories(),
@@ -1317,6 +1349,7 @@ export class SupabaseRepo implements Repo {
         this.listGoals(),
         this.listSnapshots(),
         this.listActivity(),
+        this.listCardEstimates(),
       ]);
     return {
       app: "renovator",
@@ -1334,6 +1367,7 @@ export class SupabaseRepo implements Repo {
       goals,
       snapshots,
       activity,
+      cardEstimates,
     };
   }
 
@@ -1362,6 +1396,11 @@ export class SupabaseRepo implements Repo {
     // and converted income (0021)
     if (backup.templates.some((t) => t.convertToAccountId) || backup.transactions.some((t) => t.convertsId)) {
       const { error } = await this.db.from("transactions").select("converts_id").limit(0);
+      throwIf(error);
+    }
+    // and expected card statements (0022)
+    if (backup.cardEstimates?.length) {
+      const { error } = await this.db.from("card_estimates").select("id").limit(0);
       throwIf(error);
     }
     await this.deleteAllData();
@@ -1456,6 +1495,9 @@ export class SupabaseRepo implements Repo {
     await insert("budgets", backup.budgets.map((b) => ({ id: b.id, user_id: u, category_id: b.categoryId, monthly_limit: b.monthlyLimit, currency: b.currency })));
     await insert("goals", backup.goals.map((g) => ({ id: g.id, user_id: u, name: g.name, account_id: g.accountId, target_amount: g.targetAmount, target_date: g.targetDate, created_at: g.createdAt })));
     await insert("net_worth_snapshots", backup.snapshots.map((s) => ({ id: s.id, user_id: u, snapshot_date: s.snapshotDate, balances: s.balances, usd_per: s.usdPer, total_usd: s.totalUsd })));
+    await insert("card_estimates", (backup.cardEstimates ?? []).map((e) => ({
+      id: e.id, user_id: u, account_id: e.accountId, month: e.month, amount: e.amount, noted_on: e.notedOn, created_at: e.createdAt,
+    })));
     // history last, and best effort: a database without migration 0018 restores everything else
     if (backup.activity?.length) {
       await this.db.from("activity_log").insert(
