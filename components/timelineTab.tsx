@@ -244,7 +244,7 @@ export function TimelineTab({ tabs, accountParam }: { tabs: ReactNode; accountPa
 
       {runway ? <RunwayCallout runway={runway} months={LOOKAHEAD_MONTHS} onPlan={setPlanning} /> : null}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <aside className="space-y-4 lg:sticky lg:top-4 lg:order-2">
           <Card>
             <CardHeader title={t("timeline.lowestTitle")} />
