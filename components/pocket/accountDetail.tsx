@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccountModal } from "@/app/(app)/accounts/page";
 import { AdjustBalanceModal } from "@/components/adjustBalanceModal";
+import { CardEstimatesEditor } from "@/components/cardEstimates";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { HoldingsList, HoldingsSummary } from "@/components/goldHoldings";
 import { Badge } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
@@ -109,6 +110,7 @@ export function usePortfolioBase(): PortfolioBase {
   const accounts = useAccounts();
   const transactions = useTransactions();
   const rates = useRates();
+  const estimates = useCardEstimates();
   const derived = useDashboardData(displayCurrency);
   const today = todayISO();
   const list = accounts.data;
@@ -117,7 +119,7 @@ export function usePortfolioBase(): PortfolioBase {
     () => (list && txs ? computeBalances(list, txs, goldRatiosOf(rates.data)) : null),
     [list, txs, rates.data]
   );
-  const book = useMemo(() => (list && txs ? buildCardBook(list, txs) : null), [list, txs]);
+  const book = useMemo(() => (list && txs ? buildCardBook(list, txs, estimates.data) : null), [list, txs, estimates.data]);
   return {
     accounts: list,
     transactions: txs,
@@ -425,6 +427,14 @@ export function AccountDetail({ account }: { account: Account }) {
         <div role="group" aria-label={account.name} className={`grid gap-2 ${COLS[actions.length]}`}>
           {actions}
         </div>
+
+        {card && book ? (
+          <CardEstimatesEditor
+            card={account}
+            book={book}
+            className="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-3"
+          />
+        ) : null}
 
         {/* what changed it last: money with the balance it left, and every edit */}
         <RecentChanges

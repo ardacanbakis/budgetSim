@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Button } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, usePlans, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, usePlans, useRates, useTemplates, useTransactions } from "@/lib/data/queries";
 import { Loan } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
 import { conversionCut } from "@/lib/domain/convertedIncome";
@@ -29,6 +29,7 @@ export function usePayoffSuggestion(loan: Loan | null): PayoffSuggestion | null 
   const templates = useTemplates();
   const rates = useRates();
   const plans = usePlans();
+  const estimates = useCardEstimates();
   return useMemo(() => {
     if (!loan || loan.direction !== "owe" || !accounts.data || !transactions.data || !templates.data || !rates.data || !plans.data) return null;
     const today = todayISO();
@@ -53,8 +54,9 @@ export function usePayoffSuggestion(loan: Loan | null): PayoffSuggestion | null 
       funding: { order: planFundingOrder(plan, drawable), routine: plan.funding?.routine ?? [] },
       threshold: shortThreshold(displayCurrency, rates.data.usdPer),
       conversionCut: conversionCut(transactions.data, accounts.data, rates.data.usdPer),
+      cardEstimates: estimates.data,
     });
-  }, [loan, accounts.data, transactions.data, templates.data, rates.data, plans.data, displayCurrency]);
+  }, [loan, accounts.data, transactions.data, templates.data, rates.data, plans.data, estimates.data, displayCurrency]);
 }
 
 /**

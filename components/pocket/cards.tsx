@@ -7,7 +7,7 @@ import { PurchaseModal } from "@/app/(app)/cards/page";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
 import { EmptyState, Skeleton } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Purchase, Transaction } from "@/lib/data/types";
 import { buildCardBook, CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
@@ -224,9 +224,10 @@ function CardsScreen() {
   );
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
+  const estimates = useCardEstimates();
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? []),
-    [accounts.data, transactions.data]
+    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
+    [accounts.data, transactions.data, estimates.data]
   );
 
   const action = useMemo(

@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useLoans, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, useLoans, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
@@ -83,6 +83,7 @@ function PortfolioScreen() {
   const categories = useCategories();
   const rates = useRates();
   const loans = useLoans();
+  const estimates = useCardEstimates();
   const [modalOpen, setModalOpen] = useState(false);
   const { columns, setColumns } = useColumns("renovator-cols-portfolio");
   // shape is how each holding is drawn; `columns` above is the page's own
@@ -130,7 +131,7 @@ function PortfolioScreen() {
   // a card at what it owes, never its ledger balance; a loan at what's left of it
   const debts = useMemo(() => {
     if (!accounts.data || !transactions.data) return null;
-    const book = buildCardBook(accounts.data, transactions.data);
+    const book = buildCardBook(accounts.data, transactions.data, estimates.data);
     const overview = loans.data
       ? computeDebtOverview({
           loans: loans.data,
@@ -153,7 +154,7 @@ function PortfolioScreen() {
       today,
     });
     return { overview: usdPer ? overview : null, cards: s.cards.rows, loans: s.loans.rows };
-  }, [accounts.data, transactions.data, loans.data, balances, usdPer, displayCurrency, today]);
+  }, [accounts.data, transactions.data, estimates.data, loans.data, balances, usdPer, displayCurrency, today]);
 
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
 

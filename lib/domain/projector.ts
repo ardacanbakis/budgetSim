@@ -1,8 +1,8 @@
-import { Account, RecurringTemplate, Transaction } from "@/lib/data/types";
+import { Account, CardEstimate, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { convert, pairRate, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
-import { buildCardBook } from "./cards";
+import { buildCardBook, estimateTopUps } from "./cards";
 import { conversionFor } from "./convertedIncome";
 import { computeMissingOccurrences } from "./materialize";
 import { GoldRatios } from "./gold";
@@ -140,6 +140,8 @@ export function projectCashflow(params: {
    * Without it they still land there, at the market rate.
    */
   conversionCut?: (from: Currency, to: Currency) => number;
+  /** what you expect cards' statements to be: a month pays the larger of that and what's tracked */
+  cardEstimates?: readonly CardEstimate[];
 }): ProjectionResult {
   const {
     accounts,
@@ -156,6 +158,7 @@ export function projectCashflow(params: {
     dropIncomeCategories,
     funding,
     conversionCut,
+    cardEstimates,
   } = params;
   const ratesAt = ratePath ?? (() => usdPer);
   const horizonEnd = addMonthsClamped(fromDate, months);
@@ -180,7 +183,7 @@ export function projectCashflow(params: {
   // paid. A recorded payment is that flow. A charge no payment covers yet
   // leaves the card's paying account in the month it'll be paid; one that's
   // covered rides on its payment, so it isn't counted again.
-  const book = buildCardBook(accounts, transactions);
+  const book = buildCardBook(accounts, transactions, cardEstimates);
   const fromMonth = fromDate.slice(0, 7);
   const lastMonth = horizonEnd.slice(0, 7);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
@@ -215,6 +218,13 @@ export function projectCashflow(params: {
       label: t.description,
       convertTo: convertTo(t),
     });
+  }
+
+  // a statement you expect to be more than what's tracked: the difference
+  // leaves the paying account that month too
+  for (const card of accounts) {
+    if (card.kind !== "credit_card" || card.archived) continue;
+    for (const { month, amount } of estimateTopUps(book, card.id, fromMonth)) pushCharge(month, card.id, "expense", amount, null, card.name);
   }
 
   // Template dates with no row yet, found the way materialize finds them:

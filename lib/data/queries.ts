@@ -23,7 +23,14 @@ export const KEYS = {
   savingsPlans: ["savingsPlans"] as const,
   rates: ["rates"] as const,
   activity: ["activity"] as const,
+  cardEstimates: ["card-estimates"] as const,
 };
+
+/** What you expect each card's statements to be (lib/domain/cards.ts reads them through the book). */
+export function useCardEstimates() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.cardEstimates, queryFn: () => repo.listCardEstimates() });
+}
 
 /** The change history, newest first (lib/data/activityLog.ts writes it). */
 export function useActivity() {

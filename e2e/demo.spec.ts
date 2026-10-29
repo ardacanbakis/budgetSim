@@ -2602,3 +2602,41 @@ test("history and upcoming: tabs or side by side, for accounts, cards and debts,
   await expect(rows.locator("[data-history-column=upcoming] [data-debt-row-status=planned]").first()).toBeVisible();
   await expect(rows.locator("[data-history-column=upcoming] [data-debt-row-status=completed]")).toHaveCount(0);
 });
+
+test("cards: an expected statement is noted on the card, the plan pays it, and it's kept with the day it was noted", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/cards");
+  await page.getByRole("tab", { name: /^cards$|^kartlar$/i }).click();
+  const bonus = page.getByRole("heading", { name: /^Bonus Card/ }).locator("xpath=ancestor::div[contains(@class,'border')][1]");
+  await bonus.getByRole("button", { name: "Details" }).click();
+  const details = page.locator("[data-card-details='Bonus Card']");
+  const editor = details.locator("[data-card-estimates='Bonus Card']");
+  await expect(editor.getByText("Expected statements")).toBeVisible();
+
+  // next month's statement, as the bank's app shows it: more than the phone's installment
+  const month = await editor.getByLabel("Statement").inputValue();
+  await editor.getByLabel(/Expected total/).fill("99999");
+  await editor.getByRole("button", { name: "Note it" }).click();
+  const row = editor.locator(`[data-estimate-month='${month}']`);
+  await expect(row).toContainText("₺99,999.00");
+  await expect(row).toContainText(/more than tracked here/);
+
+  // the statement reads as the expectation, with what's tracked beside it
+  await details.getByRole("button", { name: /Side by side/ }).click();
+  const statement = details.locator(`[data-statement-month='${month}']`);
+  await expect(statement).toContainText("₺99,999.00");
+  await expect(statement.locator("[data-estimate-line]")).toContainText(/Expected ₺99,999\.00 .* tracked ₺/);
+
+  // noted again: the earlier note stays as history
+  await editor.getByLabel(/Expected total/).fill("88888");
+  await editor.getByRole("button", { name: "Note it" }).click();
+  await expect(row).toContainText("₺88,888.00");
+  await expect(row).toContainText("Earlier: ₺99,999.00");
+  await expect(details.locator("[data-recent-changes]")).toContainText("Expected statement ₺99,999.00 → ₺88,888.00");
+
+  // deleting the latest brings back the one before
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Delete" }).click();
+  await expect(row).toContainText("₺99,999.00");
+});

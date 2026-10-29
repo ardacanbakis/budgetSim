@@ -439,3 +439,14 @@ test("an item's History and Upcoming: both by default, or one tab at a time, for
   await expect(detail.locator("[data-loan-history] li").first()).toBeVisible();
   await expect(detail.locator("[data-loan-upcoming]")).toHaveCount(0);
 });
+
+test("a card's page notes an expected statement", async ({ page }) => {
+  await enterPocket(page);
+  await openAccount(page, "Bonus Card");
+  const editor = page.locator("[data-card-estimates='Bonus Card']");
+  await expect(editor).toBeVisible();
+  const month = await editor.getByLabel("Statement").inputValue();
+  await editor.getByLabel(/Expected total/).fill("45000");
+  await editor.getByRole("button", { name: "Note it" }).click();
+  await expect(editor.locator(`[data-estimate-month='${month}']`)).toContainText("₺45,000.00");
+});

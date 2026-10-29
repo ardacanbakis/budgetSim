@@ -1,4 +1,4 @@
-import { Account, Loan, RecurringTemplate, Transaction } from "@/lib/data/types";
+import { Account, CardEstimate, Loan, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { debtRows, loanProgress, remainingBefore, scheduleOf } from "./debt";
 import { convert, UsdPerMap } from "./fx";
@@ -62,6 +62,8 @@ export interface PayoffInput {
   months?: number;
   /** what a middleman keeps converting a converted income (lib/domain/convertedIncome.ts) */
   conversionCut?: (from: Currency, to: Currency) => number;
+  /** what you expect cards' statements to be (projectCashflow) */
+  cardEstimates?: readonly CardEstimate[];
 }
 
 const NONE: PayoffSuggestion = { withoutSelling: null, ifSelling: null };
@@ -102,7 +104,7 @@ export function suggestPayoff(input: PayoffInput): PayoffSuggestion {
   const planned = repayments.filter((t) => t.status === "planned");
   const amountBased = loan.scheduleKind === "lumpSum" || loan.scheduleKind === "zeroInterest" || !(loan.monthlyRatePct > 0);
   const total = schedule.rows.length > 0 ? schedule.totalPaid : loan.principal;
-  const common = { accounts, usdPer, goldRatios, display, fromDate: today, months: horizon, funding, conversionCut: input.conversionCut };
+  const common = { accounts, usdPer, goldRatios, display, fromDate: today, months: horizon, funding, conversionCut: input.conversionCut, cardEstimates: input.cardEstimates };
 
   // the debt as it's planned now: what a payoff is measured against
   const asIs = projectCashflow({ ...common, transactions, templates });

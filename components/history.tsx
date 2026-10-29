@@ -11,7 +11,7 @@ import { useI18n } from "@/lib/i18n";
 
 /** Fields a line never spells out: the action already says it, or it's just context. */
 const QUIET = new Set(["status", "legacy", "archived", "reflected", "kind", "currency"]);
-const MONEY = new Set(["amount", "openingBalance", "creditLimit", "principal", "usd", "total"]);
+const MONEY = new Set(["amount", "openingBalance", "creditLimit", "principal", "usd", "total", "expected"]);
 /** a transaction's own money row already says these; the log would only repeat them */
 const SHOWN_AS_MONEY = new Set(["created", "completed", "autoCompleted", "adjusted"]);
 

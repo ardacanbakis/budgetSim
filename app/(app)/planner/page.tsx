@@ -6,7 +6,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { HorizonSlider, horizonLabel } from "@/components/horizonSlider";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp } from "@/lib/data/provider";
-import { useAccounts, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions, useUserSettings } from "@/lib/data/queries";
+import { useAccounts, useCardEstimates, useCategories, useRates, useSavingsPlans, useTemplates, useTransactions, useUserSettings } from "@/lib/data/queries";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { conversionCut } from "@/lib/domain/convertedIncome";
 import { victvsForecastFlows } from "@/lib/domain/victvsForecast";
@@ -176,6 +176,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
   const templates = useTemplates();
   const categories = useCategories();
   const rates = useRates();
+  const cardEstimates = useCardEstimates();
 
   const scenarios = usePlanScenarios();
   const plan = scenarios.plan;
@@ -300,6 +301,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     fromDate: todayISO(),
     months,
     conversionCut: cut,
+    cardEstimates: cardEstimates.data,
   });
   // the plan re-runs the same engine with its own rate path and flows, so the
   // two lines differ only by the assumptions themselves
@@ -326,6 +328,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     fromDate: todayISO(),
     months,
     conversionCut: cut,
+    cardEstimates: cardEstimates.data,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
     extraFlows: [...planExtraFlows(plan, months, firstMonth), ...victvsFlows(plan), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
@@ -353,6 +356,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
         fromDate: todayISO(),
         months,
         conversionCut: cut,
+        cardEstimates: cardEstimates.data,
         ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
         extraFlows: [...planExtraFlows(compareNormalized, months, firstMonth), ...victvsFlows(compareNormalized)],
         replaceCategories: planReplacedCategories(compareNormalized),
