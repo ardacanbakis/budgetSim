@@ -9,6 +9,7 @@ import {
 import { sumAmounts } from "@/lib/domain/money";
 import {
   BackupFile,
+  LoanPatch,
   MarkPaidInput,
   NewAccount,
   NewLoan,
@@ -24,7 +25,7 @@ import {
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
 import { buildDemoSeed, DemoStore } from "./demoSeed";
-import { buildSchedule } from "@/lib/domain/loanSchedule";
+import { debtRows, repaymentDirection, replanRepayments, scheduleOf, withDebtDefaults } from "@/lib/domain/debt";
 import {
   Account,
   ActivityEntry,
@@ -234,6 +235,7 @@ export class DemoRepo implements Repo {
       purchaseId: null,
       legacy: input.legacy ?? false,
       ...(input.adjustment ? { adjustment: true } : {}),
+      ...(input.loanPrincipal ? { loanPrincipal: true } : {}),
       createdAt: new Date().toISOString(),
     };
     this.store.transactions.push(tx);
@@ -699,60 +701,13 @@ export class DemoRepo implements Repo {
   }
 
   async listLoans(): Promise<Loan[]> {
-    return copy(this.store.loans);
+    return copy(this.store.loans.map(withDebtDefaults));
   }
 
   async createLoan(input: NewLoan): Promise<Loan> {
-    const now = new Date().toISOString();
-    const schedule = buildSchedule({
-      kind: input.scheduleKind ?? "annuity",
-      principal: input.principal,
-      monthlyRatePct: input.monthlyRatePct,
-      termMonths: input.termMonths,
-      startDate: input.startDate,
-      currency: input.currency,
-      kkdfPct: input.kkdfPct ?? 0,
-      bsmvPct: input.bsmvPct ?? 0,
-      customInstalments: input.customInstalments ?? undefined,
-    });
-    if (schedule.rows.length === 0) throw new Error("loan schedule is empty");
-    const loanId = uuid();
-
-    // level payments become one repeating template; varying ones become dated
-    // rows, because no single template can say "a bit less every month"
-    let templateId: string | null = null;
-    if (schedule.level) {
-      const template = await this.createTemplate({
-        name: `${input.name} installment`,
-        accountId: input.accountId,
-        direction: "expense",
-        categoryId: input.categoryId,
-        amount: schedule.installment,
-        frequency: "monthly",
-        startDate: schedule.rows[0].date,
-        endDate: schedule.rows[schedule.rows.length - 1].date,
-        autoComplete: input.autoComplete,
-        loanId,
-      });
-      templateId = template.id;
-    } else {
-      for (const row of schedule.rows) {
-        await this.createTransaction({
-          accountId: input.accountId,
-          direction: "expense",
-          categoryId: input.categoryId,
-          amount: row.payment,
-          status: "planned",
-          dueDate: row.date,
-          description: `${input.name} ${row.n}/${schedule.rows.length}`,
-          loanId,
-          fxSnapshot: null,
-        });
-      }
-    }
-
-    const loan: Loan = {
-      id: loanId,
+    const scheduleKind = input.scheduleKind ?? "annuity";
+    const loan: Loan = withDebtDefaults({
+      id: uuid(),
       name: input.name,
       kind: input.kind,
       currency: input.currency,
@@ -760,27 +715,168 @@ export class DemoRepo implements Repo {
       monthlyRatePct: input.monthlyRatePct,
       termMonths: input.termMonths,
       startDate: input.startDate,
-      installment: schedule.installment,
-      scheduleKind: input.scheduleKind ?? "annuity",
+      installment: 0,
+      scheduleKind,
       kkdfPct: input.kkdfPct ?? 0,
       bsmvPct: input.bsmvPct ?? 0,
       customInstalments: input.customInstalments ?? null,
-      recurringTemplateId: templateId,
-      createdAt: now,
-    };
+      recurringTemplateId: null,
+      direction: input.direction ?? "owe",
+      counterparty: input.counterparty ?? null,
+      depositAccountId: input.depositAccountId ?? null,
+      payAccountId: input.accountId,
+      payoffDate: input.payoffDate ?? null,
+      createdAt: new Date().toISOString(),
+    });
+    const schedule = scheduleOf(loan);
+    // "when I can" has no schedule yet; a recurring item brings its own
+    if (schedule.rows.length === 0 && scheduleKind !== "lumpSum" && !input.templateId) throw new Error("loan schedule is empty");
+    loan.installment = schedule.installment;
+    const back = repaymentDirection(loan);
+    const lent = loan.direction === "lent";
+
+    const template = input.templateId ? this.store.templates.find((t) => t.id === input.templateId) : undefined;
+    if (template) {
+      // the recurring item already plans the repayments: it and its rows join the debt as they are
+      template.loanId = loan.id;
+      loan.recurringTemplateId = template.id;
+      for (const t of this.store.transactions) if (t.recurringTemplateId === template.id) t.loanId = loan.id;
+    } else if (scheduleKind !== "lumpSum" && schedule.level) {
+      // level payments become one repeating template; varying ones become dated
+      // rows, because no single template can say "a bit less every month"
+      const created = await this.createTemplate({
+        name: `${input.name} installment`,
+        accountId: input.accountId,
+        direction: back,
+        categoryId: lent ? null : input.categoryId,
+        amount: schedule.installment,
+        frequency: "monthly",
+        startDate: schedule.rows[0].date,
+        endDate: schedule.rows[schedule.rows.length - 1].date,
+        autoComplete: input.autoComplete,
+        loanId: loan.id,
+      });
+      loan.recurringTemplateId = created.id;
+    } else if (scheduleKind !== "lumpSum") {
+      for (const row of schedule.rows) {
+        await this.createTransaction({
+          accountId: input.accountId,
+          direction: back,
+          categoryId: lent ? null : input.categoryId,
+          amount: row.payment,
+          status: "planned",
+          dueDate: row.date,
+          description: `${input.name} ${row.n}/${schedule.rows.length}`,
+          loanId: loan.id,
+          fxSnapshot: null,
+          ...(lent ? { loanPrincipal: true } : {}),
+        });
+      }
+    }
+
+    // the money itself: a row already on the ledger, or a new one on the deposit account
+    const received = input.receivedTxId ? this.store.transactions.find((t) => t.id === input.receivedTxId) : undefined;
+    if (received) {
+      received.loanId = loan.id;
+      received.loanPrincipal = true;
+    } else if (input.depositAccountId) {
+      const happened = input.startDate <= todayISO();
+      await this.createTransaction({
+        accountId: input.depositAccountId,
+        direction: lent ? "expense" : "income",
+        categoryId: null,
+        amount: input.principal,
+        status: happened ? "completed" : "planned",
+        dueDate: input.startDate,
+        description: input.name,
+        fxSnapshot: happened ? (input.fxSnapshot ?? null) : null,
+        loanId: loan.id,
+        loanPrincipal: true,
+      });
+    }
+
     this.store.loans.push(loan);
     this.save();
-    return loan;
+    // one payment on a date: planned like any re-plan
+    if (scheduleKind === "lumpSum") await this.replanLoan(loan);
+    return copy(loan);
   }
 
-  async deleteLoan(id: string): Promise<void> {
+  async updateLoan(id: string, patch: LoanPatch): Promise<void> {
+    const loan = this.store.loans.find((l) => l.id === id);
+    if (!loan) return;
+    const current = withDebtDefaults(loan);
+    const next: Loan = { ...current };
+    for (const key of Object.keys(patch) as (keyof LoanPatch)[]) {
+      if (patch[key] !== undefined) (next as unknown as Record<string, unknown>)[key] = patch[key];
+    }
+    const back = repaymentDirection(next);
+    // the paying account carries what's still planned, the recurring item included
+    if (next.payAccountId && next.payAccountId !== current.payAccountId) {
+      for (const t of this.store.transactions) {
+        if (t.loanId === id && t.status === "planned" && t.direction === back) t.accountId = next.payAccountId;
+      }
+      const template = this.store.templates.find((t) => t.id === next.recurringTemplateId);
+      if (template) template.accountId = next.payAccountId;
+    }
+    // the money's own row follows its account
+    if (next.depositAccountId && next.depositAccountId !== current.depositAccountId) {
+      for (const t of this.store.transactions) if (t.loanId === id && t.direction !== back) t.accountId = next.depositAccountId;
+    }
+    Object.assign(loan, next);
+    this.save();
+    if ("payoffDate" in patch) await this.replanLoan(next);
+  }
+
+  /** Applies replanRepayments: what's planned from here on, the recurring item's end with it. */
+  private async replanLoan(loan: Loan): Promise<void> {
+    const plan = replanRepayments(loan, this.store.transactions, todayISO());
+    const template = this.store.templates.find((t) => t.id === loan.recurringTemplateId);
+    const { repayments } = debtRows(loan, this.store.transactions);
+    // a new row pays from where the debt is paid, filed where its repayments are
+    const payFrom = loan.payAccountId ?? template?.accountId ?? repayments[0]?.accountId ?? null;
+    const categoryId = repayments.find((t) => t.categoryId)?.categoryId ?? template?.categoryId ?? null;
+    const remove = new Set(plan.remove);
+    this.store.transactions = this.store.transactions.filter((t) => !remove.has(t.id));
+    this.save();
+    if (template && plan.templateEnd !== undefined && plan.templateEnd !== template.endDate) {
+      await this.updateTemplate(template.id, { endDate: plan.templateEnd });
+    }
+    if (!payFrom) return;
+    for (const row of plan.add) {
+      await this.createTransaction({
+        accountId: payFrom,
+        direction: repaymentDirection(loan),
+        categoryId: loan.direction === "lent" ? null : categoryId,
+        amount: row.amount,
+        status: "planned",
+        dueDate: row.dueDate,
+        description: row.description,
+        loanId: loan.id,
+        fxSnapshot: null,
+        ...(loan.direction === "lent" ? { loanPrincipal: true } : {}),
+      });
+    }
+  }
+
+  async deleteLoan(id: string, keepRows = false): Promise<void> {
     const loan = this.store.loans.find((l) => l.id === id);
     this.store.loans = this.store.loans.filter((l) => l.id !== id);
-    if (loan?.recurringTemplateId) await this.deleteTemplate(loan.recurringTemplateId, true);
-    // unpaid rows only: a deleted loan must not rewrite what already left
-    this.store.transactions = this.store.transactions.filter(
-      (tx) => !(tx.loanId === id && tx.status === "planned")
-    );
+    const template = this.store.templates.find((t) => t.id === loan?.recurringTemplateId);
+    if (keepRows) {
+      if (template) template.loanId = null;
+    } else {
+      if (template) await this.deleteTemplate(template.id, true);
+      // unpaid rows only: a deleted loan must not rewrite what already left
+      this.store.transactions = this.store.transactions.filter((tx) => !(tx.loanId === id && tx.status === "planned"));
+    }
+    // what stays loses the link, as Supabase's "on delete set null" does, and
+    // with it the debt's say over whether it's income
+    for (const t of this.store.transactions) {
+      if (t.loanId !== id) continue;
+      t.loanId = null;
+      delete t.loanPrincipal;
+    }
     this.save();
   }
 

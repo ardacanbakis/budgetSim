@@ -188,7 +188,8 @@ test.describe("Debt split", () => {
     await expect(page.getByRole("status").filter({ hasText: "Now tracking Flat loan." })).toBeVisible();
     await page.getByRole("link", { name: "See it in Portfolio → Debts" }).click();
     await expect(page).toHaveURL(/\/accounts\?view=debts&loan=[^&]+$/);
-    await expect(page.locator("[data-loan-pane]").getByText("Flat loan")).toBeVisible();
+    // the pane's title (its rows and changes name it too)
+    await expect(page.locator("[data-loan-pane]").getByText("Flat loan").first()).toBeVisible();
 
     // and the Debts view leads back to the simulator
     await page.getByRole("link", { name: /Loan simulator/ }).click();
@@ -208,7 +209,7 @@ test.describe("Debt split", () => {
     await page.goto("/transactions?tab=recurring");
     await page.getByRole("link", { name: /Linked to loan/ }).first().click();
     await expect(page).toHaveURL(/\/accounts\?view=debts&loan=[^&]+$/);
-    await expect(page.locator("[data-loan-pane]").getByText(CAR_LOAN)).toBeVisible();
+    await expect(page.locator("[data-loan-pane]").getByText(CAR_LOAN).first()).toBeVisible();
   });
 
   test("in Pocket, /loans opens the Debts segment without changing the device's choice, and a loan has a page", async ({ page }) => {

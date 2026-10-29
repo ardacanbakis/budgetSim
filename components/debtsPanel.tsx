@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { DebtModal, DeleteDebtModal, RecordDebtPaymentModal } from "@/components/debtModal";
+import { EntityChanges } from "@/components/history";
+import { PayoffSuggestionCard } from "@/components/payoffSuggestion";
 import { Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { PlanCard } from "@/components/plannerCard";
-import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAppMutation, useLoans, useRates, useTransactions } from "@/lib/data/queries";
+import { useApp } from "@/lib/data/provider";
+import { useAccounts, useLoans, useRates, useTransactions } from "@/lib/data/queries";
 import { Loan } from "@/lib/data/types";
 import { Currency, formatAmount } from "@/lib/domain/currencies";
-import { DebtOverview, loanProgress } from "@/lib/domain/debt";
+import { DebtOverview, debtRows, loanProgress } from "@/lib/domain/debt";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
-import { loanHref } from "@/lib/ui/portfolioUrl";
+import { loanHref, portfolioHref } from "@/lib/ui/portfolioUrl";
+import { replaceQuery } from "@/lib/ui/shallowUrl";
 
 /**
  * What the old Debt page held besides its simulator, now in the Portfolio's
@@ -33,7 +37,7 @@ import { loanHref } from "@/lib/ui/portfolioUrl";
 
 export const SIMULATOR_HREF = "/planner?tab=loan";
 
-const KIND_ICON: Record<Loan["kind"], string> = { house: "🏠", car: "🚗", other: "📄" };
+const KIND_ICON: Record<Loan["kind"], string> = { house: "🏠", car: "🚗", other: "📄", personal: "🤝" };
 
 export function loanIcon(loan: Pick<Loan, "kind">): string {
   return KIND_ICON[loan.kind] ?? KIND_ICON.other;
@@ -42,6 +46,7 @@ export function loanIcon(loan: Pick<Loan, "kind">): string {
 export function DebtSummary({ overview, display }: { overview: DebtOverview | null; display: Currency }) {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
+  const [creating, setCreating] = useState(false);
   const target = overview?.avalancheTarget ?? null;
   return (
     <div className="space-y-3" data-debt-summary>
@@ -53,6 +58,11 @@ export function DebtSummary({ overview, display }: { overview: DebtOverview | nu
           <div className="mt-1 text-2xl font-bold tabular-nums text-red-600">
             {overview ? formatAmount(overview.totalInDisplay, display, locale) : "—"}
           </div>
+          {overview && overview.lentInDisplay > 0 ? (
+            <div className="mt-1 text-xs text-zinc-500" data-owed-to-you>
+              {t("debts.owedToYou")}: <span className="font-semibold tabular-nums text-green-600">{formatAmount(overview.lentInDisplay, display, locale)}</span>
+            </div>
+          ) : null}
         </Card>
         <Card className="p-4">
           <div className="text-xs text-zinc-500">{t("debt.debtFree")}</div>
@@ -68,7 +78,10 @@ export function DebtSummary({ overview, display }: { overview: DebtOverview | nu
         </Card>
       </div>
       <div className="flex flex-wrap gap-2">
-        {/* a loan is tracked from a simulation: the shape you simulated is the shape that's filed */}
+        <Button variant="primary" onClick={() => setCreating(true)}>
+          + {t("debts.newDebt")}
+        </Button>
+        {/* a bank loan is tracked from a simulation: the shape you simulated is the shape that's filed */}
         <Link
           href={SIMULATOR_HREF}
           className="inline-flex items-center rounded-lg border border-[var(--edge)] bg-[var(--surface)] px-3 py-1.5 text-sm font-medium hover:border-teal-500/40"
@@ -82,7 +95,66 @@ export function DebtSummary({ overview, display }: { overview: DebtOverview | nu
           {t("pages.loanSimulator")} →
         </Link>
       </div>
+      <DebtModal open={creating} onClose={() => setCreating(false)} onSaved={(id) => replaceQuery(portfolioHref({ view: "debts", loan: id }))} />
     </div>
+  );
+}
+
+/** Planned repayments listed ahead of what's paid; the schedule below has the rest. */
+const NEXT_PLANNED = 3;
+
+/**
+ * A debt's own rows: the next few repayments still planned (soonest first),
+ * then what's happened, newest first: repayments made and the money borrowed
+ * or lent. Each says what it is without repeating the debt's name.
+ */
+function DebtRows({ loan }: { loan: Loan }) {
+  const { t, locale } = useI18n();
+  const fmtDate = useFormatDate();
+  const transactions = useTransactions();
+  const accounts = useAccounts();
+  const { money, repayments } = debtRows(loan, transactions.data ?? []);
+  const planned = repayments.filter((r) => r.status === "planned").sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const happened = [...money, ...repayments.filter((r) => r.status === "completed")].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  const rows = [...planned.slice(0, NEXT_PLANNED), ...happened];
+  const more = planned.length - NEXT_PLANNED;
+  const label = (description: string) => {
+    const rest = description.startsWith(loan.name) ? description.slice(loan.name.length).trim() : description.trim();
+    return rest || t("debts.payment");
+  };
+  const currencyOf = (id: string) => accounts.data?.find((a) => a.id === id)?.currency ?? loan.currency;
+  const nameOf = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? "—";
+  return (
+    <section className="space-y-1.5 border-t border-[var(--edge-soft)] p-4" data-debt-rows>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{t("debts.payments")}</h3>
+      {repayments.every((r) => r.status !== "completed") ? <p className="text-xs text-zinc-400">{t("debts.noPayments")}</p> : null}
+      <ul className="space-y-1">
+        {rows.map((r) => {
+          const isMoney = money.includes(r);
+          return (
+            <li key={r.id} className="flex items-baseline justify-between gap-2 text-sm" data-debt-row-status={r.status}>
+              <span className="min-w-0 truncate">
+                {r.status === "completed" ? <span aria-label={t("pages.paid")}>✓ </span> : null}
+                {isMoney ? (loan.direction === "lent" ? t("debts.moneyLent") : t("debts.moneyBorrowed")) : label(r.description)}
+                <span className="ml-2 text-[11px] text-zinc-400">
+                  {fmtDate(r.dueDate)} · {nameOf(r.accountId)}
+                </span>
+                {r.status === "planned" ? (
+                  <span className="ml-1.5">
+                    <Badge tone="zinc">{t("tx.planned")}</Badge>
+                  </span>
+                ) : null}
+              </span>
+              <span className={`shrink-0 tabular-nums ${r.direction === "income" ? "text-green-600" : ""}`}>
+                {r.direction === "income" ? "+" : "−"}
+                {formatAmount(r.amount, currencyOf(r.accountId), locale)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {more > 0 ? <p className="text-xs text-zinc-400">{t("debts.morePlanned", { count: more })}</p> : null}
+    </section>
   );
 }
 
@@ -99,99 +171,138 @@ export function LoanPane({
 }) {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
-  const repo = useRepo();
   const transactions = useTransactions();
-  const deleteLoan = useAppMutation((id: string) => repo.deleteLoan(id), [KEYS.loans, KEYS.templates, KEYS.transactions]);
+  const accounts = useAccounts();
+  const [editing, setEditing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const progress = useMemo(() => loanProgress(loan, transactions.data ?? []), [loan, transactions.data]);
-  const { schedule, paid, term, remaining, pct, endDate } = progress;
+  const { schedule, paid, term, remaining, pct, endDate, paidAmount, total } = progress;
+  const lent = loan.direction === "lent";
+  const once = loan.scheduleKind === "lumpSum";
   const converted = usdPer && loan.currency !== display ? convert(remaining, loan.currency, display, usdPer) : null;
   const money = (n: number) => formatAmount(n, loan.currency, locale);
+  const sign = lent ? "+" : "−";
+  const nameOf = (id: string | null) => (id ? (accounts.data?.find((a) => a.id === id)?.name ?? "—") : null);
+  const deposit = nameOf(loan.depositAccountId);
+  const pay = nameOf(loan.payAccountId);
 
   return (
     <div data-loan-pane={loan.id}>
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--edge-soft)] p-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-semibold">
               {loanIcon(loan)} {loan.name}
             </span>
             <Badge tone="sky">{t(`loans.${loan.kind}`)}</Badge>
+            <Badge tone={lent ? "green" : "red"}>{lent ? t("debts.lentBadge") : t("debts.oweBadge")}</Badge>
           </div>
-          <div className="mt-1 text-xs text-zinc-500">{t("loans.remaining")}</div>
-          <div className="text-3xl font-bold tabular-nums text-red-600">−{money(remaining)}</div>
+          {loan.counterparty && loan.counterparty !== loan.name ? <div className="text-sm text-zinc-500">{loan.counterparty}</div> : null}
+          <div className="mt-1 text-xs text-zinc-500">{once || !(loan.monthlyRatePct > 0) ? (lent ? t("debts.leftToGet") : t("debts.leftToPay")) : t("loans.remaining")}</div>
+          <div className={`text-3xl font-bold tabular-nums ${lent ? "text-green-600" : "text-red-600"}`} data-debt-remaining>
+            {sign}
+            {money(remaining)}
+          </div>
           {converted != null ? (
-            <div className="text-sm tabular-nums text-zinc-400">≈ −{formatAmount(converted, display, locale)}</div>
+            <div className="text-sm tabular-nums text-zinc-400">
+              ≈ {sign}
+              {formatAmount(converted, display, locale)}
+            </div>
           ) : null}
           <div className="mt-1 text-xs text-zinc-500">
-            {money(loan.installment)}/{t("recurring.monthly").toLowerCase()} · %{loan.monthlyRatePct} {t("debt.perMonth")} ·{" "}
-            {t("planner.runwayMonths", { count: term })}
+            {once
+              ? loan.payoffDate
+                ? t("debts.repayOn", { date: fmtDate(loan.payoffDate) })
+                : t("debts.whenICan")
+              : `${money(loan.installment)}/${t("recurring.monthly").toLowerCase()} · %${loan.monthlyRatePct} ${t("debt.perMonth")} · ${t("planner.runwayMonths", { count: term })}`}
           </div>
+          {deposit || pay ? (
+            <div className="text-xs text-zinc-400">{t("debts.accounts", { deposit: deposit ?? "—", pay: pay ?? "—" })}</div>
+          ) : null}
         </div>
-        <Button
-          variant="danger"
-          disabled={deleteLoan.isPending}
-          onClick={async () => {
-            if (!window.confirm(t("loans.deleteWarning"))) return;
-            await deleteLoan.mutateAsync(loan.id);
-            onDeleted();
-          }}
-        >
-          {t("common.delete")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => setRecording(true)}>
+            {lent ? t("debts.recordBack") : t("debts.recordPayment")}
+          </Button>
+          <Button onClick={() => setEditing(true)}>{t("common.edit")}</Button>
+          <Button variant="danger" onClick={() => setDeleting(true)}>
+            {t("common.delete")}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2 p-4">
         <div className="flex justify-between text-xs text-zinc-500">
-          <span>{t("loans.progress", { paid, term })}</span>
+          <span>
+            {once || !(loan.monthlyRatePct > 0)
+              ? t("debts.paidSoFar", { paid: money(paidAmount), total: money(total) })
+              : t("loans.progress", { paid, term })}
+          </span>
           <span>{pct}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <div className="h-full rounded-full bg-teal-600" style={{ width: `${pct}%` }} />
+          <div className={`h-full rounded-full ${lent ? "bg-green-600" : "bg-teal-600"}`} style={{ width: `${pct}%` }} />
         </div>
-        <div className="flex flex-wrap justify-between gap-2 text-xs text-zinc-500">
-          <span>
-            {t("loans.firstPayment")}: {schedule.rows[0] ? fmtDate(schedule.rows[0].date) : "—"}
-          </span>
-          <span>
-            {t("pages.lastPayment")}: {endDate ? fmtDate(endDate) : "—"}
-          </span>
-        </div>
+        {term > 0 ? (
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-zinc-500">
+            <span>
+              {t("loans.firstPayment")}: {schedule.rows[0] ? fmtDate(schedule.rows[0].date) : "—"}
+            </span>
+            <span>
+              {t("pages.lastPayment")}: {endDate ? fmtDate(endDate) : "—"}
+            </span>
+          </div>
+        ) : null}
       </div>
 
-      <div className="max-h-[50vh] overflow-y-auto border-t border-[var(--edge-soft)] px-4 pb-3">
-        <table className="stack-sm sticky-head w-full text-xs tabular-nums">
-          <thead className="sticky top-0 bg-[var(--surface)]">
-            <tr className="text-left text-zinc-400">
-              <th className="py-1.5 pr-2 font-medium">#</th>
-              <th className="py-1.5 pr-2 font-medium">{t("common.date")}</th>
-              <th className="py-1.5 pr-2 text-right font-medium">{t("loans.installment")}</th>
-              <th className="py-1.5 text-right font-medium">{t("loans.remaining")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {schedule.rows.map((row) => {
-              const done = row.n <= paid;
-              return (
-                <tr key={row.n} data-paid={done || undefined} className={`border-t border-[var(--edge-soft)] ${done ? "text-zinc-400" : ""}`}>
-                  <td className="py-1 pr-2" data-label="#">
-                    {done ? <span aria-label={t("pages.paid")}>✓ </span> : null}
-                    {row.n}
-                  </td>
-                  <td className="py-1 pr-2" data-label={t("common.date")}>
-                    {fmtDate(row.date)}
-                  </td>
-                  <td className="py-1 pr-2 text-right" data-label={t("loans.installment")}>
-                    {money(row.payment)}
-                  </td>
-                  <td className="py-1 text-right" data-label={t("loans.remaining")}>
-                    {money(row.remaining)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <PayoffSuggestionCard loan={loan} />
+      <DebtRows loan={loan} />
+
+      {once || term === 0 ? null : (
+        <div className="max-h-[50vh] overflow-y-auto border-t border-[var(--edge-soft)] px-4 pb-3">
+          <table className="stack-sm sticky-head w-full text-xs tabular-nums">
+            <thead className="sticky top-0 bg-[var(--surface)]">
+              <tr className="text-left text-zinc-400">
+                <th className="py-1.5 pr-2 font-medium">#</th>
+                <th className="py-1.5 pr-2 font-medium">{t("common.date")}</th>
+                <th className="py-1.5 pr-2 text-right font-medium">{t("loans.installment")}</th>
+                <th className="py-1.5 text-right font-medium">{t("loans.remaining")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedule.rows.map((row) => {
+                const done = row.n <= paid;
+                return (
+                  <tr key={row.n} data-paid={done || undefined} className={`border-t border-[var(--edge-soft)] ${done ? "text-zinc-400" : ""}`}>
+                    <td className="py-1 pr-2" data-label="#">
+                      {done ? <span aria-label={t("pages.paid")}>✓ </span> : null}
+                      {row.n}
+                    </td>
+                    <td className="py-1 pr-2" data-label={t("common.date")}>
+                      {fmtDate(row.date)}
+                    </td>
+                    <td className="py-1 pr-2 text-right" data-label={t("loans.installment")}>
+                      {money(row.payment)}
+                    </td>
+                    <td className="py-1 text-right" data-label={t("loans.remaining")}>
+                      {money(row.remaining)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="border-t border-[var(--edge-soft)] p-4">
+        <EntityChanges entityType="loan" entityId={loan.id} />
       </div>
+
+      <DebtModal open={editing} onClose={() => setEditing(false)} editing={loan} />
+      <RecordDebtPaymentModal loan={loan} open={recording} onClose={() => setRecording(false)} />
+      <DeleteDebtModal loan={loan} open={deleting} onClose={() => setDeleting(false)} onDeleted={onDeleted} />
     </div>
   );
 }

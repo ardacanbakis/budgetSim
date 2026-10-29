@@ -6,6 +6,7 @@ import * as pocketHome from "./pocket/home";
 import * as pocketActivity from "./pocket/activity";
 import * as pocketTimeline from "./pocket/timeline";
 import * as timeline from "./timeline";
+import * as debts from "./debts";
 import * as pocketPortfolio from "./pocket/portfolio";
 import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
@@ -517,6 +518,7 @@ export const en = {
     filterDirection: "Direction",
   },
   timeline: timeline.en,
+  debts: debts.en,
   transfer: {
     title: "Transfer between accounts",
     from: "From",
@@ -739,6 +741,7 @@ export const en = {
     remaining: "Remaining principal",
     progress: "Paid {paid} of {term} installments",
     kind: "Type",
+    personal: "Person",
     house: "House",
     car: "Car",
     other: "Other",
@@ -1095,6 +1098,11 @@ export const en = {
       usd: "USD",
       accounts: "Accounts",
       transactions: "Transactions",
+      kind: "Type",
+      counterparty: "Who",
+      depositAccountId: "Money's account",
+      payAccountId: "Repaid from",
+      payoffDate: "Repay on",
     },
   },
   datacheck: {
@@ -1140,7 +1148,7 @@ export const en = {
     hint_oldUnpaidSession: "Paid and not marked, or still owed to you? Mark them paid or chase them up.",
     borrowedAsIncome: "{amount} on {account} looks like borrowed money booked as income",
     short_borrowedAsIncome: "Borrowed?",
-    hint_borrowedAsIncome: "A loan or cash advance isn't income: it makes your income look bigger. Move it to Debts once Debts is available.",
+    hint_borrowedAsIncome: "A loan or cash advance isn't income: it makes your income look bigger. Move it to Debts: the money stays where it landed, it stops counting as income, and Debts shows what's left to repay.",
   },
   settings: {
     title: "Settings",
@@ -1701,6 +1709,7 @@ export const tr: Dictionary = {
     filterDirection: "Yön",
   },
   timeline: timeline.tr,
+  debts: debts.tr,
   transfer: {
     title: "Hesaplar arası transfer",
     from: "Kaynak",
@@ -1923,6 +1932,7 @@ export const tr: Dictionary = {
     remaining: "Kalan anapara",
     progress: "{term} taksidin {paid} tanesi ödendi",
     kind: "Tür",
+    personal: "Kişi",
     house: "Konut",
     car: "Taşıt",
     other: "Diğer",
@@ -2279,6 +2289,11 @@ export const tr: Dictionary = {
       usd: "USD",
       accounts: "Hesaplar",
       transactions: "İşlemler",
+      kind: "Tür",
+      counterparty: "Kimden / kime",
+      depositAccountId: "Paranın hesabı",
+      payAccountId: "Ödendiği hesap",
+      payoffDate: "Ödeme tarihi",
     },
   },
   datacheck: {
@@ -2324,7 +2339,7 @@ export const tr: Dictionary = {
     hint_oldUnpaidSession: "Ödendi de işaretlenmedi mi, yoksa hâlâ alacak mısın? Ödendi olarak işaretle ya da takip et.",
     borrowedAsIncome: "{account} üzerindeki {amount}, gelir olarak girilmiş borç gibi görünüyor",
     short_borrowedAsIncome: "Borç mu?",
-    hint_borrowedAsIncome: "Kredi ya da nakit avans gelir değildir: gelirini olduğundan büyük gösterir. Borçlar geldiğinde oraya taşı.",
+    hint_borrowedAsIncome: "Kredi ya da nakit avans gelir değildir: gelirini olduğundan büyük gösterir. Borçlara taşı: para yattığı yerde kalır, gelir sayılmaz ve Borçlar kalanını gösterir.",
   },
   settings: {
     title: "Ayarlar",

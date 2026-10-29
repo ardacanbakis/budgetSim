@@ -82,6 +82,11 @@ describe("computeDebtOverview", () => {
     kkdfPct: 0,
     bsmvPct: 0,
     customInstalments: null,
+    direction: "owe",
+    counterparty: null,
+    depositAccountId: null,
+    payAccountId: null,
+    payoffDate: null,
     recurringTemplateId: null,
     createdAt: "2026-03-01",
   };
@@ -167,6 +172,11 @@ describe("computeDebtOverview: a loan's own schedule", () => {
       kkdfPct: 15,
       bsmvPct: 10,
       customInstalments: null,
+      direction: "owe",
+      counterparty: null,
+      depositAccountId: null,
+      payAccountId: null,
+      payoffDate: null,
       recurringTemplateId: null,
       createdAt: "2026-01-01",
     };

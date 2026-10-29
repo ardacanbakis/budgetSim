@@ -18,7 +18,8 @@ import { convert, UsdPerMap } from "@/lib/domain/fx";
  *     account holding coins, which reads in lira (the Classic page's
  *     figure() rule); its ≈ is the same either way.
  *   - a card's figure is −owed (CardBook.owed), never its ledger balance.
- *   - loans are computeDebtOverview's loan items, at −outstanding.
+ *   - loans are computeDebtOverview's loan items, at −outstanding (what's
+ *     owed to you at +outstanding, after them, and outside the subtotal).
  *   - subtotals convert each account's own balance to the display currency
  *     and skip one with no rate, as computeNetWorth does; null without rates.
  *   - totals.all = computeNetWorth − totalOwed: the Dashboard's net worth
@@ -85,7 +86,7 @@ export interface AccountLine {
 
 export interface LoanLine {
   item: DebtItem;
-  /** −outstanding, in the loan's currency */
+  /** −outstanding (+ for a debt owed to you), in the loan's currency */
   amount: number;
   /** `amount` in the display currency; null without a rate */
   converted: number | null;
@@ -178,15 +179,17 @@ export function sections(input: SectionsInput): PortfolioSections {
   );
   const cards = section(open.filter((l) => l.account.kind === "credit_card"), hideEmpty, rated);
 
+  // what you owe first, then what's owed to you, which adds
   const loanRows: LoanLine[] = (debt?.items ?? [])
     .filter((i) => i.kind === "loan")
-    .map((item) => ({
-      item,
-      amount: -item.outstanding,
-      converted: usdPer ? convert(-item.outstanding, item.currency, display, usdPer) : null,
-    }));
+    .sort((a, b) => Number(a.direction === "lent") - Number(b.direction === "lent"))
+    .map((item) => {
+      const amount = item.direction === "lent" ? item.outstanding : -item.outstanding;
+      return { item, amount, converted: usdPer ? convert(amount, item.currency, display, usdPer) : null };
+    });
+  // the subtotal is what's owed, as the Debts total is
   let loanTotal = 0;
-  for (const l of loanRows) if (l.converted != null) loanTotal += l.converted;
+  for (const l of loanRows) if (l.converted != null && l.item.direction !== "lent") loanTotal += l.converted;
   const loans = { rows: loanRows, subtotal: rated && debt ? loanTotal : null };
 
   const archived = accounts.filter((a) => a.archived).map((a) => accountLine(a, input));

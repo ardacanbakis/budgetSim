@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { ReactNode, Suspense, useEffect, useId, useMemo, useState } from "react";
 import { AccountModal } from "@/app/(app)/accounts/page";
+import { DebtModal } from "@/components/debtModal";
 import { Skeleton } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useLoans } from "@/lib/data/queries";
@@ -139,6 +140,7 @@ function PortfolioList({ urlView }: { urlView: PortfolioSegment | null }) {
   };
   const [archivedOpen, setArchivedOpen] = usePocketFlag(ARCHIVED_OPEN_KEY);
   const [creating, setCreating] = useState(false);
+  const [creatingDebt, setCreatingDebt] = useState(false);
   const archivedId = useId();
 
   const createAccount = useAppMutation((input: NewAccount) => repo.createAccount(input), [KEYS.accounts]);
@@ -324,6 +326,19 @@ function PortfolioList({ urlView }: { urlView: PortfolioSegment | null }) {
 
       {shown.map(sectionCard)}
 
+      {seg === "debts" ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setCreatingDebt(true)}
+          className={`${cardClass} flex min-h-[48px] w-full items-center justify-center gap-2 text-[15px] font-medium text-teal-600 active:bg-[var(--edge-soft)] dark:text-teal-400`}
+        >
+          <Icon name="plus" size={18} />
+          {t("debts.newDebt")}
+        </button>
+      ) : null}
+      <DebtModal open={creatingDebt} onClose={() => setCreatingDebt(false)} onSaved={(id) => openLoan(id, urlView)} />
+
       {!anyShown ? (
         <p className={`${cardClass} px-4 py-4 text-sm text-zinc-500 dark:text-zinc-400`}>{t("portfolio.noHistory")}</p>
       ) : null}
@@ -426,7 +441,15 @@ function LoanRow({ line, base, onOpen }: { line: LoanLine; base: PortfolioBase; 
       onClick={() => onOpen(item.id)}
       leading={<LoanAvatar />}
       title={item.name}
-      meta={item.endDate ? t("pocket.portfolio.debtFree", { date: monthLabel(item.endDate.slice(0, 7), locale) }) : item.currency}
+      meta={
+        item.direction === "lent"
+          ? item.endDate
+            ? `${t("debts.lentBadge")} · ${monthLabel(item.endDate.slice(0, 7), locale)}`
+            : t("debts.lentBadge")
+          : item.endDate
+            ? t("pocket.portfolio.debtFree", { date: monthLabel(item.endDate.slice(0, 7), locale) })
+            : t("debts.whenICan")
+      }
       chevron
       trailing={
         <>

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ReactNode, useId, useMemo, useState } from "react";
+import { DebtModal } from "@/components/debtModal";
 import { TemplateModal } from "@/components/recurringTab";
 import { EmptyState } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -117,6 +118,7 @@ export function PocketRecurring({
   const [opened, setOpened] = useState<RecurringTemplate | null>(null);
   const [paying, setPaying] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<RecurringTemplate | null>(null);
+  const [moving, setMoving] = useState<RecurringTemplate | null>(null);
   const [finishedOpen, setFinishedOpen] = useState(false);
   const finishedId = useId();
   const today = todayISO();
@@ -165,27 +167,35 @@ export function PocketRecurring({
   };
 
   const form = (
-    <TemplateModal
-      open={creating || editing != null}
-      initial={editing}
-      onClose={closeForm}
-      onSave={async (input, backfill) => {
-        if (editing) await updateTemplate.mutateAsync({ id: editing.id, patch: input });
-        else await createTemplate.mutateAsync({ input, backfill });
-        closeForm();
-        showSnack(t("pocket.saved"));
-      }}
-      onDelete={
-        editing
-          ? async () => {
-              // one sheet at a time: the form gives way to the question
-              const tpl = editing;
-              closeForm();
-              setDeleting(tpl);
-            }
-          : undefined
-      }
-    />
+    <>
+      <TemplateModal
+        open={creating || editing != null}
+        initial={editing}
+        onClose={closeForm}
+        onSave={async (input, backfill) => {
+          if (editing) await updateTemplate.mutateAsync({ id: editing.id, patch: input });
+          else await createTemplate.mutateAsync({ input, backfill });
+          closeForm();
+          showSnack(t("pocket.saved"));
+        }}
+        onDelete={
+          editing
+            ? async () => {
+                // one sheet at a time: the form gives way to the question
+                const tpl = editing;
+                closeForm();
+                setDeleting(tpl);
+              }
+            : undefined
+        }
+        onMoveToDebts={() => {
+          const tpl = editing;
+          closeForm();
+          setMoving(tpl);
+        }}
+      />
+      <DebtModal open={moving != null} onClose={() => setMoving(null)} from={moving ? { kind: "template", template: moving } : null} />
+    </>
   );
 
   if (templates.isLoading || accounts.isLoading || transactions.isLoading) {

@@ -40,8 +40,12 @@ export function useChangeText() {
     const value = (field: string, v: unknown): string => {
       if (v == null || v === "") return "—";
       if (MONEY.has(field) && typeof v === "number") return formatAmount(field === "usd" ? v : Math.abs(v), field === "usd" ? "USD" : currency, locale);
-      if (field === "dueDate" || field === "startDate" || field === "endDate" || field === "firstDue") return fmtDate(String(v));
-      if (field === "accountId" || field === "paymentAccountId") return accountById.get(String(v))?.name ?? "—";
+      if (field === "dueDate" || field === "startDate" || field === "endDate" || field === "firstDue" || field === "payoffDate") return fmtDate(String(v));
+      if (field === "accountId" || field === "paymentAccountId" || field === "depositAccountId" || field === "payAccountId") {
+        return accountById.get(String(v))?.name ?? "—";
+      }
+      if (entry.entityType === "loan" && field === "kind") return t(`loans.${String(v)}`);
+      if (entry.entityType === "loan" && field === "direction") return v === "lent" ? t("debts.lentBadge") : t("debts.oweBadge");
       if (field === "categoryId") return categoryById.get(String(v))?.name ?? "—";
       if (typeof v === "boolean") return v ? t("history.yes") : t("history.no");
       return String(v);

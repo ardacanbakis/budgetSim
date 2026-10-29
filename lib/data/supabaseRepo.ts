@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FxSnapshot } from "@/lib/domain/fx";
-import { buildSchedule } from "@/lib/domain/loanSchedule";
+import { debtRows, repaymentDirection, replanRepayments, scheduleOf, withDebtDefaults } from "@/lib/domain/debt";
 import {
   computeMissingOccurrences,
   findAutoCompletable,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/domain/materialize";
 import {
   BackupFile,
+  LoanPatch,
   MarkPaidInput,
   NewAccount,
   NewLoan,
@@ -103,6 +104,8 @@ const txFromRow = (r: Row): Transaction => ({
   legacy: r.legacy ?? false,
   // absent before migration 0016
   adjustment: r.adjustment === true,
+  // absent before migration 0019
+  ...(r.loan_principal === true ? { loanPrincipal: true } : {}),
   createdAt: r.created_at,
 });
 
@@ -144,7 +147,7 @@ const payoutFromRow = (r: Row): VictvsPayout => ({
   createdAt: r.created_at,
 });
 
-const loanFromRow = (r: Row): Loan => ({
+const loanFromRow = (r: Row): Loan => withDebtDefaults({
   id: r.id,
   name: r.name,
   kind: r.kind,
@@ -161,6 +164,12 @@ const loanFromRow = (r: Row): Loan => ({
   bsmvPct: Number(r.bsmv_pct ?? 0),
   customInstalments: Array.isArray(r.custom_instalments) ? (r.custom_instalments as number[]) : null,
   recurringTemplateId: r.recurring_template_id,
+  // absent before migration 0019: a debt you owe, nothing else known
+  direction: r.direction,
+  counterparty: r.counterparty,
+  depositAccountId: r.deposit_account_id,
+  payAccountId: r.pay_account_id,
+  payoffDate: r.payoff_date,
   createdAt: r.created_at,
 });
 
@@ -347,6 +356,8 @@ export class SupabaseRepo implements Repo {
       // sent only when set, so a database without 0016 still saves every
       // other entry; only recording an adjustment needs the migration
       ...(input.adjustment ? { adjustment: true } : {}),
+      // likewise 0019, for the money of a debt
+      ...(input.loanPrincipal ? { loan_principal: true } : {}),
     };
   }
 
@@ -964,19 +975,39 @@ export class SupabaseRepo implements Repo {
   }
 
   async createLoan(input: NewLoan): Promise<Loan> {
-    const schedule = buildSchedule({
-      kind: input.scheduleKind ?? "annuity",
+    const scheduleKind = input.scheduleKind ?? "annuity";
+    const direction = input.direction ?? "owe";
+    const lent = direction === "lent";
+    const draft = withDebtDefaults({
+      id: "",
+      name: input.name,
+      kind: input.kind,
+      currency: input.currency,
       principal: input.principal,
       monthlyRatePct: input.monthlyRatePct,
       termMonths: input.termMonths,
       startDate: input.startDate,
-      currency: input.currency,
+      installment: 0,
+      scheduleKind,
       kkdfPct: input.kkdfPct ?? 0,
       bsmvPct: input.bsmvPct ?? 0,
-      customInstalments: input.customInstalments ?? undefined,
+      customInstalments: input.customInstalments ?? null,
+      recurringTemplateId: null,
+      direction,
+      payoffDate: input.payoffDate ?? null,
+      createdAt: "",
     });
-    if (schedule.rows.length === 0) throw new Error("loan schedule is empty");
+    const schedule = scheduleOf(draft);
+    // "when I can" has no schedule yet; a recurring item brings its own
+    if (schedule.rows.length === 0 && scheduleKind !== "lumpSum" && !input.templateId) throw new Error("loan schedule is empty");
+    const back = repaymentDirection(draft);
 
+    // A debt made on the Debts form needs migration 0019's columns; a loan
+    // tracked from the simulator sends none of them, so it still saves on a
+    // database that hasn't run it.
+    const debtForm =
+      lent || scheduleKind === "lumpSum" || input.counterparty != null || input.depositAccountId != null ||
+      input.receivedTxId != null || input.templateId != null || input.payoffDate != null;
     const { data: loanRow, error: loanError } = await this.db
       .from("loans")
       .insert({
@@ -989,15 +1020,25 @@ export class SupabaseRepo implements Repo {
         term_months: input.termMonths,
         start_date: input.startDate,
         installment: schedule.installment,
-        schedule_kind: input.scheduleKind ?? "annuity",
+        schedule_kind: scheduleKind,
         kkdf_pct: input.kkdfPct ?? 0,
         bsmv_pct: input.bsmvPct ?? 0,
         custom_instalments: input.customInstalments ?? null,
+        ...(debtForm
+          ? {
+              direction,
+              counterparty: input.counterparty ?? null,
+              deposit_account_id: input.depositAccountId ?? null,
+              pay_account_id: input.accountId,
+              payoff_date: input.payoffDate ?? null,
+            }
+          : {}),
       })
       .select()
       .single();
     throwIf(loanError);
     const loanId = loanRow!.id as string;
+    let templateId: string | null = null;
 
     /*
      * A level schedule is one repeating payment, so a recurring template says
@@ -1007,14 +1048,21 @@ export class SupabaseRepo implements Repo {
      * equal-principal loan falls by a little every month — so those are posted
      * as dated rows, one per installment. Both end up as ordinary planned
      * transactions, which is what makes a loan show up in next April whichever
-     * shape it has.
+     * shape it has. A recurring item that already plans the repayments ("Move
+     * to Debts") joins the debt as it is, rows and all.
      */
-    if (schedule.level) {
+    if (input.templateId) {
+      templateId = input.templateId;
+      const { error: tplError } = await this.db.from("recurring_templates").update({ loan_id: loanId }).eq("id", templateId);
+      throwIf(tplError);
+      const { error: rowsError } = await this.db.from("transactions").update({ loan_id: loanId }).eq("recurring_template_id", templateId);
+      throwIf(rowsError);
+    } else if (scheduleKind !== "lumpSum" && schedule.level) {
       const template = await this.createTemplate({
         name: `${input.name} installment`,
         accountId: input.accountId,
-        direction: "expense",
-        categoryId: input.categoryId,
+        direction: back,
+        categoryId: lent ? null : input.categoryId,
         amount: schedule.installment,
         frequency: "monthly",
         startDate: schedule.rows[0].date,
@@ -1022,42 +1070,159 @@ export class SupabaseRepo implements Repo {
         autoComplete: input.autoComplete,
         loanId,
       });
-      const { error: linkError } = await this.db
-        .from("loans")
-        .update({ recurring_template_id: template.id })
-        .eq("id", loanId);
+      templateId = template.id;
+    } else if (scheduleKind !== "lumpSum") {
+      const { error: rowsError } = await this.db.from("transactions").insert(
+        schedule.rows.map((row) =>
+          this.txInsertRow({
+            accountId: input.accountId,
+            direction: back,
+            categoryId: lent ? null : input.categoryId,
+            amount: row.payment,
+            status: "planned",
+            dueDate: row.date,
+            description: `${input.name} ${row.n}/${schedule.rows.length}`,
+            loanId,
+            fxSnapshot: null,
+            loanPrincipal: lent,
+          })
+        )
+      );
+      throwIf(rowsError);
+    }
+    if (templateId) {
+      const { error: linkError } = await this.db.from("loans").update({ recurring_template_id: templateId }).eq("id", loanId);
       throwIf(linkError);
-      return { ...loanFromRow(loanRow!), recurringTemplateId: template.id };
     }
 
-    const { error: rowsError } = await this.db.from("transactions").insert(
-      schedule.rows.map((row) => ({
-        user_id: this.userId,
-        account_id: input.accountId,
-        direction: "expense",
-        category_id: input.categoryId,
-        amount: row.payment,
-        status: "planned",
-        due_date: row.date,
-        description: `${input.name} ${row.n}/${schedule.rows.length}`,
-        loan_id: loanId,
-      }))
-    );
-    throwIf(rowsError);
-    return loanFromRow(loanRow!);
+    // the money itself: a row already on the ledger, or a new one on the deposit account
+    if (input.receivedTxId) {
+      const { error } = await this.db.from("transactions").update({ loan_id: loanId, loan_principal: true }).eq("id", input.receivedTxId);
+      throwIf(error);
+    } else if (input.depositAccountId) {
+      const happened = input.startDate <= todayISO();
+      await this.createTransaction({
+        accountId: input.depositAccountId,
+        direction: lent ? "expense" : "income",
+        categoryId: null,
+        amount: input.principal,
+        status: happened ? "completed" : "planned",
+        dueDate: input.startDate,
+        description: input.name,
+        fxSnapshot: happened ? (input.fxSnapshot ?? null) : null,
+        loanId,
+        loanPrincipal: true,
+      });
+    }
+
+    const loan = { ...loanFromRow(loanRow!), recurringTemplateId: templateId };
+    // one payment on a date: planned like any re-plan
+    if (scheduleKind === "lumpSum") await this.replanLoan(loan);
+    return loan;
   }
 
-  async deleteLoan(id: string): Promise<void> {
+  async updateLoan(id: string, patch: LoanPatch): Promise<void> {
+    const current = (await this.listLoans()).find((l) => l.id === id);
+    if (!current) return;
+    const row: Row = {};
+    if (patch.name !== undefined) row.name = patch.name;
+    if (patch.kind !== undefined) row.kind = patch.kind;
+    if (patch.counterparty !== undefined) row.counterparty = patch.counterparty;
+    if (patch.depositAccountId !== undefined) row.deposit_account_id = patch.depositAccountId;
+    if (patch.payAccountId !== undefined) row.pay_account_id = patch.payAccountId;
+    if (patch.payoffDate !== undefined) row.payoff_date = patch.payoffDate;
+    if (Object.keys(row).length > 0) {
+      const { error } = await this.db.from("loans").update(row).eq("id", id);
+      throwIf(error);
+    }
+    const next: Loan = { ...current };
+    for (const key of Object.keys(patch) as (keyof LoanPatch)[]) {
+      if (patch[key] !== undefined) (next as unknown as Record<string, unknown>)[key] = patch[key];
+    }
+    const back = repaymentDirection(next);
+    // the paying account carries what's still planned, the recurring item included
+    if (next.payAccountId && next.payAccountId !== current.payAccountId) {
+      const { error } = await this.db
+        .from("transactions")
+        .update({ account_id: next.payAccountId })
+        .eq("loan_id", id)
+        .eq("status", "planned")
+        .eq("direction", back);
+      throwIf(error);
+      if (next.recurringTemplateId) {
+        const { error: tplError } = await this.db.from("recurring_templates").update({ account_id: next.payAccountId }).eq("id", next.recurringTemplateId);
+        throwIf(tplError);
+      }
+    }
+    // the money's own row follows its account
+    if (next.depositAccountId && next.depositAccountId !== current.depositAccountId) {
+      const { error } = await this.db
+        .from("transactions")
+        .update({ account_id: next.depositAccountId })
+        .eq("loan_id", id)
+        .neq("direction", back);
+      throwIf(error);
+    }
+    if ("payoffDate" in patch) await this.replanLoan(next);
+  }
+
+  /** Applies replanRepayments: what's planned from here on, the recurring item's end with it. */
+  private async replanLoan(loan: Loan): Promise<void> {
+    const transactions = await this.listTransactions();
+    const plan = replanRepayments(loan, transactions, todayISO());
+    const template = loan.recurringTemplateId ? (await this.listTemplates()).find((t) => t.id === loan.recurringTemplateId) : undefined;
+    const { repayments } = debtRows(loan, transactions);
+    // a new row pays from where the debt is paid, filed where its repayments are
+    const payFrom = loan.payAccountId ?? template?.accountId ?? repayments[0]?.accountId ?? null;
+    const categoryId = repayments.find((t) => t.categoryId)?.categoryId ?? template?.categoryId ?? null;
+    if (plan.remove.length > 0) {
+      const { error } = await this.db.from("transactions").delete().in("id", plan.remove);
+      throwIf(error);
+    }
+    if (template && plan.templateEnd !== undefined && plan.templateEnd !== template.endDate) {
+      await this.updateTemplate(template.id, { endDate: plan.templateEnd });
+    }
+    if (!payFrom || plan.add.length === 0) return;
+    const lent = loan.direction === "lent";
+    const { error } = await this.db.from("transactions").insert(
+      plan.add.map((row) =>
+        this.txInsertRow({
+          accountId: payFrom,
+          direction: repaymentDirection(loan),
+          categoryId: lent ? null : categoryId,
+          amount: row.amount,
+          status: "planned",
+          dueDate: row.dueDate,
+          description: row.description,
+          loanId: loan.id,
+          fxSnapshot: null,
+          loanPrincipal: lent,
+        })
+      )
+    );
+    throwIf(error);
+  }
+
+  async deleteLoan(id: string, keepRows = false): Promise<void> {
     const { data: loan } = await this.db.from("loans").select("recurring_template_id").eq("id", id).single();
-    if (loan?.recurring_template_id) await this.deleteTemplate(loan.recurring_template_id, true);
-    // dated rows for a varying schedule: only the unpaid ones go, so a
-    // deleted loan does not rewrite what already left the account
-    const { error: txError } = await this.db
-      .from("transactions")
-      .delete()
-      .eq("loan_id", id)
-      .eq("status", "planned");
-    throwIf(txError);
+    if (keepRows) {
+      // the item's link to the loan cascades on delete: unlink it first, so it stays
+      const { error } = await this.db.from("recurring_templates").update({ loan_id: null }).eq("loan_id", id);
+      throwIf(error);
+    } else {
+      if (loan?.recurring_template_id) await this.deleteTemplate(loan.recurring_template_id, true);
+      // dated rows for a varying schedule: only the unpaid ones go, so a
+      // deleted loan does not rewrite what already left the account
+      const { error: txError } = await this.db
+        .from("transactions")
+        .delete()
+        .eq("loan_id", id)
+        .eq("status", "planned");
+      throwIf(txError);
+    }
+    // what stays loses the debt's say over whether it's income; best effort,
+    // as a database without 0019 has no such flag to clear
+    await this.db.from("transactions").update({ loan_principal: false }).eq("loan_id", id).eq("loan_principal", true);
     const { error } = await this.db.from("loans").delete().eq("id", id);
     throwIf(error);
   }
@@ -1149,6 +1314,14 @@ export class SupabaseRepo implements Repo {
       const { error } = await this.db.from("transactions").select("adjustment").limit(0);
       throwIf(error);
     }
+    // likewise debts (0019): money borrowed or lent, a debt's direction and accounts
+    const debts =
+      backup.transactions.some((t) => t.loanPrincipal) ||
+      backup.loans.some((l) => l.direction === "lent" || l.counterparty || l.depositAccountId || l.payAccountId || l.payoffDate);
+    if (debts) {
+      const { error } = await this.db.from("loans").select("direction").limit(0);
+      throwIf(error);
+    }
     await this.deleteAllData();
     const u = this.userId;
     const insert = async (table: string, rows: Row[]) => {
@@ -1185,10 +1358,19 @@ export class SupabaseRepo implements Repo {
       details: p.details, reflected: p.reflected, category_id: p.categoryId, created_at: p.createdAt,
     })));
     // loans ↔ templates are circular: loans go in without the template link, patched after
+    // every field a loan has: its schedule's shape and levies (0014), and what
+    // makes it a debt (0019) only when it says more than a plain loan you owe
     await insert("loans", backup.loans.map((l) => ({
       id: l.id, user_id: u, name: l.name, kind: l.kind, currency: l.currency, principal: l.principal,
       monthly_rate_pct: l.monthlyRatePct, term_months: l.termMonths, start_date: l.startDate,
       installment: l.installment, created_at: l.createdAt,
+      schedule_kind: l.scheduleKind ?? "annuity", kkdf_pct: l.kkdfPct ?? 0, bsmv_pct: l.bsmvPct ?? 0,
+      custom_instalments: l.customInstalments ?? null,
+      ...(l.direction === "lent" ? { direction: "lent" } : {}),
+      ...(l.counterparty ? { counterparty: l.counterparty } : {}),
+      ...(l.depositAccountId ? { deposit_account_id: l.depositAccountId } : {}),
+      ...(l.payAccountId ? { pay_account_id: l.payAccountId } : {}),
+      ...(l.payoffDate ? { payoff_date: l.payoffDate } : {}),
     })));
     await insert("recurring_templates", backup.templates.map((tpl) => ({
       id: tpl.id, user_id: u, name: tpl.name, account_id: tpl.accountId, direction: tpl.direction,
@@ -1213,6 +1395,7 @@ export class SupabaseRepo implements Repo {
       transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
       loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
       ...(t.adjustment ? { adjustment: true } : {}),
+      ...(t.loanPrincipal ? { loan_principal: true } : {}),
     })));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {
@@ -1223,6 +1406,7 @@ export class SupabaseRepo implements Repo {
     await insert("victvs_sessions", backup.victvsSessions.map((s) => ({
       id: s.id, user_id: u, date: s.date, session_type: s.sessionType, amount: s.amount, status: s.status,
       payout_id: s.payoutId, notes: s.notes, source: s.source, created_at: s.createdAt,
+      ...(s.sessionNo ? { session_no: s.sessionNo } : {}),
     })));
     await insert("budgets", backup.budgets.map((b) => ({ id: b.id, user_id: u, category_id: b.categoryId, monthly_limit: b.monthlyLimit, currency: b.currency })));
     await insert("goals", backup.goals.map((g) => ({ id: g.id, user_id: u, name: g.name, account_id: g.accountId, target_amount: g.targetAmount, target_date: g.targetDate, created_at: g.createdAt })));

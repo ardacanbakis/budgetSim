@@ -8,7 +8,7 @@ import { EMPTY_PLAN, normalizePlan, Plan } from "@/lib/domain/planner";
 import { todayISO } from "@/lib/domain/recurrence";
 
 /** which scenario this device had open — the plans themselves live server-side */
-const SELECTED_KEY = "renovator-plan-selected";
+export const SELECTED_KEY = "renovator-plan-selected";
 /** the old single device-local plan, imported once and then left alone */
 const LEGACY_PLAN_KEY = "renovator-plan-v1";
 
