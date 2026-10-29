@@ -2640,3 +2640,27 @@ test("cards: an expected statement is noted on the card, the plan pays it, and i
   await row.getByRole("button", { name: "Delete" }).click();
   await expect(row).toContainText("₺99,999.00");
 });
+
+test("portfolio: dollars converted via a middleman land in lira at their rate, with their cut beside the market", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await enterDemo(page);
+  await page.goto("/accounts");
+  await page.getByRole("button", { name: /Wise USD/ }).first().click();
+  await page.getByRole("button", { name: /Convert via middleman/ }).click();
+  const form = page.locator("[data-middleman='Wise USD']");
+  await form.getByLabel("Arrives in").selectOption({ label: "Ziraat TRY (TRY)" });
+  await form.getByLabel(/^Sent/).fill("100");
+  await form.getByLabel(/^Their rate/).fill("40");
+  // sent × their rate, and what that cost against the market
+  await expect(form.getByLabel(/^Arrived/)).toHaveValue("4000");
+  await expect(form.locator("[data-middleman-cut]")).toContainText(/their cut [\d.]+% · ₺/);
+  // what actually arrived wins
+  await form.getByLabel(/^Arrived/).fill("3990");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(form).toHaveCount(0);
+
+  // one transfer: dollars out of Wise, lira into Ziraat
+  await expect(page.locator("[data-account-history]").first()).toContainText("Middleman conversion @ 40");
+  await page.getByRole("button", { name: /Ziraat TRY/ }).first().click();
+  await expect(page.locator("[data-account-history]").first()).toContainText("+₺3,990.00");
+});

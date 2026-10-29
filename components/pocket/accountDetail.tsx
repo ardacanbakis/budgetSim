@@ -7,6 +7,7 @@ import { AccountModal } from "@/app/(app)/accounts/page";
 import { AdjustBalanceModal } from "@/components/adjustBalanceModal";
 import { CardEstimatesEditor } from "@/components/cardEstimates";
 import { CardPaymentModal } from "@/components/cardPaymentModal";
+import { MiddlemanModal, middlemanTargets } from "@/components/middlemanModal";
 import { HoldingsList, HoldingsSummary } from "@/components/goldHoldings";
 import { Badge } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
@@ -277,6 +278,7 @@ export function AccountDetail({ account }: { account: Account }) {
   const [editing, setEditing] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [allUpcoming, setAllUpcoming] = useState(false);
   // the adjustments this account had when the sheet opened: a new one means it saved
   const adjustSeen = useRef<Set<string> | null>(null);
@@ -503,6 +505,19 @@ export function AccountDetail({ account }: { account: Account }) {
               setEditing(true);
             },
           },
+          // foreign cash a middleman turns into lira
+          ...(!account.archived && account.kind === "fiat" && middlemanTargets(account, base.accounts ?? []).length > 0
+            ? [
+                {
+                  label: t("middleman.button"),
+                  icon: "transfer" as const,
+                  onSelect: () => {
+                    setMore(false);
+                    setConverting(true);
+                  },
+                },
+              ]
+            : []),
           {
             label: account.archived ? t("accounts.unarchive") : t("accounts.archive"),
             icon: account.archived ? "undo" : "eyeOff",
@@ -544,6 +559,8 @@ export function AccountDetail({ account }: { account: Account }) {
       />
 
       <AdjustBalanceModal open={adjusting} account={adjusting ? account : null} balance={balance} onClose={endAdjust} />
+
+      <MiddlemanModal from={converting ? account : null} open={converting} onClose={() => setConverting(false)} />
 
       <CardPaymentModal card={paying ? account : null} suggested={suggested} covers={covers} onClose={() => setPaying(false)} />
     </PocketPage>
