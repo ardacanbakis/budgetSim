@@ -1106,6 +1106,7 @@ export const en = {
     field: {
       name: "Name",
       expected: "Expected statement",
+      purchaseId: "Repaid through",
       amount: "Amount",
       openingBalance: "Opening balance",
       creditLimit: "Limit",
@@ -2332,6 +2333,7 @@ export const tr: Dictionary = {
     field: {
       name: "Ad",
       expected: "Beklenen ekstre",
+      purchaseId: "Geri ödendiği taksitler",
       amount: "Tutar",
       openingBalance: "Açılış bakiyesi",
       creditLimit: "Limit",

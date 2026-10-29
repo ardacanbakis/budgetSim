@@ -8,6 +8,11 @@
  * common.*, pages.lastPayment.
  */
 export const en = {
+  viaCard: "Repaid through",
+  viaCardOwn: "Its own payments",
+  viaCardHint: "A cash advance on a card is repaid by that card's statements, as a big purchase's installments. Linked to it, the debt plans no payments of its own, and what's left follows the installments.",
+  viaCardLine: "Repaid through {purchase} on {card}",
+  viaCardProgress: "{paid} of {term} installments paid · {amount} of {total}",
   newDebt: "New debt",
   editDebt: "Edit debt",
   owe: "I owe",
@@ -86,6 +91,11 @@ export const en = {
 };
 
 export const tr: typeof en = {
+  viaCard: "Geri ödendiği yer",
+  viaCardOwn: "Kendi ödemeleri",
+  viaCardHint: "Karttan çekilen nakit avans, o kartın ekstreleriyle bir büyük alışverişin taksitleri gibi ödenir. Ona bağlanınca borç kendi ödemesini planlamaz; kalan, taksitleri izler.",
+  viaCardLine: "{card} kartında {purchase} ile ödeniyor",
+  viaCardProgress: "{term} taksitten {paid} ödendi · {total} içinden {amount}",
   newDebt: "Yeni borç",
   editDebt: "Borcu düzenle",
   owe: "Borç aldım",

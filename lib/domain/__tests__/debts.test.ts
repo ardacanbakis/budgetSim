@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Account, Loan, Transaction } from "@/lib/data/types";
+import { Account, Loan, Purchase, Transaction } from "@/lib/data/types";
 import { buildCardBook, isIncome, isSpending } from "../cards";
-import { computeDebtOverview, loanProgress, replanRepayments } from "../debt";
+import { computeDebtOverview, loanProgress, replanRepayments, withDebtDefaults } from "../debt";
 import { suggestPayoff } from "../debtPayoff";
 import { UsdPerMap } from "../fx";
 import { buildSchedule } from "../loanSchedule";
@@ -224,5 +224,57 @@ describe("suggestPayoff", () => {
     // what's left by the month's end: twelve less those due before it
     const months = Number(s.withoutSelling!.month.slice(5)) - 10 + (s.withoutSelling!.month.startsWith("2027") ? 12 : 0);
     expect(s.withoutSelling!.amount).toBe(12000 - months * 1000);
+  });
+});
+
+describe("a debt repaid through a card's installments", () => {
+  const bank = {
+    id: "bank", name: "EnPara TRY", currency: "TRY" as const, kind: "fiat" as const, openingBalance: 0, archived: false,
+    paymentAccountId: null, paymentDay: null, creditLimit: null, createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const card = { ...bank, id: "enpara-cc", name: "CC EnPara", kind: "credit_card" as const, paymentAccountId: "bank", paymentDay: 16 };
+  const purchase: Purchase = {
+    id: "advance", name: "Enpara 12500 Nakit Avans", accountId: "enpara-cc", amount: 12500, purchaseDate: "2026-10-27",
+    installmentCount: 3, firstDue: "2026-11-15", details: "", reflected: true, categoryId: null, createdAt: "2026-10-27T00:00:00.000Z",
+  };
+  const row = (id: string, dueDate: string, amount: number, extra: Partial<Transaction> = {}): Transaction => ({
+    id, accountId: "enpara-cc", direction: "expense", categoryId: null, amount, status: "planned", dueDate, completedAt: null,
+    description: id, fxSnapshot: null, transferGroupId: null, transferMarketRate: null, recurringTemplateId: null, loanId: null,
+    victvsPayoutId: null, purchaseId: "advance", legacy: false, createdAt: "2026-10-27T00:00:00.000Z", ...extra,
+  });
+  const installments = [row("i1", "2026-11-15", 4166.66), row("i2", "2026-12-15", 4166.66), row("i3", "2027-01-15", 4166.68)];
+  const money = row("money", "2026-10-25", 12500, { accountId: "bank", direction: "income", status: "completed", purchaseId: null, loanId: "adv-debt", loanPrincipal: true });
+  // November's statement paid from the bank: covers (1/3)
+  const paid = [
+    row("p-out", "2026-11-16", 4166.66, { accountId: "bank", purchaseId: null, transferGroupId: "g1", status: "completed" }),
+    row("p-in", "2026-11-16", 4166.66, { direction: "income", purchaseId: null, transferGroupId: "g1", status: "completed" }),
+  ];
+  const loan = withDebtDefaults({
+    id: "adv-debt", name: "enpara %0 nakit avans 12.5k", kind: "other", currency: "TRY", principal: 12500, monthlyRatePct: 0,
+    termMonths: 1, startDate: "2026-10-25", installment: 0, scheduleKind: "lumpSum", kkdfPct: 0, bsmvPct: 0, customInstalments: null,
+    recurringTemplateId: null, payAccountId: "bank", purchaseId: "advance", createdAt: "2026-10-29T00:00:00.000Z",
+  });
+
+  it("reads what's left off the installments the card's statements have paid", () => {
+    const transactions = [money, ...installments, ...paid];
+    const via = { purchases: [purchase], book: buildCardBook([bank, card], transactions) };
+    const p = loanProgress(loan, transactions, via);
+    expect([p.paid, p.term, p.paidAmount, p.remaining, p.pct]).toEqual([1, 3, 4166.66, 8333.34, 33]);
+    expect(p.nextDue?.id).toBe("i2");
+    expect(p.endDate).toBe("2027-01-15");
+  });
+
+  it("plans nothing of its own, and isn't counted twice beside its card", () => {
+    const own = row("own", "2026-11-25", 4166.67, { accountId: "bank", purchaseId: null, loanId: "adv-debt" });
+    expect(replanRepayments(loan, [money, own], "2026-10-29")).toEqual({ remove: ["own"], add: [] });
+    const transactions = [money, ...installments];
+    const overview = computeDebtOverview({
+      loans: [loan], accounts: [bank, card], balances: new Map(), transactions,
+      usdPer: { TRY: 0.025, USD: 1, EUR: 1.1, BTC: 100000, XAU_G: 75 }, display: "TRY", today: "2026-10-29", purchases: [purchase],
+    });
+    const debt = overview.items.find((i) => i.id === "adv-debt")!;
+    expect([debt.outstanding, debt.viaCardId]).toEqual([12500, "enpara-cc"]);
+    // the card's 12,500 only
+    expect(overview.totalInDisplay).toBeCloseTo(12500, 2);
   });
 });

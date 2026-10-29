@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Badge, Card, CardHeader, EmptyState, Select, Spinner } from "@/components/ui";
-import { useAccounts, useActivity, useCategories, useTransactions } from "@/lib/data/queries";
+import { useAccounts, useActivity, useCategories, usePurchases, useTransactions } from "@/lib/data/queries";
 import { Account, ActivityEntity, ActivityEntry } from "@/lib/data/types";
 import { HistoryItem, holdingsDiff, lastChange, mergeHistory, moneyRows } from "@/lib/domain/activity";
 import { Currency, formatAmount } from "@/lib/domain/currencies";
@@ -29,6 +29,7 @@ export function useChangeText() {
   const fmtDate = useFormatDate();
   const accounts = useAccounts();
   const categories = useCategories();
+  const purchases = usePurchases();
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data]);
   const categoryById = useMemo(() => new Map((categories.data ?? []).map((c) => [c.id, c])), [categories.data]);
 
@@ -47,6 +48,7 @@ export function useChangeText() {
       if (entry.entityType === "loan" && field === "kind") return t(`loans.${String(v)}`);
       if (entry.entityType === "loan" && field === "direction") return v === "lent" ? t("debts.lentBadge") : t("debts.oweBadge");
       if (field === "categoryId") return categoryById.get(String(v))?.name ?? "—";
+      if (field === "purchaseId") return purchases.data?.find((p) => p.id === v)?.name ?? "—";
       if (typeof v === "boolean") return v ? t("history.yes") : t("history.no");
       return String(v);
     };

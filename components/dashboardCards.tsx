@@ -9,7 +9,7 @@ import { Card, CardHeader, Spinner } from "@/components/ui";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { ChangeLine } from "@/components/history";
 import { useApp } from "@/lib/data/provider";
-import { useActivity, useLoans, useRates, useSnapshots, useTemplates } from "@/lib/data/queries";
+import { useActivity, useLoans, usePurchases, useRates, useSnapshots, useTemplates } from "@/lib/data/queries";
 import { Account } from "@/lib/data/types";
 import { chargeAmount } from "@/lib/domain/cards";
 import { computeDebtOverview } from "@/lib/domain/debt";
@@ -360,6 +360,7 @@ function DebtBody({ d }: { d: DashboardData }) {
   const { displayCurrency } = useApp();
   const fmtDate = useFormatDate();
   const loans = useLoans();
+  const purchases = usePurchases();
   const rates = useRates();
   const usdPer = rates.data?.usdPer;
   const debt = useMemo(
@@ -373,9 +374,10 @@ function DebtBody({ d }: { d: DashboardData }) {
             usdPer,
             display: displayCurrency,
             today: d.today,
+            purchases: purchases.data,
           })
         : null,
-    [loans.data, usdPer, d.accounts, d.balances, d.transactions, displayCurrency, d.today]
+    [loans.data, purchases.data, usdPer, d.accounts, d.balances, d.transactions, displayCurrency, d.today]
   );
   if (!debt) return <Spinner />;
   const owed = debt.items.some((i) => i.direction === "owe");

@@ -1,5 +1,7 @@
 "use client";
 
+import { useViaCard } from "@/lib/useViaCard";
+
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { DebtModal, DeleteDebtModal, RecordDebtPaymentModal } from "@/components/debtModal";
@@ -10,9 +12,9 @@ import { Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { PlanCard } from "@/components/plannerCard";
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useLoans, useRates, useTransactions } from "@/lib/data/queries";
-import { Loan } from "@/lib/data/types";
+import { Loan, Transaction } from "@/lib/data/types";
 import { Currency, formatAmount } from "@/lib/domain/currencies";
-import { DebtOverview, debtRows, loanProgress } from "@/lib/domain/debt";
+import { DebtOverview, debtRows, loanProgress, repayingPurchase } from "@/lib/domain/debt";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
@@ -108,16 +110,22 @@ const NEXT_PLANNED = 6;
  * A debt's own rows, as Upcoming and History (or both): the next repayments
  * still planned, soonest first, and what's happened, newest first: repayments
  * made and the money borrowed or lent. Each says what it is without repeating
- * the debt's name.
+ * the debt's name. A debt repaid through a card lists that purchase's
+ * installments, paid once the card's statement covering them is.
  */
 function DebtRows({ loan }: { loan: Loan }) {
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const transactions = useTransactions();
   const accounts = useAccounts();
-  const { money, repayments } = debtRows(loan, transactions.data ?? []);
-  const planned = repayments.filter((r) => r.status === "planned").sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  const happened = [...money, ...repayments.filter((r) => r.status === "completed")].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  const via = useViaCard();
+  const { money, repayments: own } = debtRows(loan, transactions.data ?? []);
+  const purchase = repayingPurchase(loan, via?.purchases);
+  const installments = purchase ? (transactions.data ?? []).filter((r) => r.purchaseId === purchase.id) : [];
+  const repayments = [...own, ...installments];
+  const isDone = (r: Transaction) => (purchase && via && r.purchaseId === purchase.id ? via.book.isPaid(r) : r.status === "completed");
+  const planned = repayments.filter((r) => !isDone(r)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const happened = [...money, ...repayments.filter(isDone)].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
   const more = planned.length - NEXT_PLANNED;
   const label = (description: string) => {
     const rest = description.startsWith(loan.name) ? description.slice(loan.name.length).trim() : description.trim();
@@ -128,14 +136,14 @@ function DebtRows({ loan }: { loan: Loan }) {
   const row = (r: (typeof happened)[number]) => {
     const isMoney = money.includes(r);
     return (
-      <li key={r.id} className="flex items-baseline justify-between gap-2 text-sm" data-debt-row-status={r.status}>
+      <li key={r.id} className="flex items-baseline justify-between gap-2 text-sm" data-debt-row-status={isMoney || isDone(r) ? "completed" : "planned"}>
         <span className="min-w-0 truncate">
-          {r.status === "completed" ? <span aria-label={t("pages.paid")}>✓ </span> : null}
+          {!isMoney && isDone(r) ? <span aria-label={t("pages.paid")}>✓ </span> : null}
           {isMoney ? (loan.direction === "lent" ? t("debts.moneyLent") : t("debts.moneyBorrowed")) : label(r.description)}
           <span className="ml-2 text-[11px] text-zinc-400">
             {fmtDate(r.dueDate)} · {nameOf(r.accountId)}
           </span>
-          {r.status === "planned" ? (
+          {!isMoney && !isDone(r) ? (
             <span className="ml-1.5">
               <Badge tone="zinc">{t("tx.planned")}</Badge>
             </span>
@@ -164,7 +172,7 @@ function DebtRows({ loan }: { loan: Loan }) {
         }
         history={
           <div className="space-y-1.5 px-4 pt-2">
-            {repayments.every((r) => r.status !== "completed") ? <p className="text-xs text-zinc-400">{t("debts.noPayments")}</p> : null}
+            {!repayments.some(isDone) ? <p className="text-xs text-zinc-400">{t("debts.noPayments")}</p> : null}
             <ul className="space-y-1">{happened.map(row)}</ul>
           </div>
         }
@@ -191,7 +199,8 @@ export function LoanPane({
   const [editing, setEditing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const progress = useMemo(() => loanProgress(loan, transactions.data ?? []), [loan, transactions.data]);
+  const via = useViaCard();
+  const progress = useMemo(() => loanProgress(loan, transactions.data ?? [], via), [loan, transactions.data, via]);
   const { schedule, paid, term, remaining, pct, endDate, paidAmount, total } = progress;
   const lent = loan.direction === "lent";
   const once = loan.scheduleKind === "lumpSum";
@@ -201,6 +210,8 @@ export function LoanPane({
   const nameOf = (id: string | null) => (id ? (accounts.data?.find((a) => a.id === id)?.name ?? "—") : null);
   const deposit = nameOf(loan.depositAccountId);
   const pay = nameOf(loan.payAccountId);
+  // repaid through a card's installments: the card's statements pay it, nothing here does
+  const purchase = repayingPurchase(loan, via?.purchases);
 
   return (
     <div data-loan-pane={loan.id}>
@@ -225,8 +236,10 @@ export function LoanPane({
               {formatAmount(converted, display, locale)}
             </div>
           ) : null}
-          <div className="mt-1 text-xs text-zinc-500">
-            {once
+          <div className="mt-1 text-xs text-zinc-500" data-debt-shape>
+            {purchase
+              ? t("debts.viaCardLine", { purchase: purchase.name, card: nameOf(purchase.accountId) ?? "—" })
+              : once
               ? loan.payoffDate
                 ? t("debts.repayOn", { date: fmtDate(loan.payoffDate) })
                 : t("debts.whenICan")
@@ -237,9 +250,11 @@ export function LoanPane({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" onClick={() => setRecording(true)}>
-            {lent ? t("debts.recordBack") : t("debts.recordPayment")}
-          </Button>
+          {purchase ? null : (
+            <Button variant="primary" onClick={() => setRecording(true)}>
+              {lent ? t("debts.recordBack") : t("debts.recordPayment")}
+            </Button>
+          )}
           <Button onClick={() => setEditing(true)}>{t("common.edit")}</Button>
           <Button variant="danger" onClick={() => setDeleting(true)}>
             {t("common.delete")}
@@ -250,7 +265,9 @@ export function LoanPane({
       <div className="space-y-2 p-4">
         <div className="flex justify-between text-xs text-zinc-500">
           <span>
-            {once || !(loan.monthlyRatePct > 0)
+            {purchase
+              ? t("debts.viaCardProgress", { paid, term, amount: money(paidAmount), total: money(total) })
+              : once || !(loan.monthlyRatePct > 0)
               ? t("debts.paidSoFar", { paid: money(paidAmount), total: money(total) })
               : t("loans.progress", { paid, term })}
           </span>
@@ -259,7 +276,7 @@ export function LoanPane({
         <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
           <div className={`h-full rounded-full ${lent ? "bg-green-600" : "bg-teal-600"}`} style={{ width: `${pct}%` }} />
         </div>
-        {term > 0 ? (
+        {term > 0 && !purchase ? (
           <div className="flex flex-wrap justify-between gap-2 text-xs text-zinc-500">
             <span>
               {t("loans.firstPayment")}: {schedule.rows[0] ? fmtDate(schedule.rows[0].date) : "—"}
@@ -274,7 +291,7 @@ export function LoanPane({
       <PayoffSuggestionCard loan={loan} />
       <DebtRows loan={loan} />
 
-      {once || term === 0 ? null : (
+      {once || term === 0 || purchase ? null : (
         <div className="max-h-[50vh] overflow-y-auto border-t border-[var(--edge-soft)] px-4 pb-3">
           <table className="stack-sm sticky-head w-full text-xs tabular-nums">
             <thead className="sticky top-0 bg-[var(--surface)]">
@@ -328,6 +345,7 @@ export function TrackedLoansCard() {
   const { displayCurrency } = useApp();
   const loans = useLoans();
   const transactions = useTransactions();
+  const via = useViaCard();
   const rates = useRates();
   const usdPer = rates.data?.usdPer;
 
@@ -349,7 +367,7 @@ export function TrackedLoansCard() {
       ) : (
         <ul className="-my-3 divide-y divide-[var(--edge-soft)]">
           {(loans.data ?? []).map((loan) => {
-            const { remaining, paid, term, pct } = loanProgress(loan, transactions.data ?? []);
+            const { remaining, paid, term, pct } = loanProgress(loan, transactions.data ?? [], via);
             const converted = usdPer && loan.currency !== displayCurrency ? convert(remaining, loan.currency, displayCurrency, usdPer) : null;
             return (
               <li key={loan.id}>

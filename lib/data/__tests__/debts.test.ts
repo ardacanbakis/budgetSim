@@ -172,3 +172,35 @@ describe("debts in the demo repo", () => {
     expect(money.loanPrincipal).toBeUndefined();
   });
 });
+
+describe("a debt repaid through a card's installments", () => {
+  it("drops its own planned payments when linked, keeps the link through a backup, and is unlinked when the purchase goes", async () => {
+    const { repo, enpara } = await fresh();
+    const card = await repo.createAccount({ name: "CC EnPara", currency: "TRY", kind: "credit_card", openingBalance: 0 });
+    await repo.updateAccount(card.id, { paymentAccountId: enpara, paymentDay: 16 });
+    const advance = await repo.createPurchase(
+      { name: "Enpara 12500 Nakit Avans", accountId: card.id, amount: 12500, purchaseDate: lastMonth, installmentCount: 3, firstDue: inTwoMonths, details: "", reflected: true, categoryId: null },
+      snapshot
+    );
+    // made with its own three payments first, as it was
+    const loan = await repo.createLoan({ ...friend(enpara), name: "nakit avans", scheduleKind: "zeroInterest", termMonths: 3, startDate: today });
+    const own = () => repo.listTransactions().then((all) => all.filter((t) => t.loanId === loan.id && t.status === "planned"));
+    expect((await own()).length).toBe(3);
+
+    await repo.updateLoan(loan.id, { purchaseId: advance.id });
+    expect(await own()).toEqual([]);
+    const linked = (await repo.listLoans())[0];
+    expect(linked.purchaseId).toBe(advance.id);
+    const all = await repo.listTransactions();
+    const progress = loanProgress(linked, all, { purchases: await repo.listPurchases(), book: buildCardBook(await repo.listAccounts(), all) });
+    expect([progress.term, progress.paid, progress.remaining]).toEqual([3, 0, 12500]);
+
+    const backup = await repo.exportAll();
+    const restored = withActivityLog(new DemoRepo());
+    await restored.importAll(backup);
+    expect((await restored.listLoans())[0].purchaseId).toBe(advance.id);
+
+    await repo.deletePurchase(advance.id, true);
+    expect((await repo.listLoans())[0].purchaseId).toBeNull();
+  });
+});

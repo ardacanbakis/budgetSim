@@ -6,7 +6,7 @@ import { AccountModal } from "@/app/(app)/accounts/page";
 import { DebtModal } from "@/components/debtModal";
 import { Skeleton } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useLoans } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useLoans, usePurchases } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Currency } from "@/lib/domain/currencies";
 import { computeDebtOverview } from "@/lib/domain/debt";
@@ -129,6 +129,7 @@ function PortfolioList({ urlView }: { urlView: PortfolioSegment | null }) {
   const { t, locale } = useI18n();
   const repo = useRepo();
   const base = usePortfolioBase();
+  const purchases = usePurchases();
   const loans = useLoans();
   const hideEmpty = useLocalToggle(HIDE_EMPTY_KEY, false);
   const [segRaw, setSegPref] = usePocketPref(PORTFOLIO_SEG_KEY, "all", isPortfolioSegment);
@@ -158,8 +159,9 @@ function PortfolioList({ urlView }: { urlView: PortfolioSegment | null }) {
       usdPer: usdPer ?? ({} as UsdPerMap),
       display,
       today,
+      purchases: purchases.data,
     });
-  }, [loans.data, accounts, transactions, balances, usdPer, display, today]);
+  }, [loans.data, purchases.data, accounts, transactions, balances, usdPer, display, today]);
 
   const s = useMemo(
     () =>
