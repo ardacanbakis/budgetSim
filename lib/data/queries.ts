@@ -22,7 +22,14 @@ export const KEYS = {
   plans: ["plans"] as const,
   savingsPlans: ["savingsPlans"] as const,
   rates: ["rates"] as const,
+  activity: ["activity"] as const,
 };
+
+/** The change history, newest first (lib/data/activityLog.ts writes it). */
+export function useActivity() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.activity, queryFn: () => repo.listActivity() });
+}
 
 export function useAccounts() {
   const repo = useRepo();
@@ -131,7 +138,8 @@ export function useAppMutation<TInput>(
   return useMutation({
     mutationFn: fn,
     onSuccess: async () => {
-      await Promise.all(keys.map((key) => queryClient.invalidateQueries({ queryKey: key })));
+      // every write may have added to the history, whatever else it touched
+      await Promise.all([...keys, KEYS.activity].map((key) => queryClient.invalidateQueries({ queryKey: key })));
     },
   });
 }

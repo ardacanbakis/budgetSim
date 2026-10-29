@@ -88,6 +88,7 @@ export const CARD_SPECS = [
   spec("debt", { defaultOn: OFF, nav: "/accounts", route: "/accounts?view=debts", span: "sm:col-span-1" }),
   spec("commitments", { defaultOn: OFF, route: "/transactions?tab=recurring", span: "sm:col-span-1" }),
   spec("recent", { defaultOn: OFF, route: "/transactions", span: "sm:col-span-2" }),
+  spec("changes", { defaultOn: OFF, route: "/settings?tab=history", span: "sm:col-span-2 xl:col-span-1" }),
   spec("victvs-outlook", { defaultOn: OFF, nav: "/victvs", route: "/victvs", span: "sm:col-span-2 xl:col-span-1" }),
 ] as const;
 

@@ -30,8 +30,9 @@ import { ViewsCard } from "@/components/settingsViews";
 import { DashboardAccountsCard, DashboardCardsCard, PocketHomeCard } from "@/components/settingsDashboard";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { DataCheckCard } from "@/components/dataCheck";
+import { HistoryCard } from "@/components/history";
 
-const SETTINGS_TABS = ["preferences", "dashboard", "categories", "victvs", "data", "check", "account"] as const;
+const SETTINGS_TABS = ["preferences", "dashboard", "categories", "victvs", "data", "check", "history", "account"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 const isSettingsTab = (v: string | null): v is SettingsTab => v != null && (SETTINGS_TABS as readonly string[]).includes(v);
 /** the last tab open, for a visit to /settings without ?tab= */
@@ -43,6 +44,7 @@ const TAB_ICON: Record<SettingsTab, string> = {
   victvs: "✓",
   data: "⇅",
   check: "🩺",
+  history: "🕘",
   account: "👤",
 };
 
@@ -242,6 +244,8 @@ function SettingsScreen() {
       ) : null}
 
       {tab === "check" ? <DataCheckCard /> : null}
+
+      {tab === "history" ? <HistoryCard /> : null}
 
       {tab === "account" ? (
         <>

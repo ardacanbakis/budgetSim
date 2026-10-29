@@ -46,6 +46,7 @@ const OFF_CHIPS = [
   "+ Debts",
   "+ Fixed costs",
   "+ Recent activity",
+  "+ Recent changes",
   "+ VICTVS outlook",
 ];
 
@@ -110,6 +111,7 @@ test.describe("Classic dashboard layout", () => {
       "+ Borçlar",
       "+ Sabit ödemeler",
       "+ Son hareketler",
+      "+ Son değişiklikler",
       "+ VICTVS görünümü",
     ]);
     await expect(page.getByRole("link", { name: /Diğer seçenekler/ })).toBeVisible();

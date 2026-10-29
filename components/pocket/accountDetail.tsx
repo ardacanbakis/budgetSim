@@ -34,6 +34,7 @@ import {
 import { showSnack } from "@/lib/ui/pocket/snackbar";
 import { pushQuery, replaceQuery } from "@/lib/ui/shallowUrl";
 import { usePocketChrome } from "./chrome";
+import { RecentChanges } from "@/components/history";
 import { PocketDayList, PocketTxRow, useTxLookup } from "./dayList";
 import { Icon, IconName } from "./icons";
 import { Approx, Avatar, FitFigure, PocketPage, Section } from "./kit";
@@ -423,6 +424,13 @@ export function AccountDetail({ account }: { account: Account }) {
         <div role="group" aria-label={account.name} className={`grid gap-2 ${COLS[actions.length]}`}>
           {actions}
         </div>
+
+        {/* what changed it last: money with the balance it left, and every edit */}
+        <RecentChanges
+          account={account}
+          balanceNow={card ? 0 : balance}
+          className="rounded-[var(--ui-card-radius)] border border-[var(--edge)] bg-[var(--surface)] px-4 py-3"
+        />
 
         {feed.upcoming.length > 0 ? (
           <Section title={t("portfolio.upcoming")} flush>
