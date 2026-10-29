@@ -220,6 +220,12 @@ export interface Loan {
    * debt = "when I can"
    */
   payoffDate: string | null;
+  /**
+   * repaid through a card's installments (migration 0023): the big purchase
+   * that repays it, as a cash advance on a card is. It plans no payments of
+   * its own; what's left follows the installments the card's statements pay.
+   */
+  purchaseId?: string | null;
   createdAt: string;
 }
 

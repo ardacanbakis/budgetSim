@@ -1,9 +1,10 @@
-import { Account, Loan, LoanDirection, Transaction, TxDirection } from "@/lib/data/types";
-import { buildCardBook } from "./cards";
+import { Account, Loan, LoanDirection, Purchase, Transaction, TxDirection } from "@/lib/data/types";
+import { buildCardBook, CardBook } from "./cards";
 import { Currency } from "./currencies";
 import { convert, UsdPerMap } from "./fx";
 import { buildSchedule, ScheduleResult } from "./loanSchedule";
 import { roundTo } from "./money";
+import { purchaseProgress } from "./purchases";
 import { addDays } from "./recurrence";
 
 /**
@@ -13,7 +14,8 @@ import { addDays } from "./recurrence";
  * and the repayments (out of the paying account for one you owe, into it for
  * one you lent). The two are told apart by direction alone.
  *
- * - loanProgress(loan, transactions): what's left, how far along, when it ends.
+ * - loanProgress(loan, transactions, via?): what's left, how far along, when
+ *   it ends; for a debt repaid through a card, read off its installments.
  * - computeDebtOverview(...): everything you owe (tracked debts and cards) and
  *   everything owed to you.
  * - replanRepayments(loan, transactions, today): the planned rows a debt
@@ -33,6 +35,11 @@ export interface DebtItem {
   monthlyRatePct: number | null;
   /** last scheduled payment date; null for a card with nothing billed, and for "when I can" */
   endDate: string | null;
+  /**
+   * repaid through a card's installments: what's left is part of what that
+   * card is owed, so it isn't counted again in the total
+   */
+  viaCardId?: string;
 }
 
 export interface DebtOverview {
@@ -56,6 +63,7 @@ export function withDebtDefaults(loan: Omit<Loan, "direction" | "counterparty" |
     depositAccountId: loan.depositAccountId ?? null,
     payAccountId: loan.payAccountId ?? null,
     payoffDate: loan.payoffDate ?? null,
+    purchaseId: loan.purchaseId ?? null,
   };
 }
 
@@ -117,13 +125,43 @@ export interface LoanProgress {
   nextDue: Transaction | null;
 }
 
+/** What a debt repaid through a card is read from: the big purchases, and the card book that says which installments are paid. */
+export interface ViaCard {
+  purchases: readonly Purchase[];
+  book: CardBook;
+}
+
+/** The big purchase repaying a debt, when it's repaid through a card and the purchase is still there. */
+export function repayingPurchase(loan: Pick<Loan, "purchaseId">, purchases: readonly Purchase[] | undefined): Purchase | null {
+  return loan.purchaseId ? (purchases?.find((p) => p.id === loan.purchaseId) ?? null) : null;
+}
+
 /**
  * One debt's standing: its schedule, what's been repaid (completed repayment
  * rows, legacy ones too: they were paid), what's left and when it ends. An
- * early payoff that's been paid ends it whatever the schedule said.
+ * early payoff that's been paid ends it whatever the schedule said. A debt
+ * repaid through a card reads it all off that purchase's installments, as
+ * the card's statements pay them, given `via`.
  */
-export function loanProgress(loan: Loan, transactions: readonly Transaction[]): LoanProgress {
+export function loanProgress(loan: Loan, transactions: readonly Transaction[], via?: ViaCard): LoanProgress {
   const schedule = scheduleOf(loan);
+  const purchase = via ? repayingPurchase(loan, via.purchases) : null;
+  if (purchase && via) {
+    const installments = transactions.filter((t) => t.purchaseId === purchase.id).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const p = purchaseProgress(purchase, via.book, installments, loan.currency);
+    const total = purchase.amount;
+    return {
+      schedule,
+      paid: p.paidCount,
+      term: p.totalCount,
+      remaining: Math.max(0, p.remainingAmount),
+      paidAmount: p.paidAmount,
+      total,
+      pct: total > 0 ? Math.round(Math.min(1, p.paidAmount / total) * 100) : 0,
+      endDate: installments.at(-1)?.dueDate ?? null,
+      nextDue: installments.find((t) => !via.book.isPaid(t)) ?? null,
+    };
+  }
   const term = schedule.rows.length;
   const { repayments } = debtRows(loan, transactions);
   const done = repayments.filter((t) => t.status === "completed");
@@ -165,12 +203,16 @@ export function computeDebtOverview(params: {
   usdPer: UsdPerMap;
   display: Currency;
   today: string;
+  /** the big purchases, for a debt repaid through a card's installments */
+  purchases?: readonly Purchase[];
 }): DebtOverview {
-  const { loans, accounts, transactions, usdPer, display, today } = params;
+  const { loans, accounts, transactions, usdPer, display, today, purchases } = params;
   const items: DebtItem[] = [];
+  const book = buildCardBook(accounts, transactions);
 
   for (const loan of loans) {
-    const { remaining, endDate } = loanProgress(loan, transactions);
+    const via = repayingPurchase(loan, purchases);
+    const { remaining, endDate } = loanProgress(loan, transactions, purchases ? { purchases, book } : undefined);
     if (remaining <= 0.005) continue;
     items.push({
       kind: "loan",
@@ -181,10 +223,10 @@ export function computeDebtOverview(params: {
       outstanding: remaining,
       monthlyRatePct: loan.monthlyRatePct,
       endDate,
+      ...(via?.accountId ? { viaCardId: via.accountId } : {}),
     });
   }
 
-  const book = buildCardBook(accounts, transactions);
   for (const account of accounts) {
     if (account.kind !== "credit_card" || account.archived) continue;
     const outstanding = book.owed(account.id, today);
@@ -216,6 +258,8 @@ export function computeDebtOverview(params: {
       if (converted != null) lentInDisplay += converted;
       continue;
     }
+    // already in what its card is owed, and over when the card's bills are
+    if (item.viaCardId) continue;
     if (converted != null) totalInDisplay += converted;
     // a card ends with its last bill, or today when nothing is billed yet; "when I can" has no end to count
     const end = item.kind === "card" ? (item.endDate ?? today) : item.endDate;
@@ -258,6 +302,8 @@ export interface RepaymentPlan {
  * The planned repayments a debt should have, as a change to the ones it has.
  * Paid rows never change; neither does a planned row the new plan keeps.
  *
+ * - Repaid through a card's installments (purchaseId): nothing; the
+ *   card's statements pay it.
  * - One payment (lumpSum): what's still due (the total less what was repaid)
  *   on the payoff date; "when I can" plans nothing.
  * - Installments planned by a recurring item: it ends the day before an early
@@ -272,6 +318,9 @@ export function replanRepayments(loan: Loan, transactions: readonly Transaction[
   const planned = repayments.filter((t) => t.status === "planned");
   const done = repayments.filter((t) => t.status === "completed");
   const payoff = loan.payoffDate;
+
+  // a card's installments repay it: nothing of its own to plan
+  if (loan.purchaseId) return { remove: planned.map((t) => t.id), add: [] };
 
   if (loan.scheduleKind === "lumpSum") {
     const total = schedule.rows.length > 0 ? schedule.totalPaid : loan.principal;

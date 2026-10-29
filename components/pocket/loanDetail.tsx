@@ -1,7 +1,9 @@
 "use client";
 
+import { useViaCard } from "@/lib/useViaCard";
+
 import { useRouter } from "next/navigation";
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { DebtModal, RecordDebtPaymentModal } from "@/components/debtModal";
 import { EntityChanges } from "@/components/history";
 import { HistoryUpcoming } from "@/components/historyUpcoming";
@@ -9,8 +11,8 @@ import { PayoffSuggestionCard } from "@/components/payoffSuggestion";
 import { Badge } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation } from "@/lib/data/queries";
-import { Loan } from "@/lib/data/types";
-import { debtRows, loanProgress } from "@/lib/domain/debt";
+import { Loan, Transaction } from "@/lib/data/types";
+import { debtRows, loanProgress, repayingPurchase } from "@/lib/domain/debt";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { formatSigned } from "@/lib/ui/pocket/format";
@@ -85,27 +87,37 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
 
   const back = useMemo(() => ({ label: "", onBack: () => closeLoan(router, view) }), [router, view]);
 
-  const progress = useMemo(() => loanProgress(loan, base.transactions ?? []), [loan, base.transactions]);
+  const via = useViaCard();
+  const progress = useMemo(() => loanProgress(loan, base.transactions ?? [], via), [loan, base.transactions, via]);
   const { schedule, paid, term, remaining, pct, endDate, paidAmount, total } = progress;
   const lent = loan.direction === "lent";
   const once = loan.scheduleKind === "lumpSum";
   const byAmount = once || !(loan.monthlyRatePct > 0);
   const signed = lent ? remaining : -remaining;
   const nameOf = (id: string | null) => (id ? (accounts.data?.find((a) => a.id === id)?.name ?? "—") : "—");
+  // repaid through a card: that purchase's installments are its payments, paid with the card's statements
+  const purchase = repayingPurchase(loan, via?.purchases);
+  const isDone = useCallback(
+    (tx: Transaction) => (purchase && via && tx.purchaseId === purchase.id ? via.book.isPaid(tx) : tx.status === "completed"),
+    [purchase, via]
+  );
+  const installments = useMemo(
+    () => (purchase ? (base.transactions ?? []).filter((tx) => tx.purchaseId === purchase.id) : []),
+    [base.transactions, purchase]
+  );
   const planned = useMemo(
     () =>
-      (base.transactions ?? [])
-        .filter((tx) => tx.loanId === loan.id && tx.status === "planned")
+      [...(base.transactions ?? []).filter((tx) => tx.loanId === loan.id && tx.status === "planned"), ...installments.filter((tx) => !isDone(tx))]
         .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0)),
-    [base.transactions, loan.id]
+    [base.transactions, loan.id, installments, isDone]
   );
   // what's happened, newest first: the money borrowed or lent, and each repayment made
   const happened = useMemo(() => {
     const { money, repayments } = debtRows(loan, base.transactions ?? []);
-    return [...money, ...repayments.filter((tx) => tx.status === "completed")].sort((a, b) =>
+    return [...money, ...repayments.filter((tx) => tx.status === "completed"), ...installments.filter(isDone)].sort((a, b) =>
       a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0
     );
-  }, [loan, base.transactions]);
+  }, [loan, base.transactions, installments, isDone]);
   const fmt = (n: number) => formatSigned(n, loan.currency, locale, "none");
   const cardClass =
     "overflow-hidden rounded-[var(--ui-card-radius)] border border-[length:var(--ui-card-border)] border-[var(--edge)] bg-[var(--surface)] shadow-sm";
@@ -128,7 +140,9 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
             <div className="space-y-1.5 pt-2">
               <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
                 <span>
-                  {byAmount
+                  {purchase
+                    ? t("debts.viaCardProgress", { paid, term, amount: fmt(paidAmount), total: fmt(total) })
+                    : byAmount
                     ? t("debts.paidSoFar", { paid: fmt(paidAmount), total: fmt(total) })
                     : t("loans.progress", { paid, term })}
                 </span>
@@ -141,15 +155,18 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            onClick={() => setRecording(true)}
-            className="min-h-[48px] rounded-[var(--ui-card-radius)] bg-teal-600 px-3 text-[15px] font-medium text-white active:bg-teal-700 dark:bg-teal-500 dark:text-zinc-950"
-          >
-            {lent ? t("debts.recordBack") : t("debts.recordPayment")}
-          </button>
+        <div className={`grid gap-2 ${purchase ? "grid-cols-1" : "grid-cols-2"}`}>
+          {/* the card's statements pay one repaid through a card */}
+          {purchase ? null : (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => setRecording(true)}
+              className="min-h-[48px] rounded-[var(--ui-card-radius)] bg-teal-600 px-3 text-[15px] font-medium text-white active:bg-teal-700 dark:bg-teal-500 dark:text-zinc-950"
+            >
+              {lent ? t("debts.recordBack") : t("debts.recordPayment")}
+            </button>
+          )}
           <button
             type="button"
             aria-haspopup="dialog"
@@ -163,7 +180,11 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
         <Section flush>
           <dl className="divide-y divide-[var(--edge-soft)] text-[15px]">
             {loan.counterparty ? <Fact label={t("debts.counterparty")}>{loan.counterparty}</Fact> : null}
-            {once ? (
+            {purchase ? (
+              <Fact label={t("debts.viaCard")}>
+                {purchase.name} · {nameOf(purchase.accountId)}
+              </Fact>
+            ) : once ? (
               <Fact label={t("debts.payoffDate")}>{loan.payoffDate ? fmtDate(loan.payoffDate) : t("debts.whenICan")}</Fact>
             ) : (
               <>
@@ -212,7 +233,7 @@ export function LoanDetail({ loan, view }: { loan: Loan; view: PortfolioSegment 
           }
         />
 
-        {once || term === 0 ? null : (
+        {once || term === 0 || purchase ? null : (
           <Section flush>
             <button
               type="button"

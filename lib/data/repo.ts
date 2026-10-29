@@ -166,6 +166,8 @@ export interface NewLoan {
   depositAccountId?: string | null;
   /** a row already on the ledger that is the money itself ("Move to Debts"): tagged, not duplicated */
   receivedTxId?: string | null;
+  /** repaid through this big purchase's installments on a card: no payments of its own (Loan.purchaseId) */
+  purchaseId?: string | null;
   /** a lumpSum debt's payment date; null = "when I can" */
   payoffDate?: string | null;
   /**
@@ -187,6 +189,8 @@ export interface LoanPatch {
    * null = back to the schedule, or "when I can"
    */
   payoffDate?: string | null;
+  /** present = re-plan: a purchase repays it (its own planned payments go), or null for its own payments again */
+  purchaseId?: string | null;
 }
 
 /**

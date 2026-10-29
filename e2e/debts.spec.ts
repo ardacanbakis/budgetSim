@@ -253,3 +253,30 @@ test("Pocket: a debt's page records a payment and edits, and Debts has New debt"
   await expect(detail.locator("[data-loan-remaining]")).toContainText("1,500.00");
   await page.screenshot({ path: "e2e/screenshots/pocket-debt.png" });
 });
+
+test("a cash advance on a card: the debt follows the card's installments and plans nothing of its own", async ({ page }) => {
+  await enterDemo(page);
+  const form = await newDebt(page);
+  await form.getByLabel("Person", { exact: true }).fill("Card cash advance");
+  await form.getByLabel("Amount", { exact: true }).fill("84000");
+  await form.getByLabel("Repaid through").selectOption({ label: "iPhone 17 · Bonus Card" });
+  // nothing of its own to schedule
+  await expect(form.getByRole("radiogroup", { name: "Repayment" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Save" }).click();
+
+  const pane = page.locator("[data-loan-pane]");
+  await expect(pane.locator("[data-debt-shape]")).toHaveText("Repaid through iPhone 17 on Bonus Card");
+  await expect(pane.getByRole("button", { name: "Record a payment" })).toHaveCount(0);
+  await expect(pane).toContainText(/of 6 installments paid/);
+  // its payments are the phone's installments
+  await expect(pane.locator("[data-debt-rows]")).toContainText("iPhone 17");
+  const s = await store(page);
+  const loan = s.loans.find((l) => l.name === "Card cash advance")!;
+  expect(s.transactions.filter((t) => t.loanId === loan.id && t.direction === "expense")).toEqual([]);
+
+  // back to its own payments from the edit form
+  await pane.getByRole("button", { name: "Edit" }).click();
+  await page.locator("[data-debt-form]").getByLabel("Repaid through").selectOption({ label: "Its own payments" });
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(pane.getByRole("button", { name: "Record a payment" })).toBeVisible();
+});

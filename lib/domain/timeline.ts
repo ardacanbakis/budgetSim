@@ -281,6 +281,8 @@ export function debtMilestones(params: {
 
   const tracked = new Set<string>();
   for (const loan of loans) {
+    // repaid through a card: its purchase's own end marks it
+    if (loan.purchaseId) continue;
     const schedule = scheduleOf(loan);
     const last = schedule.rows.at(-1);
     // "when I can" has no last payment to mark yet

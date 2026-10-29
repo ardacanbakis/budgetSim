@@ -720,6 +720,8 @@ export class DemoRepo implements Repo {
     } else {
       for (const t of this.store.transactions) if (t.purchaseId === id) t.purchaseId = null;
     }
+    // a debt it repaid is unlinked, as Supabase's "on delete set null" does
+    for (const l of this.store.loans) if (l.purchaseId === id) l.purchaseId = null;
     this.save();
   }
 
@@ -749,6 +751,7 @@ export class DemoRepo implements Repo {
       depositAccountId: input.depositAccountId ?? null,
       payAccountId: input.accountId,
       payoffDate: input.payoffDate ?? null,
+      purchaseId: input.purchaseId ?? null,
       createdAt: new Date().toISOString(),
     });
     const schedule = scheduleOf(loan);
@@ -848,7 +851,7 @@ export class DemoRepo implements Repo {
     }
     Object.assign(loan, next);
     this.save();
-    if ("payoffDate" in patch) await this.replanLoan(next);
+    if ("payoffDate" in patch || "purchaseId" in patch) await this.replanLoan(next);
   }
 
   /** Applies replanRepayments: what's planned from here on, the recurring item's end with it. */

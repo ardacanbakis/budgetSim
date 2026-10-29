@@ -73,7 +73,8 @@ export function PayoffSuggestionCard({ loan }: { loan: Loan }) {
   const suggestion = usePayoffSuggestion(loan);
   const setDate = useAppMutation((date: string | null) => repo.updateLoan(loan.id, { payoffDate: date }), [KEYS.loans, KEYS.transactions, KEYS.templates]);
 
-  if (loan.direction !== "owe") return null;
+  // a card's installments repay it, on the card's own dates
+  if (loan.direction !== "owe" || loan.purchaseId) return null;
   const { remaining } = loanProgress(loan, transactions.data ?? []);
   if (remaining <= 0.005) return null;
   const once = loan.scheduleKind === "lumpSum";

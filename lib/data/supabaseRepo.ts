@@ -178,6 +178,8 @@ const loanFromRow = (r: Row): Loan => withDebtDefaults({
   depositAccountId: r.deposit_account_id,
   payAccountId: r.pay_account_id,
   payoffDate: r.payoff_date,
+  // absent before migration 0023
+  purchaseId: r.purchase_id ?? null,
   createdAt: r.created_at,
 });
 
@@ -1095,6 +1097,8 @@ export class SupabaseRepo implements Repo {
               payoff_date: input.payoffDate ?? null,
             }
           : {}),
+        // only when linked: a database without 0023 still saves every other debt
+        ...(input.purchaseId ? { purchase_id: input.purchaseId } : {}),
       })
       .select()
       .single();
@@ -1193,6 +1197,7 @@ export class SupabaseRepo implements Repo {
     if (patch.depositAccountId !== undefined) row.deposit_account_id = patch.depositAccountId;
     if (patch.payAccountId !== undefined) row.pay_account_id = patch.payAccountId;
     if (patch.payoffDate !== undefined) row.payoff_date = patch.payoffDate;
+    if (patch.purchaseId !== undefined) row.purchase_id = patch.purchaseId;
     if (Object.keys(row).length > 0) {
       const { error } = await this.db.from("loans").update(row).eq("id", id);
       throwIf(error);
@@ -1225,7 +1230,7 @@ export class SupabaseRepo implements Repo {
         .neq("direction", back);
       throwIf(error);
     }
-    if ("payoffDate" in patch) await this.replanLoan(next);
+    if ("payoffDate" in patch || "purchaseId" in patch) await this.replanLoan(next);
   }
 
   /** Applies replanRepayments: what's planned from here on, the recurring item's end with it. */
@@ -1398,6 +1403,11 @@ export class SupabaseRepo implements Repo {
       const { error } = await this.db.from("transactions").select("converts_id").limit(0);
       throwIf(error);
     }
+    // and debts repaid through a card (0023)
+    if (backup.loans.some((l) => l.purchaseId)) {
+      const { error } = await this.db.from("loans").select("purchase_id").limit(0);
+      throwIf(error);
+    }
     // and expected card statements (0022)
     if (backup.cardEstimates?.length) {
       const { error } = await this.db.from("card_estimates").select("id").limit(0);
@@ -1452,6 +1462,7 @@ export class SupabaseRepo implements Repo {
       ...(l.depositAccountId ? { deposit_account_id: l.depositAccountId } : {}),
       ...(l.payAccountId ? { pay_account_id: l.payAccountId } : {}),
       ...(l.payoffDate ? { payoff_date: l.payoffDate } : {}),
+      ...(l.purchaseId ? { purchase_id: l.purchaseId } : {}),
     })));
     await insert("recurring_templates", backup.templates.map((tpl) => ({
       id: tpl.id, user_id: u, name: tpl.name, account_id: tpl.accountId, direction: tpl.direction,

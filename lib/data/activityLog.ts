@@ -6,7 +6,7 @@ type NewEntry = Omit<ActivityEntry, "id">;
 
 const TEMPLATE_FIELDS = ["name", "accountId", "direction", "categoryId", "amount", "frequency", "startDate", "endDate", "autoComplete", "convertToAccountId"] as const;
 const PURCHASE_FIELDS = ["name", "details", "categoryId", "reflected"] as const;
-const LOAN_FIELDS = ["name", "kind", "counterparty", "depositAccountId", "payAccountId", "payoffDate"] as const;
+const LOAN_FIELDS = ["name", "kind", "counterparty", "depositAccountId", "payAccountId", "payoffDate", "purchaseId"] as const;
 
 /**
  * The change history, written in one place for both repos: every write that

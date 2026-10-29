@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Modal, Select, Spinner } from "@/components/ui";
 import { useApp, useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, useLoans, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, useLoans, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances } from "@/lib/domain/balances";
@@ -84,6 +84,7 @@ function PortfolioScreen() {
   const rates = useRates();
   const loans = useLoans();
   const estimates = useCardEstimates();
+  const purchases = usePurchases();
   const [modalOpen, setModalOpen] = useState(false);
   const { columns, setColumns } = useColumns("renovator-cols-portfolio");
   // shape is how each holding is drawn; `columns` above is the page's own
@@ -141,6 +142,7 @@ function PortfolioScreen() {
           usdPer: usdPer ?? ({} as UsdPerMap),
           display: displayCurrency,
           today,
+          purchases: purchases.data,
         })
       : null;
     const s = buildSections({
@@ -154,7 +156,7 @@ function PortfolioScreen() {
       today,
     });
     return { overview: usdPer ? overview : null, cards: s.cards.rows, loans: s.loans.rows };
-  }, [accounts.data, transactions.data, estimates.data, loans.data, balances, usdPer, displayCurrency, today]);
+  }, [accounts.data, transactions.data, estimates.data, purchases.data, loans.data, balances, usdPer, displayCurrency, today]);
 
   if (accounts.isLoading || transactions.isLoading) return <Spinner />;
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button, Field, Fieldset, Input, Modal, Select } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useCategories, useRates, useTransactions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCategories, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { LoanPatch } from "@/lib/data/repo";
 import { Category, Loan, LoanDirection, RecurringTemplate, Transaction } from "@/lib/data/types";
 import { formatAmount } from "@/lib/domain/currencies";
@@ -82,7 +82,10 @@ export function DebtModal({
   const [rate, setRate] = useState("0");
   const [levies, setLevies] = useState(false);
   const [categoryId, setCategoryId] = useState("");
+  /** the big purchase on a card that repays it; "" = its own payments */
+  const [viaId, setViaId] = useState("");
   const [initialized, setInitialized] = useState<string | null>(null);
+  const purchases = usePurchases();
 
   const active = (accounts.data ?? []).filter((a) => !a.archived && a.kind !== "credit_card");
   const key = editing?.id ?? (from ? (from.kind === "transaction" ? `tx:${from.tx.id}` : `tpl:${from.template.id}`) : open ? "new" : "closed");
@@ -91,6 +94,7 @@ export function DebtModal({
   if (open && initialized !== key) {
     setInitialized(key);
     const guess = guessDebtCategory(categories.data ?? []);
+    setViaId(editing?.purchaseId ?? "");
     if (editing) {
       setDirection(editing.direction);
       setPerson(editing.kind === "personal");
@@ -163,15 +167,18 @@ export function DebtModal({
     const count = Math.max(1, Math.round(Number(months) || 0));
     // a recurring item's payments are the debt: their sum is what's owed
     const principal = template ? template.amount * count : Number(amount);
-    const scheduleKind =
-      template || repay !== "installments" ? (template ? "zeroInterest" : "lumpSum") : Number(rate) > 0 ? "annuity" : "zeroInterest";
+    // a card's installments repay it: nothing of its own to schedule
+    const via = !template && direction === "owe" && viaId ? viaId : null;
+    const scheduleKind = via
+      ? "lumpSum"
+      : template || repay !== "installments" ? (template ? "zeroInterest" : "lumpSum") : Number(rate) > 0 ? "annuity" : "zeroInterest";
     const loan = await repo.createLoan({
       name: name.trim() || counterparty.trim() || t("debts.newDebt"),
       kind: person ? "personal" : (editing?.kind ?? "other"),
       currency: payAccount.currency,
       principal,
-      monthlyRatePct: template ? 0 : Math.max(0, Number(rate) || 0),
-      termMonths: repay === "installments" || template ? count : 1,
+      monthlyRatePct: template || via ? 0 : Math.max(0, Number(rate) || 0),
+      termMonths: !via && (repay === "installments" || template) ? count : 1,
       startDate: date,
       accountId: payAccount.id,
       categoryId: direction === "owe" ? categoryId || null : null,
@@ -184,7 +191,8 @@ export function DebtModal({
       depositAccountId: from ? null : depositId || null,
       receivedTxId: from?.kind === "transaction" ? from.tx.id : null,
       templateId: template?.id ?? null,
-      payoffDate: repay === "once" && !template ? payoff || null : null,
+      payoffDate: repay === "once" && !template && !via ? payoff || null : null,
+      purchaseId: via,
       fxSnapshot: rates.data ? snapshotFromTable(rates.data) : null,
     });
     return loan.id;
@@ -199,7 +207,9 @@ export function DebtModal({
     if ((counterparty.trim() || null) !== editing.counterparty) patch.counterparty = counterparty.trim() || null;
     if ((depositId || null) !== editing.depositAccountId && depositId) patch.depositAccountId = depositId;
     if ((payId || null) !== editing.payAccountId && payId) patch.payAccountId = payId;
-    if (editing.scheduleKind === "lumpSum") {
+    // present only when it changes: it re-plans, its own payments going or coming back
+    if ((viaId || null) !== (editing.purchaseId ?? null)) patch.purchaseId = viaId || null;
+    if (editing.scheduleKind === "lumpSum" && !viaId) {
       const nextPayoff = repay === "once" ? payoff || null : null;
       // present only when it changes: it re-plans the payment
       if (nextPayoff !== editing.payoffDate) patch.payoffDate = nextPayoff;
@@ -211,12 +221,16 @@ export function DebtModal({
   const busy = create.isPending || update.isPending;
   const lent = direction === "lent";
   const template = from?.kind === "template" ? from.template : null;
+  // what can repay a debt you owe: a big purchase on a card (a cash advance is one)
+  const cardIds = new Set((accounts.data ?? []).filter((a) => a.kind === "credit_card").map((a) => a.id));
+  const cardPurchases = (purchases.data ?? []).filter((p) => p.accountId != null && cardIds.has(p.accountId));
+  const viaCard = !lent && !template && viaId !== "";
   const payAccount = active.find((a) => a.id === payId) ?? active[0];
   const currency = payAccount?.currency ?? "TRY";
   const money = (n: number) => formatAmount(n, currency, locale);
   const count = Math.max(0, Math.round(Number(months) || 0));
   const preview =
-    !editing && !template && repay === "installments" && Number(amount) > 0 && count > 0
+    !editing && !template && !viaCard && repay === "installments" && Number(amount) > 0 && count > 0
       ? buildSchedule({
           kind: Number(rate) > 0 ? "annuity" : "zeroInterest",
           principal: Number(amount),
@@ -337,7 +351,20 @@ export function DebtModal({
           </Select>
         </Field>
 
-        {template || shapeFixed ? null : (
+        {!lent && !template && cardPurchases.length > 0 ? (
+          <Field label={t("debts.viaCard")} hint={t("debts.viaCardHint")}>
+            <Select value={viaId} onChange={(e) => setViaId(e.target.value)}>
+              <option value="">{t("debts.viaCardOwn")}</option>
+              {cardPurchases.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {(accounts.data ?? []).find((a) => a.id === p.accountId)?.name ?? "—"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
+        {template || shapeFixed || viaCard ? null : (
           <Fieldset label={t("debts.repayment")}>
             <div role="radiogroup" aria-label={t("debts.repayment")} className="space-y-1.5">
               {(editing ? (["once", "whenICan"] as const) : (["whenICan", "once", "installments"] as const)).map((r) => (
@@ -349,13 +376,13 @@ export function DebtModal({
             </div>
           </Fieldset>
         )}
-        {!template && !shapeFixed && repay === "whenICan" ? <p className="text-xs text-zinc-500">{t("debts.repayWhenICanHint")}</p> : null}
-        {!template && !shapeFixed && repay === "once" ? (
+        {!template && !shapeFixed && !viaCard && repay === "whenICan" ? <p className="text-xs text-zinc-500">{t("debts.repayWhenICanHint")}</p> : null}
+        {!template && !shapeFixed && !viaCard && repay === "once" ? (
           <Field label={t("debts.payoffDate")}>
             <Input type="date" required min={date} value={payoff} onChange={(e) => setPayoff(e.target.value)} />
           </Field>
         ) : null}
-        {!template && !editing && repay === "installments" ? (
+        {!template && !editing && !viaCard && repay === "installments" ? (
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("debts.months")}>
               <Input type="number" min="1" step="1" required value={months} onChange={(e) => setMonths(e.target.value)} />
@@ -365,7 +392,7 @@ export function DebtModal({
             </Field>
           </div>
         ) : null}
-        {!template && !editing && repay !== "whenICan" && !person ? (
+        {!template && !editing && !viaCard && repay !== "whenICan" && !person ? (
           <>
             {repay === "once" ? (
               <Field label={t("debts.rate")} hint={t("debts.rateHint")}>
