@@ -11,7 +11,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { PendingConversions } from "@/components/convertedIncome";
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
-import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { CardPaymentReminders } from "@/components/cardPaymentReminder";
 import { DataCheckNudge } from "@/components/dataCheck";
 import { GoalsCard } from "@/components/goalsCard";
 import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
@@ -237,7 +237,9 @@ function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 3xl:max-w-[1700px]">
-      {derived.duePayments.length > 0 ? <CardPaymentReminder duePayments={derived.duePayments} /> : null}
+      {derived.paymentReminders.length + derived.bills.length > 0 ? (
+        <CardPaymentReminders reminders={derived.paymentReminders} bills={derived.bills} />
+      ) : null}
       <DataCheckNudge />
       <PendingConversions />
 

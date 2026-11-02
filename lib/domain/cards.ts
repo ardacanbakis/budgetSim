@@ -394,6 +394,62 @@ export function cardStatements(book: CardBook, card: Account, today: string): Ca
     .filter((s) => s.payments.length > 0 || s.charges.length > 0 || s.amount > 0.005);
 }
 
+export interface CardPaymentReminder {
+  account: Account;
+  /** yyyy-mm of the statement it's about */
+  month: string;
+  /** when it's due: a recorded payment's date, else the card's payment day (month end without one) */
+  date: string;
+  /** the day before, the day itself, or past it with the statement still unpaid */
+  when: "tomorrow" | "today" | "overdue";
+  /** the whole statement, installments included (CardStatement.amount); for a recorded payment, what's left to make */
+  amount: number;
+  /** what the statement pays, by date */
+  charges: Transaction[];
+  /** payments set down for it but not made yet: the reminder asks you to mark them paid; empty when none is recorded */
+  unmade: CardPayment[];
+}
+
+/**
+ * The card payment reminders for `today`: one per card whose statement falls
+ * due tomorrow or today, or whose due date has passed with the statement still
+ * unpaid (nothing recorded, or a payment recorded and not made). Earlier in
+ * the month there's nothing to say. The amount is the statement as a whole,
+ * a big purchase's installments included, since the bank bills them on it.
+ * Soonest-due first, the overdue at the top.
+ */
+export function cardPaymentReminders(accounts: readonly Account[], book: CardBook, today: string): CardPaymentReminder[] {
+  const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const out: CardPaymentReminder[] = [];
+  for (const card of accounts) {
+    if (card.kind !== "credit_card" || card.archived) continue;
+    const dueOn = (month: string) => paymentDateIn(month, card.paymentDay) ?? paymentDateIn(month, 31)!;
+    // oldest first, so a card shows the statement that's been waiting longest
+    for (const s of cardStatements(book, card, today).reverse()) {
+      if (s.status === "paid") continue;
+      const unmade = s.payments.filter((p) => !p.made);
+      let date: string;
+      let amount: number;
+      if (unmade.length > 0) {
+        date = unmade[0].date;
+        amount = unmade.reduce((sum, p) => sum + p.amount, 0);
+      } else {
+        // a charge carried over from a statement that was missed is late since that one's day
+        date = s.charges.reduce((d, c) => {
+          const own = dueOn(book.paidInMonth(c));
+          return own < d ? own : d;
+        }, dueOn(s.month));
+        amount = s.amount;
+      }
+      if (amount <= 0.005 || date > tomorrow) continue;
+      const when = date < today ? "overdue" : date === today ? "today" : "tomorrow";
+      out.push({ account: card, month: s.month, date, when, amount, charges: s.charges, unmade });
+      break;
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export interface NextCardPayment {
   /** yyyy-mm of the statement */
   month: string;

@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { PendingConversions } from "@/components/convertedIncome";
 import { AvgSpendCard } from "@/components/avgSpendCard";
 import { BudgetsCard } from "@/components/budgetsCard";
-import { CardPaymentReminder } from "@/components/cardPaymentReminder";
+import { CardPaymentReminders } from "@/components/cardPaymentReminder";
 import { DataCheckNudge } from "@/components/dataCheck";
 import { OPTIONAL_CARDS, OptionalCard, OptionalCardId } from "@/components/dashboardCards";
 import { AccountsLeftOut } from "@/components/dashboardParts";
@@ -202,7 +202,9 @@ export function DashboardV2() {
         ) : null}
       </Card>
 
-      {d.duePayments.length > 0 ? <CardPaymentReminder duePayments={d.duePayments} /> : null}
+      {d.paymentReminders.length + d.bills.length > 0 ? (
+        <CardPaymentReminders reminders={d.paymentReminders} bills={d.bills} />
+      ) : null}
       <DataCheckNudge />
       <PendingConversions />
 
