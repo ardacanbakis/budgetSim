@@ -4,10 +4,11 @@ import { useAccounts, useCardEstimates, useRates, useTransactions, useVictvsSess
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
-import { buildCardBook, CardBook, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
+import { buildCardBook, CardBook, CardPaymentReminder, cardPaymentReminders, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { findDueCardPayments } from "@/lib/domain/purchases";
+import { BillReminder, billReminders } from "@/lib/domain/reminders";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
 import { unpaidSplit } from "@/lib/ui/pocket/victvsRanges";
@@ -21,6 +22,10 @@ export interface DashboardData {
   cardsOwed: number;
   book: CardBook;
   duePayments: ReturnType<typeof findDueCardPayments>;
+  /** the day before a card's statement is due, the day itself, or past it unpaid (cardPaymentReminders) */
+  paymentReminders: CardPaymentReminder[];
+  /** loan installments and bills due tomorrow, today, or past due and not marked paid (billReminders) */
+  bills: BillReminder[];
   safe: ReturnType<typeof safeToSpend>;
   flow: Array<{ month: string; income: number; expense: number }>;
   /** VICTVS sessions held and not yet paid, USD */
@@ -68,6 +73,8 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const netWorth = { ...rawNetWorth, total: rawNetWorth.total - cardsOwed };
 
   const duePayments = findDueCardPayments(accounts.data, book, today);
+  const paymentReminders = cardPaymentReminders(accounts.data, book, today);
+  const bills = billReminders(transactions.data, accounts.data, book, today);
   const safe = safeToSpend({
     accounts: accounts.data,
     balances,
@@ -112,6 +119,8 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     cardsOwed,
     book,
     duePayments,
+    paymentReminders,
+    bills,
     safe,
     flow,
     unpaidVictvs,
