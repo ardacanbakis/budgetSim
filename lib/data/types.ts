@@ -259,6 +259,8 @@ export type ActivityAction =
   | "archived"
   | "restored"
   | "adjusted"
+  /** brought back by an undo (lib/domain/undo.ts) */
+  | "undone"
   | "paid"
   | "unpaid"
   | "reflected"

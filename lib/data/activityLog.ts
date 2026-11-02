@@ -63,9 +63,39 @@ export function withActivityLog(inner: Repo): Repo {
       await record([entry("account", id, id, action, before.name, changes)]);
     },
     async deleteAccount(id) {
-      const before = (await inner.listAccounts()).find((a) => a.id === id);
+      const accounts = await inner.listAccounts();
+      const before = accounts.find((a) => a.id === id);
+      // everything deleting it takes or unlinks, so an undo can put it all back (lib/domain/undo.ts)
+      const rows = before ? (await transactions()).filter((t) => t.accountId === id) : [];
+      const estimates = before ? await inner.listCardEstimates().then((list) => list.filter((e) => e.accountId === id), () => []) : [];
+      const loans = before ? await inner.listLoans().then((list) => list, () => []) : [];
       await inner.deleteAccount(id);
-      if (before) await record([entry("account", id, null, "deleted", before.name, fieldChanges(before, null, ACCOUNT_FIELDS))]);
+      if (!before) return;
+      await record([
+        entry("account", id, null, "deleted", before.name, {
+          ...fieldChanges(before, null, ACCOUNT_FIELDS),
+          _account: [before, null],
+          _rows: [rows, null],
+          _estimates: [estimates, null],
+          _payers: [accounts.filter((a) => a.paymentAccountId === id).map((a) => a.id), null],
+          _loans: [
+            loans
+              .filter((l) => l.depositAccountId === id || l.payAccountId === id)
+              .map((l) => ({ id: l.id, deposit: l.depositAccountId === id, pay: l.payAccountId === id })),
+            null,
+          ],
+        }),
+      ]);
+    },
+    async restoreRows(set) {
+      await inner.restoreRows(set);
+      await record([
+        ...set.accounts.map((a) =>
+          entry("account", a.id, a.id, "undone", a.name, { ...fieldChanges(null, a, ACCOUNT_FIELDS), rows: [null, set.transactions.length] })
+        ),
+        // an account's own rows come back with it; its entry says how many
+        ...(set.accounts.length > 0 ? [] : set.transactions.map((t) => txEntry(t, "undone", fieldChanges(null, t, TRANSACTION_FIELDS)))),
+      ]);
     },
 
     async createTransaction(input) {
@@ -130,7 +160,8 @@ export function withActivityLog(inner: Repo): Repo {
     async deleteTransaction(id) {
       const legs = withLegs(await transactions(), id);
       await inner.deleteTransaction(id);
-      await record(legs.map((t) => txEntry(t, "deleted", fieldChanges(t, null, TRANSACTION_FIELDS))));
+      // the whole row, so an undo can bring it back as it was (lib/domain/undo.ts)
+      await record(legs.map((t) => txEntry(t, "deleted", { ...fieldChanges(t, null, TRANSACTION_FIELDS), _row: [t, null] })));
     },
     async createTransfer(input) {
       await inner.createTransfer(input);

@@ -1,4 +1,5 @@
 import { FxSnapshot } from "@/lib/domain/fx";
+import { RestoreSet } from "@/lib/domain/undo";
 import {
   computeMissingOccurrences,
   findAutoCompletable,
@@ -133,6 +134,24 @@ export class DemoRepo implements Repo {
     for (const a of this.store.accounts) if (a.paymentAccountId === id) a.paymentAccountId = null;
     for (const p of this.store.purchases) if (p.accountId === id) p.accountId = null;
     this.store.cardEstimates = (this.store.cardEstimates ?? []).filter((e) => e.accountId !== id);
+    this.save();
+  }
+
+  async restoreRows(set: RestoreSet): Promise<void> {
+    const has = <T extends { id: string }>(list: T[], id: string) => list.some((x) => x.id === id);
+    for (const a of set.accounts) if (!has(this.store.accounts, a.id)) this.store.accounts.push(copy(a));
+    this.store.cardEstimates = this.store.cardEstimates ?? [];
+    for (const e of set.cardEstimates) if (!has(this.store.cardEstimates, e.id)) this.store.cardEstimates.push(copy(e));
+    for (const t of set.transactions) if (!has(this.store.transactions, t.id)) this.store.transactions.push(copy(t));
+    const restored = set.accounts[0]?.id;
+    if (restored) {
+      for (const a of this.store.accounts) if (set.payers.includes(a.id)) a.paymentAccountId = restored;
+      for (const l of this.store.loans) {
+        const link = set.loans.find((x) => x.id === l.id);
+        if (link?.deposit) l.depositAccountId = restored;
+        if (link?.pay) l.payAccountId = restored;
+      }
+    }
     this.save();
   }
 
