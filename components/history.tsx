@@ -2,10 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { Badge, Card, CardHeader, EmptyState, Select, Spinner } from "@/components/ui";
-import { useAccounts, useActivity, useCategories, usePurchases, useTransactions } from "@/lib/data/queries";
+import { useRepo } from "@/lib/data/provider";
+import { KEYS, useAccounts, useActivity, useAppMutation, useCategories, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
+import { Repo } from "@/lib/data/repo";
 import { Account, ActivityEntity, ActivityEntry } from "@/lib/data/types";
 import { HistoryItem, holdingsDiff, lastChange, mergeHistory, moneyRows } from "@/lib/domain/activity";
 import { Currency, formatAmount } from "@/lib/domain/currencies";
+import { FxSnapshot, snapshotFromTable } from "@/lib/domain/fx";
+import { planUndo, UndoStep } from "@/lib/domain/undo";
 import { useFormatDate } from "@/lib/useFormatDate";
 import { useI18n } from "@/lib/i18n";
 
@@ -54,7 +58,8 @@ export function useChangeText() {
     };
     const details: string[] = [];
     for (const [field, [before, after]] of Object.entries(entry.changes)) {
-      if (QUIET.has(field)) continue;
+      // "_row", "_account", ...: the copies an undo restores from, not something to read
+      if (QUIET.has(field) || field.startsWith("_")) continue;
       if (field === "dueDate" && before === after) continue;
       if (field === "holdings") {
         for (const d of holdingsDiff(before, after)) details.push(`${t(`gold.type_${d.type}`)} ${d.before} → ${d.after}`);
@@ -90,19 +95,100 @@ function whenOf(at: string, fmtDate: (iso: string) => string, locale: string): s
   return `${day} ${time}`;
 }
 
-/** One change, as a line. */
+/** Carries out an undo's steps in order, through the logged repo so the undo is in the history too. */
+async function runUndo(repo: Repo, steps: UndoStep[], fx: FxSnapshot): Promise<void> {
+  for (const step of steps) {
+    switch (step.kind) {
+      case "deleteTransaction":
+        await repo.deleteTransaction(step.id);
+        break;
+      case "updateTransaction":
+        await repo.updateTransaction(step.id, step.patch);
+        break;
+      case "reopenTransaction":
+        await repo.reopenTransaction(step.id);
+        break;
+      case "completeTransaction":
+        await repo.completeTransaction(step.id, fx);
+        break;
+      case "setLegacy":
+        await repo.setTransactionLegacy(step.id, step.legacy);
+        break;
+      case "updateAccount":
+        await repo.updateAccount(step.id, step.patch);
+        break;
+      case "deleteAccount":
+        await repo.deleteAccount(step.id);
+        break;
+      case "restore":
+        await repo.restoreRows(step.set);
+        break;
+    }
+  }
+}
+
+/**
+ * Undo for one change (lib/domain/undo.ts): a button while things are still
+ * as that change left them, a quiet note when they aren't (changed since,
+ * already undone, logged before undo existed), nothing for what undo can't
+ * reverse. An undo is itself in the history, so it can be undone in turn.
+ */
+function UndoButton({ entry, what }: { entry: ActivityEntry; what: string }) {
+  const { t } = useI18n();
+  const repo = useRepo();
+  const activity = useActivity();
+  const accounts = useAccounts();
+  const transactions = useTransactions();
+  const rates = useRates();
+  const undo = useAppMutation((steps: UndoStep[]) => runUndo(repo, steps, snapshotFromTable(rates.data!)), [
+    KEYS.transactions,
+    KEYS.accounts,
+    KEYS.cardEstimates,
+    KEYS.loans,
+  ]);
+  if (!activity.data || !accounts.data || !transactions.data) return null;
+  const plan = planUndo(entry, activity.data, { accounts: accounts.data, transactions: transactions.data });
+  if (!plan.ok) {
+    if (plan.reason === "unsupported" || plan.reason === "gone") return null;
+    return <span className="shrink-0 text-[11px] text-zinc-400">{t(`history.undoBlocked.${plan.reason}`)}</span>;
+  }
+  return (
+    <button
+      type="button"
+      className="shrink-0 rounded-md border border-[var(--edge)] px-2 py-0.5 text-[11px] text-teal-700 hover:bg-[var(--edge-soft)] disabled:opacity-50 dark:text-teal-300"
+      disabled={undo.isPending || (plan.steps.some((s) => s.kind === "completeTransaction") && !rates.data)}
+      data-undo
+      onClick={(e) => {
+        // a change line can sit inside a link (the dashboard's cards)
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm(t("history.undoConfirm", { what }))) return;
+        undo.mutate(plan.steps, {
+          onError: (err) => window.alert(t("history.undoFailed", { error: err instanceof Error ? err.message : String(err) })),
+        });
+      }}
+    >
+      {t("history.undo")}
+    </button>
+  );
+}
+
+/** One change, as a line, with Undo where it can still be undone. */
 export function ChangeLine({ entry }: { entry: ActivityEntry }) {
   const { locale } = useI18n();
   const fmtDate = useFormatDate();
   const text = useChangeText();
   const { title, details } = text(entry);
   return (
-    <div className="min-w-0" data-change={entry.action}>
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="truncate text-sm">{title}</span>
-        <span className="text-[11px] text-zinc-400">{whenOf(entry.at, fmtDate, locale)}</span>
+    <div className="flex min-w-0 items-start justify-between gap-2" data-change={entry.action}>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="truncate text-sm">{title}</span>
+          <span className="text-[11px] text-zinc-400">{whenOf(entry.at, fmtDate, locale)}</span>
+        </div>
+        {details.length > 0 ? <div className="text-xs text-zinc-500">{details.join(" · ")}</div> : null}
       </div>
-      {details.length > 0 ? <div className="text-xs text-zinc-500">{details.join(" · ")}</div> : null}
+      <UndoButton entry={entry} what={title} />
     </div>
   );
 }

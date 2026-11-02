@@ -44,6 +44,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { buildPurchaseTransactionSpecs } from "@/lib/domain/purchases";
 import { todayISO } from "@/lib/domain/recurrence";
 import { readHoldings } from "@/lib/domain/gold";
+import { RestoreSet } from "@/lib/domain/undo";
 import { DbError, describeError, toDbError } from "./errors";
 import { selectAll } from "./paginate";
 
@@ -200,6 +201,20 @@ function throwIf(error: { message: string; code?: string; details?: string; hint
  * user_id is set explicitly on inserts. Balances are never written — they
  * are derived server-side (account_balances view / computeBalances).
  */
+/** A transaction as an insert keeps it: its own id and every link (restore and undo). */
+function transactionInsertRow(t: Transaction, u: string): Row {
+  return {
+    id: t.id, user_id: u, account_id: t.accountId, direction: t.direction, category_id: t.categoryId,
+    amount: t.amount, status: t.status, due_date: t.dueDate, completed_at: t.completedAt,
+    description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
+    transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
+    loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
+    ...(t.adjustment ? { adjustment: true } : {}),
+    ...(t.loanPrincipal ? { loan_principal: true } : {}),
+    ...(t.convertsId ? { converts_id: t.convertsId } : {}),
+  };
+}
+
 export class SupabaseRepo implements Repo {
   readonly mode = "supabase" as const;
 
@@ -264,6 +279,46 @@ export class SupabaseRepo implements Repo {
   async deleteAccount(id: string): Promise<void> {
     const { error } = await this.db.from("accounts").delete().eq("id", id);
     throwIf(error);
+  }
+
+  async restoreRows(set: RestoreSet): Promise<void> {
+    const u = this.userId;
+    // PostgREST inserts the union of every row's keys; missing ones take the column default
+    const insert = async (table: string, rows: Row[]) => {
+      if (!rows.length) return;
+      const { error } = await this.db.from(table).insert(rows, { defaultToNull: false });
+      throwIf(error);
+    };
+    await insert(
+      "accounts",
+      set.accounts.map((a) => ({
+        id: a.id, user_id: u, name: a.name, currency: a.currency, kind: a.kind,
+        opening_balance: a.openingBalance, archived: a.archived, created_at: a.createdAt,
+        payment_account_id: a.paymentAccountId, payment_day: a.paymentDay ?? null, credit_limit: a.creditLimit ?? null,
+        ...(a.holdings?.length ? { holdings: a.holdings } : {}),
+      }))
+    );
+    await insert(
+      "card_estimates",
+      set.cardEstimates.map((e) => ({
+        id: e.id, user_id: u, account_id: e.accountId, month: e.month, amount: e.amount, noted_on: e.notedOn, created_at: e.createdAt,
+      }))
+    );
+    await insert("transactions", set.transactions.map((t) => transactionInsertRow(t, u)));
+    const restored = set.accounts[0]?.id;
+    if (!restored) return;
+    for (const id of set.payers) {
+      const { error } = await this.db.from("accounts").update({ payment_account_id: restored }).eq("id", id);
+      throwIf(error);
+    }
+    for (const l of set.loans) {
+      const row: Row = {};
+      if (l.deposit) row.deposit_account_id = restored;
+      if (l.pay) row.pay_account_id = restored;
+      if (Object.keys(row).length === 0) continue;
+      const { error } = await this.db.from("loans").update(row).eq("id", l.id);
+      throwIf(error);
+    }
   }
 
   async listCategories(): Promise<Category[]> {
@@ -1482,16 +1537,7 @@ export class SupabaseRepo implements Repo {
       id: p.id, user_id: u, payment_date: p.paymentDate, account_id: p.accountId, total: p.total,
       session_count: p.sessionCount, created_at: p.createdAt,
     })));
-    await insert("transactions", backup.transactions.map((t) => ({
-      id: t.id, user_id: u, account_id: t.accountId, direction: t.direction, category_id: t.categoryId,
-      amount: t.amount, status: t.status, due_date: t.dueDate, completed_at: t.completedAt,
-      description: t.description, fx_snapshot: t.fxSnapshot, transfer_group_id: t.transferGroupId,
-      transfer_market_rate: t.transferMarketRate, recurring_template_id: t.recurringTemplateId,
-      loan_id: t.loanId, victvs_payout_id: t.victvsPayoutId, purchase_id: t.purchaseId, legacy: t.legacy ?? false, created_at: t.createdAt,
-      ...(t.adjustment ? { adjustment: true } : {}),
-      ...(t.loanPrincipal ? { loan_principal: true } : {}),
-      ...(t.convertsId ? { converts_id: t.convertsId } : {}),
-    })));
+    await insert("transactions", backup.transactions.map((t) => transactionInsertRow(t, u)));
     for (const p of backup.victvsPayouts) {
       if (p.transactionId) {
         const { error } = await this.db.from("victvs_payouts").update({ transaction_id: p.transactionId }).eq("id", p.id);

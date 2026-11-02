@@ -1,6 +1,7 @@
 import { Currency } from "@/lib/domain/currencies";
 import { FxSnapshot } from "@/lib/domain/fx";
 import { BackfillMode } from "@/lib/domain/materialize";
+import { RestoreSet } from "@/lib/domain/undo";
 import {
   Account,
   ActivityEntry,
@@ -205,6 +206,12 @@ export interface Repo {
   createAccount(input: NewAccount): Promise<Account>;
   updateAccount(id: string, patch: Partial<NewAccount> & { archived?: boolean }): Promise<void>;
   deleteAccount(id: string): Promise<void>;
+  /**
+   * Puts back what an undo restores (lib/domain/undo.ts): accounts and rows
+   * with their own ids, an account's expected statements, and the links other
+   * cards and debts had to a restored account.
+   */
+  restoreRows(set: RestoreSet): Promise<void>;
 
   listCategories(): Promise<Category[]>;
   createCategory(input: { name: string; direction: TxDirection; color: string }): Promise<Category>;
