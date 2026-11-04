@@ -5,6 +5,7 @@ import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardHeader, Field, Input, Select, Skeleton } from "@/components/ui";
 import { Icon } from "@/components/pocket/icons";
+import { LiraDevaluationSection } from "@/components/liraDevaluation";
 import { useRates } from "@/lib/data/queries";
 import { convertUnits, formatRate, formatUnitAmount } from "@/lib/domain/converter";
 import { parseTypedAmount } from "@/lib/domain/money";
@@ -205,6 +206,8 @@ export function RateHistoryCard({ className }: { className?: string }) {
             </details>
           </>
         )}
+
+        <LiraDevaluationSection />
 
         <div className="space-y-2 border-t border-[var(--edge-soft)] pt-3">
           <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{t("gadgets.onDate")}</h3>

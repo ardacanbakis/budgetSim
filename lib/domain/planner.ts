@@ -173,6 +173,11 @@ export interface Devaluation {
   enabled: boolean;
   /** e.g. 30 = the lira loses 30% of its USD value each year, compounding */
   pctPerYear: number;
+  /**
+   * set when the rate came from the lira's real average over this many years
+   * (lib/domain/liraDevaluation.ts); a hand-set rate clears it
+   */
+  basisYears?: number | null;
 }
 
 /**

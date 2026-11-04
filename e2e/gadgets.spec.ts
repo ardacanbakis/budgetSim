@@ -247,6 +247,7 @@ test("rate history: a pair over a range, and an amount on a past date against to
   await page.route("**/api/rate-history**", (route) => {
     const url = new URL(route.request().url());
     asked.push(url.search);
+    if (url.searchParams.has("devaluation")) return route.fulfill({ json: { fetchedAt: new Date().toISOString(), points: [] } });
     if (url.searchParams.get("on")) {
       return route.fulfill({ json: { date: "2025-03-14", usdPer: { USD: 1, TRY: 1 / 36.6, EUR: 1.09 } } });
     }
@@ -350,4 +351,74 @@ test("phone: the name goes to the Dashboard, which leaves the bar, by default", 
   // Settings is still in More on a phone
   await bar.getByRole("button", { name: /more/i }).click();
   await expect(page.locator('a[href="/settings"]').last()).toBeVisible();
+});
+
+/** USD/TRY now and 1, 3 and 5 years back (no 2 or 4): 40, 32, 20 and 10 lira a dollar. */
+async function pinLiraHistory(page: Page) {
+  await page.route("**/api/rate-history?devaluation=1", (route) =>
+    route.fulfill({
+      json: {
+        fetchedAt: new Date().toISOString(),
+        points: [
+          { yearsAgo: 0, date: "2026-11-04", tryPerUsd: 40 },
+          { yearsAgo: 1, date: "2025-11-04", tryPerUsd: 32 },
+          { yearsAgo: 3, date: "2023-11-03", tryPerUsd: 20 },
+          { yearsAgo: 5, date: "2021-11-04", tryPerUsd: 10 },
+        ],
+      },
+    })
+  );
+}
+
+test("lira devaluation in Rate history: real averages over 1, 3 and 5 years, and where the pace leads", async ({ page }) => {
+  await pinLiraHistory(page);
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const section = page.locator("[data-lira-devaluation]");
+  // 32 → 40 in a year: the lira kept 80%
+  await expect(section.locator('[data-deval-window="1"]')).toContainText("−20% a year");
+  await expect(section.locator('[data-deval-window="1"]')).toContainText("32 → 40");
+  // 20 → 40 in three: 1 − ∛0.5; 10 → 40 in five: 1 − ⁵√0.25
+  await expect(section.locator('[data-deval-window="3"]')).toContainText("−20.6% a year");
+  await expect(section.locator('[data-deval-window="5"]')).toContainText("−24.2% a year");
+
+  // the three-year pace by default: 40 / 0.7937ⁿ
+  await expect(section.locator('[data-deval-window="3"]')).toHaveAttribute("aria-pressed", "true");
+  const projection = section.locator("[data-deval-projection] li");
+  await expect(projection.nth(0)).toContainText("50.4");
+  await expect(projection.nth(1)).toContainText("80");
+  await section.locator('[data-deval-window="1"]').click();
+  await expect(projection.nth(0)).toContainText("50");
+  await expect(projection.nth(2)).toContainText("122.07");
+
+  // year by year: only the one year both ends of which came back
+  await section.getByText("Year by year").click();
+  await expect(section.getByText("2025 → 2026 · 32 → 40")).toBeVisible();
+});
+
+test("the Plan's devaluation starts from the lira's real average, and any window is a click away", async ({ page }) => {
+  await pinLiraHistory(page);
+  await enterDemo(page);
+  await page.goto("/planner");
+  await page.getByText("Model a steadily weakening lira").click();
+
+  // the default 25% gives way to the real three-year average
+  const real = page.locator("[data-deval-real]");
+  await expect(page.getByRole("slider", { name: "Devaluation per year" })).toHaveValue("21");
+  await expect(real.getByRole("button", { name: /last 3 years: −21% a year/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(real.locator("[data-deval-basis]")).toHaveText("The lira's real average over the last 3 years (20.00 → 40.00 lira a dollar).");
+
+  await real.getByRole("button", { name: /last 5 years/ }).click();
+  await expect(page.getByRole("slider", { name: "Devaluation per year" })).toHaveValue("24");
+  await expect(real.locator("[data-deval-basis]")).toContainText("last 5 years (10.00 → 40.00");
+
+  // kept with the plan
+  await page.reload();
+  await expect(page.getByRole("slider", { name: "Devaluation per year" })).toHaveValue("24");
+  await expect(page.locator("[data-deval-real] [data-deval-basis]")).toContainText("last 5 years");
+
+  // set by hand, it no longer claims to be the average
+  await page.getByRole("slider", { name: "Devaluation per year" }).fill("30");
+  await expect(page.locator("[data-deval-real] [data-deval-basis]")).toHaveCount(0);
+  await expect(page.locator("[data-deval-real]").getByRole("button", { pressed: true })).toHaveCount(0);
 });

@@ -36,7 +36,11 @@ import {
   soldFromReserve,
   totalDrawn,
   retentionFactor,
+  Devaluation,
+  NO_DEVALUATION,
 } from "@/lib/domain/planner";
+import { planRate, windowAverages } from "@/lib/domain/liraDevaluation";
+import { useLiraHistory } from "@/lib/ui/useLiraHistory";
 import { usePlanScenarios } from "@/lib/usePlanScenarios";
 import { SHORT_THRESHOLD_KEY, useLocalNumber, useLocalToggle } from "@/lib/prefs";
 import { ScenarioBar } from "@/components/scenarioBar";
@@ -229,6 +233,10 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
   }, []);
 
   const persist = scenarios.update;
+  // the lira's real yearly loss over the last 1, 3 and 5 years, offered as the devaluation assumption
+  const liraHistory = useLiraHistory();
+  const liraAverages = liraHistory.data ? windowAverages(liraHistory.data) : [];
+  const setDevaluation = (devaluation: Devaluation) => persist({ ...plan, devaluation });
   const setCompare = (id: string | null) => {
     setCompareId(id);
     if (id) window.localStorage.setItem(COMPARE_KEY, id);
@@ -1071,7 +1079,14 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                 type="checkbox"
                 className="mt-0.5 h-4 w-4 accent-teal-600"
                 checked={plan.devaluation.enabled}
-                onChange={(e) => persist({ ...plan, devaluation: { ...plan.devaluation, enabled: e.target.checked } })}
+                onChange={(e) => {
+                  const next = { ...plan.devaluation, enabled: e.target.checked };
+                  // turned on for the first time, at the default rate: start from the lira's
+                  // real three-year average (or the longest there is) instead of a guess
+                  const untouched = next.basisYears == null && next.pctPerYear === NO_DEVALUATION.pctPerYear;
+                  const real = liraAverages.find((a) => a.years === 3) ?? liraAverages.at(-1);
+                  setDevaluation(next.enabled && untouched && real ? { ...next, pctPerYear: planRate(real.pct), basisYears: real.years } : next);
+                }}
               />
               <span>
                 <span className="block text-sm font-medium">{t("planner.devalEnable")}</span>
@@ -1087,9 +1102,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                     max="60"
                     step="1"
                     value={plan.devaluation.pctPerYear}
-                    onChange={(e) =>
-                      persist({ ...plan, devaluation: { ...plan.devaluation, pctPerYear: Number(e.target.value) } })
-                    }
+                    onChange={(e) => setDevaluation({ ...plan.devaluation, pctPerYear: Number(e.target.value), basisYears: null })}
                     className="flex-1 accent-teal-600"
                     aria-label={t("planner.devalRate")}
                   />
@@ -1103,6 +1116,55 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
                     pct: Math.round((1 - retentionFactor(plan.devaluation, months)) * 100),
                   })}
                 </p>
+                <div data-deval-real className="space-y-1.5">
+                  {liraHistory.isLoading ? (
+                    <p className="text-xs text-zinc-400">{t("planner.devalRealLoading")}</p>
+                  ) : liraAverages.length === 0 ? (
+                    <p className="text-xs text-zinc-400">{t("planner.devalRealMissing")}</p>
+                  ) : (
+                    <>
+                      <div role="group" aria-label={t("planner.devalReal")} className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-zinc-500">{t("planner.devalReal")}:</span>
+                        {liraAverages.map((a) => {
+                          const pct = planRate(a.pct);
+                          const on = plan.devaluation.basisYears === a.years && plan.devaluation.pctPerYear === pct;
+                          return (
+                            <button
+                              key={a.years}
+                              type="button"
+                              aria-pressed={on}
+                              aria-label={t("planner.devalRealPick", { n: a.years, pct })}
+                              onClick={() => setDevaluation({ ...plan.devaluation, pctPerYear: pct, basisYears: a.years })}
+                              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium tabular-nums transition-colors ${
+                                on
+                                  ? "border-teal-600 bg-teal-600 text-white dark:border-teal-500 dark:bg-teal-500 dark:text-zinc-950"
+                                  : "border-[var(--edge)] text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+                              }`}
+                            >
+                              {t("planner.devalRealWindow", { n: a.years, pct })}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {(() => {
+                        const basis = liraAverages.find(
+                          (a) => a.years === plan.devaluation.basisYears && planRate(a.pct) === plan.devaluation.pctPerYear
+                        );
+                        if (!basis) return null;
+                        const params = {
+                          n: basis.years,
+                          from: basis.from.tryPerUsd.toFixed(2),
+                          to: basis.to.tryPerUsd.toFixed(2),
+                        };
+                        return (
+                          <p data-deval-basis className="text-xs text-zinc-500">
+                            {basis.years === 1 ? t("planner.devalRealBasisOne", params) : t("planner.devalRealBasis", params)}
+                          </p>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
               </>
             ) : null}
           </div>
