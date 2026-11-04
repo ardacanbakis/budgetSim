@@ -220,7 +220,8 @@ test.describe("Pocket accounts strip", () => {
 });
 
 // on a wide screen the tabs are the side nav, and the open one is the current page
-const tabButton = (page: Page, name: RegExp) => page.getByRole("button", { name });
+// the Settings tabs, in their own nav: a tab's name can also be a button's on the page (Sidebar's "Dashboard")
+const tabButton = (page: Page, name: RegExp) => page.getByRole("navigation", { name: /^(Settings|Ayarlar)$/ }).getByRole("button", { name });
 
 test.describe("Settings → Dashboard", () => {
   test("opens by link, is remembered, and switching tabs keeps working after a query", async ({ page }) => {
