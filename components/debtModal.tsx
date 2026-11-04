@@ -76,6 +76,8 @@ export function DebtModal({
   const [date, setDate] = useState(todayISO());
   const [depositId, setDepositId] = useState("");
   const [payId, setPayId] = useState("");
+  /** the deposit was picked by hand: a past date no longer clears it */
+  const [depositTouched, setDepositTouched] = useState(false);
   const [repay, setRepay] = useState<Repay>("whenICan");
   const [payoff, setPayoff] = useState("");
   const [months, setMonths] = useState("12");
@@ -95,6 +97,7 @@ export function DebtModal({
     setInitialized(key);
     const guess = guessDebtCategory(categories.data ?? []);
     setViaId(editing?.purchaseId ?? "");
+    setDepositTouched(false);
     if (editing) {
       setDirection(editing.direction);
       setPerson(editing.kind === "personal");
@@ -219,6 +222,13 @@ export function DebtModal({
   }, invalidate);
 
   const busy = create.isPending || update.isPending;
+  // money borrowed (or lent) before today is already in the balances, or spent:
+  // unless picked by hand, a past date records no row for it, only the repayments
+  const changeDate = (next: string) => {
+    setDate(next);
+    if (editing || from || depositTouched) return;
+    setDepositId(next && next < todayISO() ? "" : (active[0]?.id ?? ""));
+  };
   const lent = direction === "lent";
   const template = from?.kind === "template" ? from.template : null;
   // what can repay a debt you owe: a big purchase on a card (a cash advance is one)
@@ -321,7 +331,7 @@ export function DebtModal({
               />
             </Field>
             <Field label={lent ? t("debts.dateLent") : t("debts.dateOwe")}>
-              <Input type="date" required value={date} disabled={from?.kind === "transaction"} onChange={(e) => setDate(e.target.value)} />
+              <Input type="date" required value={date} disabled={from?.kind === "transaction"} onChange={(e) => changeDate(e.target.value)} />
             </Field>
           </div>
         )}
@@ -329,9 +339,18 @@ export function DebtModal({
         {template ? null : from?.kind === "transaction" ? (
           <p className="text-xs text-zinc-500">{t("debts.depositLedger", { what: `${from.tx.description || "—"} · ${money(from.tx.amount)} · ${fmtDate(from.tx.dueDate)}` })}</p>
         ) : editing && deposits.length === 0 ? null : (
-          <Field label={lent ? t("debts.depositLent") : t("debts.depositOwe")} hint={editing ? undefined : t("debts.depositHint")}>
-            <Select value={depositId} onChange={(e) => setDepositId(e.target.value)}>
-              {editing ? null : <option value="">{t("debts.depositNone")}</option>}
+          <Field
+            label={lent ? t("debts.depositLent") : t("debts.depositOwe")}
+            hint={editing ? undefined : depositId ? t("debts.depositHint") : lent ? t("debts.depositNoneHintLent") : t("debts.depositNoneHint")}
+          >
+            <Select
+              value={depositId}
+              onChange={(e) => {
+                setDepositTouched(true);
+                setDepositId(e.target.value);
+              }}
+            >
+              {editing ? null : <option value="">{lent ? t("debts.depositNoneLent") : t("debts.depositNone")}</option>}
               {active.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({a.currency})
