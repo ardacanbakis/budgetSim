@@ -25,7 +25,21 @@ export const KEYS = {
   activity: ["activity"] as const,
   cardEstimates: ["card-estimates"] as const,
   timers: ["timers"] as const,
+  rateAlerts: ["rate-alerts"] as const,
+  pinnedConversions: ["pinned-conversions"] as const,
 };
+
+/** Rate alerts (lib/domain/rateAlerts.ts). */
+export function useRateAlerts() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.rateAlerts, queryFn: () => repo.listRateAlerts() });
+}
+
+/** Conversions pinned over the Gadgets page's converter. */
+export function usePinnedConversions() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.pinnedConversions, queryFn: () => repo.listPinnedConversions() });
+}
 
 /** The Gadgets page's countdowns and counts since (lib/domain/countdown.ts). */
 export function useTimers() {

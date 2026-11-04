@@ -241,7 +241,8 @@ test.describe("Settings → Dashboard", () => {
     const sidebar = page.locator("aside nav");
     await sidebar.locator('a[href="/accounts"]').click();
     await expect(page).toHaveURL(/\/accounts$/);
-    await sidebar.locator('a[href="/settings"]').click();
+    // Settings sits in the sidebar's corner, beside Log out
+    await page.locator('aside [data-sidebar-footer] a[href="/settings"]').click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(tabButton(page, /Dashboard$/)).toHaveAttribute("aria-current", "page");
     await tabButton(page, /Preferences$/).click();

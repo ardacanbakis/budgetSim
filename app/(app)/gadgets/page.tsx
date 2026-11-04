@@ -1,13 +1,17 @@
 "use client";
 
 import { ConverterCard } from "@/components/converterCard";
+import { InflationCard } from "@/components/inflationCard";
+import { RateAlertsCard } from "@/components/rateAlertsCard";
+import { RateHistoryCard } from "@/components/rateHistoryCard";
 import { TimersCard } from "@/components/timersCard";
 import { useI18n } from "@/lib/i18n";
 
 /**
  * Gadgets: small tools that sit beside the money rather than in it. Date
- * timers (countdowns and counts since, stored per user) and a converter on
- * the app's own live rates. Nothing here touches a balance.
+ * timers (countdowns and counts since, stored per user), a converter on the
+ * app's own live rates with pinned conversions, rate alerts, rate history,
+ * and an inflation calculator. Nothing here touches a balance.
  */
 export default function GadgetsPage() {
   const { t } = useI18n();
@@ -18,8 +22,25 @@ export default function GadgetsPage() {
         <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("gadgets.intro")}</p>
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <TimersCard />
-        <ConverterCard />
+        <div className="space-y-4">
+          <section data-gadget="timers">
+            <TimersCard />
+          </section>
+          <section data-gadget="history">
+            <RateHistoryCard />
+          </section>
+        </div>
+        <div className="space-y-4">
+          <section data-gadget="converter">
+            <ConverterCard />
+          </section>
+          <section data-gadget="alerts">
+            <RateAlertsCard />
+          </section>
+          <section data-gadget="inflation">
+            <InflationCard />
+          </section>
+        </div>
       </div>
     </div>
   );

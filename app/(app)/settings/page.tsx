@@ -22,6 +22,7 @@ import { Locale, useI18n } from "@/lib/i18n";
 import { BUILD, MAIN_BRANCH } from "@/lib/buildInfo";
 import { PHONE_LAYOUT_ANCHOR, PHONE_LAYOUTS, SHOW_PHONE_LAYOUT_EVENT } from "@/lib/ui/phone";
 import { UI_STYLES } from "@/lib/ui/style";
+import { useBrandNav } from "@/lib/ui/useBrandNav";
 import { useIsPhone, usePocket } from "@/lib/ui/usePocket";
 import { DEFAULT_FOURTH, fourthTabChoices } from "@/lib/ui/pocket/bar";
 import { isHeroFigure, POCKET_KEYS, usePocketFlag, usePocketPref } from "@/lib/ui/pocket/prefs";
@@ -980,6 +981,7 @@ function VictvsSettingsCard() {
 
 function SidebarOrderCard() {
   const { t } = useI18n();
+  const brand = useBrandNav();
   const repo = useRepo();
   const queryClient = useQueryClient();
   const settings = useUserSettings();
@@ -1026,6 +1028,37 @@ function SidebarOrderCard() {
           ) : undefined
         }
       />
+      <div data-brand-nav className="space-y-2 border-b border-[var(--edge-soft)] px-4 py-3">
+        <Fieldset label={t("settings.brandTarget")} hint={t("settings.brandHint")}>
+          <div role="group" aria-label={t("settings.brandTarget")} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+            {(["welcome", "dashboard"] as const).map((target) => (
+              <button
+                key={target}
+                type="button"
+                aria-pressed={brand.target === target}
+                onClick={() => brand.setTarget(target)}
+                className={`flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                  brand.target === target
+                    ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950"
+                    : "text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+                }`}
+              >
+                {t(target === "welcome" ? "settings.brandWelcome" : "settings.brandDashboard")}
+              </button>
+            ))}
+          </div>
+        </Fieldset>
+        <label className={`flex items-center gap-2 text-sm ${brand.target === "dashboard" ? "" : "opacity-50"}`}>
+          <input
+            type="checkbox"
+            checked={brand.target === "dashboard" && brand.hideDashboard}
+            disabled={brand.target !== "dashboard"}
+            onChange={(e) => brand.setHideDashboard(e.target.checked)}
+            className="h-4 w-4 accent-teal-600"
+          />
+          {t("settings.brandHideDashboard")}
+        </label>
+      </div>
       <p className="px-4 pt-2 text-xs text-zinc-500">{t("settings.sidebarHint")}</p>
       <ul className="divide-y divide-[var(--edge-soft)]">
         {entries.map(({ item, hidden }, index) => (

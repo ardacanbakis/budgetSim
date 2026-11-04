@@ -5,9 +5,21 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Fieldset, Input, Mo
 import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAppMutation, useTimers } from "@/lib/data/queries";
 import { DateTimer } from "@/lib/data/types";
-import { localMoment, momentParts, sortTimers, TimerKind, TimerPhase, timerState } from "@/lib/domain/countdown";
+import {
+  localMoment,
+  momentParts,
+  sortTimers,
+  TIMER_UNITS,
+  TimerKind,
+  TimerPhase,
+  timerState,
+  TimerUnit,
+  totalIn,
+  unitDecimals,
+} from "@/lib/domain/countdown";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
+import { useLocalChoice } from "@/lib/prefs";
 
 const segment = (on: boolean) =>
   `flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
@@ -79,7 +91,11 @@ function TimerTile({ timer, now, onEdit }: { timer: DateTimer; now: number; onEd
   const state = timerState(timer.kind, timer.targetAt, now);
   const parts = momentParts(timer.targetAt);
   const when = parts.time === "00:00" ? formatDate(parts.date) : `${formatDate(parts.date)} ${parts.time}`;
-  const n = (v: number) => new Intl.NumberFormat(locale === "tr" ? "tr-TR" : "en-US").format(v);
+  const intl = locale === "tr" ? "tr-TR" : "en-US";
+  const n = (v: number) => new Intl.NumberFormat(intl).format(v);
+  // how this timer is shown is a view setting, so it stays on the device
+  const { value: unit, setValue: setUnit } = useLocalChoice<TimerUnit>(`renovator-timer-unit-${timer.id}`, TIMER_UNITS, "parts");
+  const target = Date.parse(timer.targetAt);
   const units = [
     { key: "days", value: n(state.span.days) },
     { key: "hours", value: String(state.span.hours).padStart(2, "0") },
@@ -110,20 +126,47 @@ function TimerTile({ timer, now, onEdit }: { timer: DateTimer; now: number; onEd
         </button>
         <Badge tone={PHASE_TONE[state.phase]}>{t(`gadgets.badge_${state.phase}`)}</Badge>
       </div>
-      <div className={`mt-2 grid grid-cols-4 gap-1.5 ${muted ? "opacity-60" : ""}`} aria-live="off">
-        {units.map((u) => (
-          <div key={u.key} className="rounded-md bg-[var(--edge-soft)] px-1 py-1.5 text-center">
-            <div data-unit={u.key} className="tnum text-lg font-semibold leading-tight text-zinc-900 dark:text-zinc-100">
-              {u.value}
+      {unit === "parts" ? (
+        <div className={`mt-2 grid grid-cols-4 gap-1.5 ${muted ? "opacity-60" : ""}`} aria-live="off">
+          {units.map((u) => (
+            <div key={u.key} className="rounded-md bg-[var(--edge-soft)] px-1 py-1.5 text-center">
+              <div data-unit={u.key} className="tnum text-lg font-semibold leading-tight text-zinc-900 dark:text-zinc-100">
+                {u.value}
+              </div>
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t(`gadgets.${u.key}`)}</div>
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t(`gadgets.${u.key}`)}</div>
+          ))}
+        </div>
+      ) : (
+        <div className={`mt-2 rounded-md bg-[var(--edge-soft)] px-2 py-1.5 text-center ${muted ? "opacity-60" : ""}`} aria-live="off">
+          <div data-total={unit} className="tnum truncate text-lg font-semibold leading-tight text-zinc-900 dark:text-zinc-100">
+            {new Intl.NumberFormat(intl, {
+              minimumFractionDigits: unitDecimals(unit),
+              maximumFractionDigits: unitDecimals(unit),
+            }).format(totalIn(unit, now, target))}
           </div>
-        ))}
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t(`gadgets.${unit}`)}</div>
+        </div>
+      )}
+      <div className="mt-2 flex items-start justify-between gap-2">
+        <p className="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">
+          {t(`gadgets.phase_${state.phase}`, { date: when })}
+          {calendar ? <span className="block">{t("gadgets.calendar", { span: calendar })}</span> : null}
+        </p>
+        <select
+          aria-label={`${t("gadgets.showAs")}: ${timer.name}`}
+          title={t("gadgets.showAs")}
+          value={unit}
+          onChange={(e) => setUnit(e.target.value as TimerUnit)}
+          className="shrink-0 rounded-md border border-[var(--edge)] bg-[var(--field)] px-1.5 py-0.5 text-xs text-zinc-600 focus:border-teal-500 focus:outline-none dark:text-zinc-300"
+        >
+          {TIMER_UNITS.map((u) => (
+            <option key={u} value={u}>
+              {t(`gadgets.unit_${u}`)}
+            </option>
+          ))}
+        </select>
       </div>
-      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-        {t(`gadgets.phase_${state.phase}`, { date: when })}
-        {calendar ? <span className="block">{t("gadgets.calendar", { span: calendar })}</span> : null}
-      </p>
     </li>
   );
 }

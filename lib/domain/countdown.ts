@@ -34,6 +34,37 @@ export function spanBetween(aMs: number, bMs: number): Span {
   return { days, hours, minutes, seconds: Math.floor(left / SECOND) };
 }
 
+/**
+ * How a timer's span is shown: split into days, hours, minutes and seconds,
+ * or all of it in one unit ("10,268.73 hours", "36,967,452 seconds").
+ */
+export const TIMER_UNITS = ["parts", "weeks", "days", "hours", "minutes", "seconds"] as const;
+export type TimerUnit = (typeof TIMER_UNITS)[number];
+
+const UNIT_MS: Record<Exclude<TimerUnit, "parts">, number> = {
+  weeks: 7 * DAY,
+  days: DAY,
+  hours: HOUR,
+  minutes: MINUTE,
+  seconds: SECOND,
+};
+
+/** Decimals a total is shown to: two for the big units, whole minutes and seconds. */
+export function unitDecimals(unit: Exclude<TimerUnit, "parts">): number {
+  return unit === "minutes" || unit === "seconds" ? 0 : 2;
+}
+
+/**
+ * The whole gap between two instants in one unit, cut down (never rounded
+ * up) to the decimals it's shown to, so a total only reads 1.00 day once a
+ * full day has gone by.
+ */
+export function totalIn(unit: Exclude<TimerUnit, "parts">, aMs: number, bMs: number): number {
+  const scale = 10 ** unitDecimals(unit);
+  const wholeSeconds = Math.floor(Math.abs(bMs - aMs) / SECOND) * SECOND;
+  return Math.floor((wholeSeconds / UNIT_MS[unit]) * scale) / scale;
+}
+
 export type TimerPhase =
   /** a countdown still running */
   | "counting"

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RateTicker } from "@/components/rateTicker";
 import { CardDueBanner } from "@/components/cardDueBanner";
+import { RateAlertBanner, RateAlertWatcher } from "@/components/rateAlertWatcher";
 import { CommandPalette } from "@/components/commandPalette";
 import { navTitleKey, visibleNav } from "@/components/shell.nav";
 import { Select, Spinner } from "@/components/ui";
@@ -23,6 +24,8 @@ import { todayISO } from "@/lib/domain/recurrence";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { useI18n } from "@/lib/i18n";
 import { usePocket } from "@/lib/ui/usePocket";
+import { brandHref, dashboardHidden, phoneNav, sidebarNav } from "@/lib/ui/brandNav";
+import { useBrandNav } from "@/lib/ui/useBrandNav";
 
 const SIDEBAR_KEY = "renovator-sidebar";
 
@@ -170,7 +173,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
-  if (pocket) return <PocketShell sync={<Bootstrapper />}>{children}</PocketShell>;
+  if (pocket) {
+    return (
+      <PocketShell
+        sync={
+          <>
+            <Bootstrapper />
+            <RateAlertWatcher />
+            <RateAlertBanner />
+          </>
+        }
+      >
+        {children}
+      </PocketShell>
+    );
+  }
   return <ShellChrome>{children}</ShellChrome>;
 }
 
@@ -182,11 +199,19 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rates = useRates();
   const settings = useUserSettings();
-  const nav = visibleNav(settings.data?.navOrder);
+  const visible = visibleNav(settings.data?.navOrder);
+  // where the BudgetSim name goes, and whether the Dashboard entry is hidden
+  // for it (lib/ui/brandNav.ts): a choice of this device's
+  const brand = useBrandNav();
+  const home = brandHref(brand);
+  // the sidebar keeps Settings for its corner beside Log out
+  const nav = sidebarNav(visible, brand);
+  const barNav = phoneNav(visible, brand);
+  const settingsShown = visible.some((item) => item.href === "/settings");
   // phone bar: the first four, plus More — except that the page you're on is
   // always one of the four, so you can see where you are without opening it
-  const primaryNav = nav.slice(0, 4);
-  const overflowNav = nav.slice(4);
+  const primaryNav = barNav.slice(0, 4);
+  const overflowNav = barNav.slice(4);
   const activeOverflow = overflowNav.find((item) => item.href === pathname);
   const barItems = activeOverflow ? [...primaryNav.slice(0, 3), activeOverflow] : primaryNav;
   const [moreOpen, setMoreOpen] = useState(false);
@@ -227,7 +252,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   // order (which Settings can change) through a ref
   const navHrefs = useRef<string[]>([]);
   const paletteOpenRef = useRef(false);
-  const navKey = nav.map((item) => item.href).join(" ");
+  // the number keys follow the sidebar, then Settings in its corner
+  const navKey = [...nav.map((item) => item.href), ...(settingsShown ? ["/settings"] : [])].join(" ");
   useEffect(() => {
     navHrefs.current = navKey.split(" ");
     paletteOpenRef.current = paletteOpen;
@@ -279,6 +305,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <Bootstrapper />
+      <RateAlertWatcher />
       {isDemo ? (
         <div className="flex items-center justify-center gap-3 bg-amber-100 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           <span>{t("auth.demoBanner")}</span>
@@ -313,7 +340,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             {railed ? "›" : "‹"}
           </button>
           <Link
-            href="/welcome"
+            href={home}
             className={`mb-6 text-lg font-bold tracking-tight text-teal-700 dark:text-teal-400 ${
               railed ? "text-center" : "px-2"
             }`}
@@ -357,15 +384,35 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <button
-            onClick={() => signOut().then(() => router.replace("/login"))}
-            title={railed ? t("nav.logout") : undefined}
-            className={`rounded-lg py-2 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-              railed ? "text-center" : "px-2.5 text-left"
-            }`}
-          >
-            {railed ? "⏻" : t("nav.logout")}
-          </button>
+          {/* Settings and Log out share the corner: the two things you do to the app rather than in it */}
+          <div data-sidebar-footer className={`flex gap-1 border-t border-[var(--edge-soft)] pt-2 ${railed ? "flex-col" : "items-center"}`}>
+            {settingsShown ? (
+              <Link
+                href="/settings"
+                aria-current={pathname === "/settings" ? "page" : undefined}
+                title={railed ? t("nav.settings") : undefined}
+                className={`flex items-center rounded-lg py-2 text-sm font-medium transition-colors ${
+                  railed ? "justify-center px-0" : "min-w-0 flex-1 gap-2.5 px-2.5"
+                } ${
+                  pathname === "/settings"
+                    ? "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <span className="w-4 text-center">⚙</span>
+                {railed ? <span className="sr-only">{t("nav.settings")}</span> : <span className="truncate">{t("nav.settings")}</span>}
+              </Link>
+            ) : null}
+            <button
+              onClick={() => signOut().then(() => router.replace("/login"))}
+              title={railed ? t("nav.logout") : undefined}
+              className={`shrink-0 rounded-lg py-2 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                railed ? "text-center" : "px-2.5 text-left"
+              }`}
+            >
+              {railed ? "⏻" : t("nav.logout")}
+            </button>
+          </div>
         </aside>
 
         <div className="min-w-0 flex-1">
@@ -384,10 +431,17 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   textTransform: "var(--ui-head-transform)" as React.CSSProperties["textTransform"],
                 }}
               >
-                {titleKey ? t(titleKey) : "BudgetSim"}
+                {/* with the Dashboard out of the menu, the title is the way back to it on a phone */}
+                {dashboardHidden(brand) ? (
+                  <Link href={home}>{titleKey ? t(titleKey) : "BudgetSim"}</Link>
+                ) : titleKey ? (
+                  t(titleKey)
+                ) : (
+                  "BudgetSim"
+                )}
               </h1>
             ) : (
-              <Link href="/welcome" className="text-base font-semibold md:hidden">BudgetSim</Link>
+              <Link href={home} className="text-base font-semibold md:hidden">BudgetSim</Link>
             )}
             <div className="flex flex-1 items-center justify-end gap-3">
               {v2 ? (
@@ -428,6 +482,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           </header>
           {showRateTicker ? <RateTicker /> : null}
           <CardDueBanner />
+          <RateAlertBanner />
           </div>
 
           <main className="px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-8">{children}</main>
