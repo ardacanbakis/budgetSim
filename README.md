@@ -5,7 +5,9 @@ accounts in **TRY / USD / EUR / BTC / gold** (grams, or a mix of coins and gram
 gold), live rates, planned→completed payment tracking, credit cards and their
 **taksit** purchases, cross-currency transfers with real-rate capture, **VICTVS
 session** income tracking with paste-from-email bulk import, recurring templates,
-house/car **loan simulation & tracking**, and a 12–24 month cashflow **projector**.
+house/car **loan simulation & tracking**, a 12–24 month cashflow **projector**, and a
+**Gadgets** page: countdowns and counts since a date, and a converter across every
+currency and gold type the rates cover.
 
 Successor to [budgetSim](https://github.com/ardacanbakis/budgetSim) and
 [finSim](https://github.com/ardacanbakis/finSim). The defining difference:
@@ -44,7 +46,7 @@ where to get each key.
 ### Supabase setup (one time)
 
 1. Create a project at supabase.com.
-2. Run every file in `supabase/migrations/` (**0001 → 0023**, in order) in the
+2. Run every file in `supabase/migrations/` (**0001 → 0024**, in order) in the
    SQL editor. **All migrations are idempotent** — if a run fails halfway or
    you're unsure what already ran, just run the file again; `already exists`
    can't happen. A database that's behind shows "The database is behind this

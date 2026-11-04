@@ -10,6 +10,7 @@ export const NAV = [
   { href: "/victvs", key: "nav.victvs", icon: "✓" },
   { href: "/reports", key: "nav.reports", icon: "◔" },
   { href: "/planner", key: "nav.planner", icon: "◈" },
+  { href: "/gadgets", key: "nav.gadgets", icon: "⏱" },
   { href: "/settings", key: "nav.settings", icon: "⚙" },
 ] as const;
 

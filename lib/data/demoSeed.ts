@@ -8,6 +8,7 @@ import {
   Budget,
   CardEstimate,
   Category,
+  DateTimer,
   Goal,
   Loan,
   NetWorthSnapshot,
@@ -40,6 +41,8 @@ export interface DemoStore {
   activity?: ActivityEntry[];
   /** expected card statements (absent in older sandboxes) */
   cardEstimates?: CardEstimate[];
+  /** the Gadgets page's timers (absent in older sandboxes) */
+  timers?: DateTimer[];
 }
 
 const uuid = () =>
@@ -270,6 +273,19 @@ export function buildDemoSeed(): DemoStore {
     totalUsd: 15200 + idx * 850 + (idx % 2 === 0 ? -240 : 310),
   }));
 
+  // the Gadgets page: one countdown and one count since, so both kinds show
+  const year = Number(today.slice(0, 4));
+  const timers: DateTimer[] = [
+    { id: uuid(), name: "New Year", kind: "until", targetAt: new Date(year + 1, 0, 1).toISOString(), createdAt: nowIso },
+    {
+      id: uuid(),
+      name: "Moved to Istanbul",
+      kind: "since",
+      targetAt: new Date(`${addMonthsClamped(today, -14)}T09:30:00`).toISOString(),
+      createdAt: nowIso,
+    },
+  ];
+
   return {
     accounts,
     categories,
@@ -294,5 +310,6 @@ export function buildDemoSeed(): DemoStore {
       victvsForecast: null,
     },
     snapshots,
+    timers,
   };
 }

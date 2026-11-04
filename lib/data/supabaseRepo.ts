@@ -15,6 +15,7 @@ import {
   NewLoan,
   NewPurchase,
   NewTemplate,
+  NewTimer,
   NewTransaction,
   NewTransfer,
   NewVictvsSession,
@@ -27,6 +28,7 @@ import {
   ActivityEntry,
   Budget,
   CardEstimate,
+  DateTimer,
   Category,
   Goal,
   Loan,
@@ -194,6 +196,19 @@ const planFromRow = (r: Row): PlanRecord => ({
 
 function throwIf(error: { message: string; code?: string; details?: string; hint?: string } | null): void {
   if (error) throw toDbError(error);
+}
+
+/** throwIf for the timers table, naming the file that creates it when it isn't there */
+function throwIfTimers(error: { message: string; code?: string; details?: string; hint?: string } | null): void {
+  if (!error) return;
+  if (describeError(toDbError(error)).kind === "needsMigration") {
+    throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0024_timers.sql");
+  }
+  throw toDbError(error);
+}
+
+function timerFromRow(r: Row): DateTimer {
+  return { id: r.id, name: r.name, kind: r.kind === "since" ? "since" : "until", targetAt: r.target_at, createdAt: r.created_at };
 }
 
 /**
@@ -980,6 +995,37 @@ export class SupabaseRepo implements Repo {
     throwIf(error);
   }
 
+  async listTimers(): Promise<DateTimer[]> {
+    const { data, error } = await this.db.from("timers").select("*").order("target_at");
+    // migration 0024 not run yet: no timers, and nothing else depends on them
+    if (error) return [];
+    return (data ?? []).map(timerFromRow);
+  }
+
+  async createTimer(input: NewTimer): Promise<DateTimer> {
+    const { data, error } = await this.db
+      .from("timers")
+      .insert({ user_id: this.userId, name: input.name, kind: input.kind, target_at: input.targetAt })
+      .select()
+      .single();
+    throwIfTimers(error);
+    return timerFromRow(data!);
+  }
+
+  async updateTimer(id: string, patch: Partial<NewTimer>): Promise<void> {
+    const row: Row = {};
+    if (patch.name !== undefined) row.name = patch.name;
+    if (patch.kind !== undefined) row.kind = patch.kind;
+    if (patch.targetAt !== undefined) row.target_at = patch.targetAt;
+    const { error } = await this.db.from("timers").update(row).eq("id", id);
+    throwIfTimers(error);
+  }
+
+  async deleteTimer(id: string): Promise<void> {
+    const { error } = await this.db.from("timers").delete().eq("id", id);
+    throwIfTimers(error);
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return (await this.all("net_worth_snapshots", (q) => q.order("snapshot_date"))).map((r: Row) => ({
       id: r.id,
@@ -1392,10 +1438,12 @@ export class SupabaseRepo implements Repo {
     await this.db.from("activity_log").delete().eq("user_id", this.userId);
     // and expected statements (0022), likewise
     await this.db.from("card_estimates").delete().eq("user_id", this.userId);
+    // and the Gadgets page's timers (0024)
+    await this.db.from("timers").delete().eq("user_id", this.userId);
   }
 
   async exportAll(): Promise<BackupFile> {
-    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity, cardEstimates] =
+    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity, cardEstimates, timers] =
       await Promise.all([
         this.listAccounts(),
         this.listCategories(),
@@ -1410,6 +1458,7 @@ export class SupabaseRepo implements Repo {
         this.listSnapshots(),
         this.listActivity(),
         this.listCardEstimates(),
+        this.listTimers(),
       ]);
     return {
       app: "renovator",
@@ -1428,6 +1477,7 @@ export class SupabaseRepo implements Repo {
       snapshots,
       activity,
       cardEstimates,
+      timers,
     };
   }
 
@@ -1467,6 +1517,11 @@ export class SupabaseRepo implements Repo {
     if (backup.cardEstimates?.length) {
       const { error } = await this.db.from("card_estimates").select("id").limit(0);
       throwIf(error);
+    }
+    // and timers (0024)
+    if (backup.timers?.length) {
+      const { error } = await this.db.from("timers").select("id").limit(0);
+      throwIfTimers(error);
     }
     await this.deleteAllData();
     const u = this.userId;
@@ -1554,6 +1609,9 @@ export class SupabaseRepo implements Repo {
     await insert("net_worth_snapshots", backup.snapshots.map((s) => ({ id: s.id, user_id: u, snapshot_date: s.snapshotDate, balances: s.balances, usd_per: s.usdPer, total_usd: s.totalUsd })));
     await insert("card_estimates", (backup.cardEstimates ?? []).map((e) => ({
       id: e.id, user_id: u, account_id: e.accountId, month: e.month, amount: e.amount, noted_on: e.notedOn, created_at: e.createdAt,
+    })));
+    await insert("timers", (backup.timers ?? []).map((t) => ({
+      id: t.id, user_id: u, name: t.name, kind: t.kind, target_at: t.targetAt, created_at: t.createdAt,
     })));
     // history last, and best effort: a database without migration 0018 restores everything else
     if (backup.activity?.length) {
