@@ -34,6 +34,8 @@ const PATHS = {
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   phone: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
   calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+  timer: "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2.5M10 2h4M19 5l1.5 1.5",
+  swap: "M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
   edit: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
   copy: "M8 8h12v12H8zM4 16V4h12",
@@ -78,6 +80,8 @@ export function navIcon(href: string): IconName {
       return "chart";
     case "/planner":
       return "grid";
+    case "/gadgets":
+      return "timer";
     case "/settings":
       return "settings";
     default:

@@ -9,6 +9,7 @@ import {
   Budget,
   CardEstimate,
   Category,
+  DateTimer,
   Frequency,
   Goal,
   Loan,
@@ -178,6 +179,8 @@ export interface NewLoan {
   templateId?: string | null;
 }
 
+export type NewTimer = Pick<DateTimer, "name" | "kind" | "targetAt">;
+
 /** What can change on a debt once it exists; the schedule's shape stays. */
 export interface LoanPatch {
   name?: string;
@@ -313,6 +316,12 @@ export interface Repo {
   addCardEstimate(input: Omit<CardEstimate, "id" | "createdAt">): Promise<CardEstimate>;
   deleteCardEstimate(id: string): Promise<void>;
 
+  /** the Gadgets page's countdowns and counts since (migration 0024; none without it) */
+  listTimers(): Promise<DateTimer[]>;
+  createTimer(input: NewTimer): Promise<DateTimer>;
+  updateTimer(id: string, patch: Partial<NewTimer>): Promise<void>;
+  deleteTimer(id: string): Promise<void>;
+
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */
   createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase>;
@@ -365,6 +374,8 @@ export interface BackupFile {
   activity?: ActivityEntry[];
   /** expected card statements; absent in backups made before them */
   cardEstimates?: CardEstimate[];
+  /** the Gadgets page's timers; absent in backups made before them */
+  timers?: DateTimer[];
 }
 
 export function isBackupFile(data: unknown): data is BackupFile {

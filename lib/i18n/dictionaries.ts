@@ -17,6 +17,7 @@ import * as extras from "./extras";
 import * as pages from "./pages";
 import * as planCards from "./planCards";
 import * as victvsForecast from "./victvsForecast";
+import * as gadgets from "./gadgets";
 
 export const en = {
   common: {
@@ -69,6 +70,7 @@ export const en = {
     reports: "Reports",
     planner: "Plan",
     savings: "Evim sistemi",
+    gadgets: "Gadgets",
     settings: "Settings",
     logout: "Log out",
     more: "More",
@@ -548,6 +550,7 @@ export const en = {
   },
   timeline: timeline.en,
   debts: debts.en,
+  gadgets: gadgets.en,
   income: income.en,
   converted: converted.en,
   middleman: middleman.en,
@@ -1315,6 +1318,7 @@ export const tr: Dictionary = {
     reports: "Raporlar",
     planner: "Plan",
     savings: "Evim sistemi",
+    gadgets: "Araçlar",
     settings: "Ayarlar",
     logout: "Çıkış",
     more: "Daha",
@@ -1794,6 +1798,7 @@ export const tr: Dictionary = {
   },
   timeline: timeline.tr,
   debts: debts.tr,
+  gadgets: gadgets.tr,
   income: income.tr,
   converted: converted.tr,
   middleman: middleman.tr,

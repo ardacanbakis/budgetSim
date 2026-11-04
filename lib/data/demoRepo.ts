@@ -16,6 +16,7 @@ import {
   NewLoan,
   NewPurchase,
   NewTemplate,
+  NewTimer,
   NewTransaction,
   NewTransfer,
   NewVictvsSession,
@@ -33,6 +34,7 @@ import {
   Budget,
   CardEstimate,
   Category,
+  DateTimer,
   Goal,
   Loan,
   NetWorthSnapshot,
@@ -666,6 +668,28 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
+  async listTimers(): Promise<DateTimer[]> {
+    return copy(this.store.timers ?? []);
+  }
+
+  async createTimer(input: NewTimer): Promise<DateTimer> {
+    const timer: DateTimer = { id: uuid(), ...input, createdAt: new Date().toISOString() };
+    this.store.timers = [...(this.store.timers ?? []), timer];
+    this.save();
+    return copy(timer);
+  }
+
+  async updateTimer(id: string, patch: Partial<NewTimer>): Promise<void> {
+    const timer = (this.store.timers ?? []).find((t) => t.id === id);
+    if (timer) Object.assign(timer, patch);
+    this.save();
+  }
+
+  async deleteTimer(id: string): Promise<void> {
+    this.store.timers = (this.store.timers ?? []).filter((t) => t.id !== id);
+    this.save();
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return copy(this.store.snapshots);
   }
@@ -959,6 +983,7 @@ export class DemoRepo implements Repo {
       snapshots: this.store.snapshots,
       activity: this.store.activity ?? [],
       cardEstimates: this.store.cardEstimates ?? [],
+      timers: this.store.timers ?? [],
     };
   }
 
@@ -979,6 +1004,7 @@ export class DemoRepo implements Repo {
       // the backup lists it newest first, as listActivity does; kept oldest first here
       activity: [...(backup.activity ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
       cardEstimates: backup.cardEstimates ?? [],
+      timers: backup.timers ?? [],
     };
     this.save();
   }

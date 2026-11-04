@@ -24,7 +24,14 @@ export const KEYS = {
   rates: ["rates"] as const,
   activity: ["activity"] as const,
   cardEstimates: ["card-estimates"] as const,
+  timers: ["timers"] as const,
 };
+
+/** The Gadgets page's countdowns and counts since (lib/domain/countdown.ts). */
+export function useTimers() {
+  const repo = useRepo();
+  return useQuery({ queryKey: KEYS.timers, queryFn: () => repo.listTimers() });
+}
 
 /** What you expect each card's statements to be (lib/domain/cards.ts reads them through the book). */
 export function useCardEstimates() {

@@ -14,7 +14,7 @@ describe("barSlots", () => {
       home: "/",
       activity: "/transactions",
       fourth: "/accounts",
-      more: ["/cards", "/victvs", "/reports", "/planner", "/settings"],
+      more: ["/cards", "/victvs", "/reports", "/planner", "/gadgets", "/settings"],
     });
   });
 
@@ -29,7 +29,7 @@ describe("barSlots", () => {
     const slots = barSlots(["/", "!/transactions", "/accounts", "/cards"], null);
     expect(slots.activity?.href).toBe("/accounts");
     expect(slots.fourth?.href).toBe("/cards");
-    expect(hrefs(barSlots(["!/", "!/transactions", "!/accounts", "!/cards", "!/victvs", "!/reports", "!/planner"], null))).toEqual({
+    expect(hrefs(barSlots(["!/", "!/transactions", "!/accounts", "!/cards", "!/victvs", "!/reports", "!/planner", "!/gadgets"], null))).toEqual({
       home: undefined,
       activity: undefined,
       fourth: undefined,

@@ -303,6 +303,19 @@ export interface CardEstimate {
   createdAt: string;
 }
 
+/**
+ * A countdown to a moment, or a count of the time since one, on the Gadgets
+ * page (migration 0024; lib/domain/countdown.ts works out what it shows).
+ */
+export interface DateTimer {
+  id: string;
+  name: string;
+  kind: import("@/lib/domain/countdown").TimerKind;
+  /** the moment itself, an ISO timestamp */
+  targetAt: string;
+  createdAt: string;
+}
+
 export interface NetWorthSnapshot {
   id: string;
   /** yyyy-mm-dd; unique per month per user */
