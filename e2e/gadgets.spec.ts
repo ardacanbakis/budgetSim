@@ -83,12 +83,40 @@ test("timers: a countdown is added, turned into a count since, and deleted", asy
   expect((await store(page)).timers?.some((t) => t.name === "Trip to Rome")).toBe(false);
 });
 
+test("timers: each can show its total in one unit, remembered on this device", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const moved = tile(page, "Moved to Istanbul");
+  const showAs = page.getByRole("combobox", { name: "Show as: Moved to Istanbul" });
+  await expect(showAs).toHaveValue("parts");
+  const days = Number((await moved.locator('[data-unit="days"]').textContent())!.replace(/,/g, ""));
+
+  await showAs.selectOption("hours");
+  const hours = moved.locator('[data-total="hours"]');
+  await expect(hours).toHaveText(/^[\d,]+\.\d\d$/);
+  expect(Math.floor(Number((await hours.textContent())!.replace(/,/g, "")) / 24)).toBe(days);
+  await expect(moved.locator('[data-unit="days"]')).toHaveCount(0);
+
+  await showAs.selectOption("seconds");
+  const seconds = moved.locator('[data-total="seconds"]');
+  const first = await seconds.textContent();
+  expect(first).toMatch(/^[\d,]+$/);
+  // still ticking
+  await expect(seconds).not.toHaveText(first!, { timeout: 3_000 });
+
+  // the other timer keeps its own choice, and this one survives a reload
+  await expect(page.getByRole("combobox", { name: "Show as: New Year" })).toHaveValue("parts");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Show as: Moved to Istanbul" })).toHaveValue("seconds");
+  await expect(tile(page, "Moved to Istanbul").locator('[data-total="seconds"]')).toBeVisible();
+});
+
 test("converter: dollars to lira by default, sides switch, and any unit is a click away", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/gadgets");
   const result = page.locator("[data-converter-result]");
-  await expect(page.getByRole("combobox", { name: "From" })).toHaveValue("USD");
-  await expect(page.getByRole("combobox", { name: "To" })).toHaveValue("TRY");
+  await expect(page.getByRole("combobox", { name: "From", exact: true })).toHaveValue("USD");
+  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("TRY");
   await expect(result).toHaveText("4,180.00");
   await expect(page.locator("[data-converter-rate]")).toHaveText("1 USD = 41.8 TRY");
 
@@ -97,13 +125,13 @@ test("converter: dollars to lira by default, sides switch, and any unit is a cli
   await expect(result).toHaveText("52,270.90");
 
   await page.getByRole("button", { name: "Switch sides" }).click();
-  await expect(page.getByRole("combobox", { name: "From" })).toHaveValue("TRY");
-  await expect(page.getByRole("combobox", { name: "To" })).toHaveValue("USD");
+  await expect(page.getByRole("combobox", { name: "From", exact: true })).toHaveValue("TRY");
+  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("USD");
   await expect(result).toHaveText("29.92");
 
   // the list shows the amount in every other unit; a row becomes the "to" side
   await page.getByRole("button", { name: /^EUR · Euro/ }).click();
-  await expect(page.getByRole("combobox", { name: "To" })).toHaveValue("EUR");
+  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("EUR");
   await expect(result).toHaveText("27.45");
 
   await page.getByLabel("Amount").fill("abc");
@@ -117,10 +145,10 @@ test("converter: coins the gold feed priced are offered, at their own price", as
   await enterDemo(page);
   await page.goto("/gadgets");
   await page.getByLabel("Amount").fill("2");
-  await page.getByRole("combobox", { name: "From" }).selectOption("gold:ceyrek");
+  await page.getByRole("combobox", { name: "From", exact: true }).selectOption("gold:ceyrek");
   await expect(page.locator("[data-converter-result]")).toHaveText("10,540.00");
   // a coin the feed didn't price isn't offered
-  await expect(page.getByRole("combobox", { name: "From" }).locator('option[value="gold:tam"]')).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "From", exact: true }).locator('option[value="gold:tam"]')).toHaveCount(0);
 });
 
 test("Pocket: Gadgets is under More", async ({ page }) => {

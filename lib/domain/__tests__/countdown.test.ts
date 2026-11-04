@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarSpan, localMoment, momentParts, sortTimers, spanBetween, timerState } from "../countdown";
+import { calendarSpan, localMoment, momentParts, sortTimers, spanBetween, timerState, totalIn } from "../countdown";
 
 const at = (s: string) => new Date(s).getTime();
 
@@ -90,5 +90,24 @@ describe("sortTimers", () => {
       now
     );
     expect(sorted.map((x) => x.name)).toEqual(["soon", "far", "recent", "old", "reached", "pending"]);
+  });
+});
+
+describe("totalIn", () => {
+  const a = at("2026-11-04T10:00:00");
+  const b = at("2026-11-06T13:25:42");
+
+  it("gives the whole span in one unit, either way round", () => {
+    // 2 d 3 h 25 min 42 s
+    expect(totalIn("seconds", a, b)).toBe(185_142);
+    expect(totalIn("minutes", a, b)).toBe(3085);
+    expect(totalIn("hours", a, b)).toBe(51.42);
+    expect(totalIn("days", b, a)).toBe(2.14);
+    expect(totalIn("weeks", a, b)).toBe(0.3);
+  });
+
+  it("never rounds up to a unit that hasn't fully passed", () => {
+    expect(totalIn("days", 0, 24 * 3600_000 - 1000)).toBe(0.99);
+    expect(totalIn("minutes", 0, 59_999)).toBe(0);
   });
 });
