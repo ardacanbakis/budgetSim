@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { isHistoryRange } from "@/lib/domain/rateHistory";
-import { fetchRateHistory, fetchRatesOn } from "@/lib/rates/fetchHistory";
+import { fetchLiraHistory, fetchRateHistory, fetchRatesOn } from "@/lib/rates/fetchHistory";
 
 /**
  * Exchange-rate history for the Gadgets page (lib/domain/rateHistory.ts):
  *   ?days=30|90|365   each currency's series over that many days
  *   ?on=yyyy-mm-dd    every currency's rate on one past date
+ *   ?devaluation=1    USD/TRY now and 1–5 years ago (lib/domain/liraDevaluation.ts)
  */
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  if (params.get("devaluation") != null) return NextResponse.json(await fetchLiraHistory());
   const on = params.get("on");
   if (on != null) {
     const today = new Date().toISOString().slice(0, 10);

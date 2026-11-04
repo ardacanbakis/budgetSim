@@ -1,3 +1,4 @@
+import { LiraHistory, LiraPoint } from "@/lib/domain/liraDevaluation";
 import {
   HistoryRange,
   parseCoinGeckoSeries,
@@ -63,4 +64,34 @@ export async function fetchRatesOn(date: string, fetcher: Fetcher = fetch): Prom
     if (typeof usd === "number" && usd > 0) usdPer.BTC = usd;
   }
   return { date: used, usdPer };
+}
+
+/** The same calendar date `years` earlier; 29 February falls back to the 28th. */
+export function yearsBefore(date: Date, years: number): string {
+  const y = date.getUTCFullYear() - years;
+  const m = date.getUTCMonth();
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(date.getUTCDate(), last))).toISOString().slice(0, 10);
+}
+
+/**
+ * USD/TRY now and on the same date one to five years back, from the ECB via
+ * Frankfurter (each date answers with its business day, or the one before).
+ * A year that fails is left out; the averages use what came back.
+ */
+export async function fetchLiraHistory(now = new Date(), fetcher: Fetcher = fetch): Promise<LiraHistory> {
+  const asks = [0, 1, 2, 3, 4, 5].map(async (yearsAgo): Promise<LiraPoint | null> => {
+    const path = yearsAgo === 0 ? "latest" : yearsBefore(now, yearsAgo);
+    // today's moves through the day; the past never changes
+    const json = (await getJson(fetcher, `https://api.frankfurter.dev/v1/${path}?base=USD&symbols=TRY`, yearsAgo === 0 ? 3600 : 86_400)) as {
+      date?: unknown;
+      rates?: { TRY?: unknown };
+    };
+    const rate = json.rates?.TRY;
+    if (typeof rate !== "number" || !(rate > 0) || typeof json.date !== "string") return null;
+    return { yearsAgo, date: json.date, tryPerUsd: rate };
+  });
+  const settled = await Promise.allSettled(asks);
+  const points = settled.flatMap((r) => (r.status === "fulfilled" && r.value ? [r.value] : []));
+  return { points, fetchedAt: now.toISOString() };
 }
