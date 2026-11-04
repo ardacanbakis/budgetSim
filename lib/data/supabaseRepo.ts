@@ -15,6 +15,7 @@ import {
   NewLoan,
   NewPurchase,
   NewTemplate,
+  NewRateAlert,
   NewTimer,
   NewTransaction,
   NewTransfer,
@@ -29,6 +30,8 @@ import {
   Budget,
   CardEstimate,
   DateTimer,
+  PinnedConversion,
+  RateAlert,
   Category,
   Goal,
   Loan,
@@ -198,13 +201,33 @@ function throwIf(error: { message: string; code?: string; details?: string; hint
   if (error) throw toDbError(error);
 }
 
-/** throwIf for the timers table, naming the file that creates it when it isn't there */
-function throwIfTimers(error: { message: string; code?: string; details?: string; hint?: string } | null): void {
+/** throwIf for a table a newer migration adds: when it isn't there, the error names the file that creates it */
+function throwIfMissing(error: { message: string; code?: string; details?: string; hint?: string } | null, migration: string): void {
   if (!error) return;
   if (describeError(toDbError(error)).kind === "needsMigration") {
-    throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0024_timers.sql");
+    throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, migration);
   }
   throw toDbError(error);
+}
+
+const throwIfTimers = (error: Parameters<typeof throwIfMissing>[0]) => throwIfMissing(error, "0024_timers.sql");
+
+function rateAlertFromRow(r: Row): RateAlert {
+  return {
+    id: r.id,
+    fromUnit: r.from_unit,
+    toUnit: r.to_unit,
+    direction: r.direction === "below" ? "below" : "above",
+    threshold: Number(r.threshold),
+    triggeredAt: r.triggered_at ?? null,
+    triggeredRate: r.triggered_rate == null ? null : Number(r.triggered_rate),
+    acknowledgedAt: r.acknowledged_at ?? null,
+    createdAt: r.created_at,
+  };
+}
+
+function pinFromRow(r: Row): PinnedConversion {
+  return { id: r.id, fromUnit: r.from_unit, toUnit: r.to_unit, amount: Number(r.amount), createdAt: r.created_at };
 }
 
 function timerFromRow(r: Row): DateTimer {
@@ -1026,6 +1049,62 @@ export class SupabaseRepo implements Repo {
     throwIfTimers(error);
   }
 
+  async listRateAlerts(): Promise<RateAlert[]> {
+    const { data, error } = await this.db.from("rate_alerts").select("*").order("created_at");
+    // migration 0025 not run yet: no alerts, and nothing else depends on them
+    if (error) return [];
+    return (data ?? []).map(rateAlertFromRow);
+  }
+
+  async createRateAlert(input: NewRateAlert): Promise<RateAlert> {
+    const { data, error } = await this.db
+      .from("rate_alerts")
+      .insert({ user_id: this.userId, from_unit: input.fromUnit, to_unit: input.toUnit, direction: input.direction, threshold: input.threshold })
+      .select()
+      .single();
+    throwIfMissing(error, "0025_rate_gadgets.sql");
+    return rateAlertFromRow(data!);
+  }
+
+  async updateRateAlert(id: string, patch: Partial<Omit<RateAlert, "id" | "createdAt">>): Promise<void> {
+    const row: Row = {};
+    if (patch.fromUnit !== undefined) row.from_unit = patch.fromUnit;
+    if (patch.toUnit !== undefined) row.to_unit = patch.toUnit;
+    if (patch.direction !== undefined) row.direction = patch.direction;
+    if (patch.threshold !== undefined) row.threshold = patch.threshold;
+    if (patch.triggeredAt !== undefined) row.triggered_at = patch.triggeredAt;
+    if (patch.triggeredRate !== undefined) row.triggered_rate = patch.triggeredRate;
+    if (patch.acknowledgedAt !== undefined) row.acknowledged_at = patch.acknowledgedAt;
+    const { error } = await this.db.from("rate_alerts").update(row).eq("id", id);
+    throwIfMissing(error, "0025_rate_gadgets.sql");
+  }
+
+  async deleteRateAlert(id: string): Promise<void> {
+    const { error } = await this.db.from("rate_alerts").delete().eq("id", id);
+    throwIfMissing(error, "0025_rate_gadgets.sql");
+  }
+
+  async listPinnedConversions(): Promise<PinnedConversion[]> {
+    const { data, error } = await this.db.from("pinned_conversions").select("*").order("created_at");
+    if (error) return [];
+    return (data ?? []).map(pinFromRow);
+  }
+
+  async createPinnedConversion(input: Omit<PinnedConversion, "id" | "createdAt">): Promise<PinnedConversion> {
+    const { data, error } = await this.db
+      .from("pinned_conversions")
+      .insert({ user_id: this.userId, from_unit: input.fromUnit, to_unit: input.toUnit, amount: input.amount })
+      .select()
+      .single();
+    throwIfMissing(error, "0025_rate_gadgets.sql");
+    return pinFromRow(data!);
+  }
+
+  async deletePinnedConversion(id: string): Promise<void> {
+    const { error } = await this.db.from("pinned_conversions").delete().eq("id", id);
+    throwIfMissing(error, "0025_rate_gadgets.sql");
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return (await this.all("net_worth_snapshots", (q) => q.order("snapshot_date"))).map((r: Row) => ({
       id: r.id,
@@ -1440,10 +1519,13 @@ export class SupabaseRepo implements Repo {
     await this.db.from("card_estimates").delete().eq("user_id", this.userId);
     // and the Gadgets page's timers (0024)
     await this.db.from("timers").delete().eq("user_id", this.userId);
+    // and rate alerts and pinned conversions (0025)
+    await this.db.from("rate_alerts").delete().eq("user_id", this.userId);
+    await this.db.from("pinned_conversions").delete().eq("user_id", this.userId);
   }
 
   async exportAll(): Promise<BackupFile> {
-    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity, cardEstimates, timers] =
+    const [accounts, categories, transactions, templates, victvsSessions, victvsPayouts, loans, purchases, budgets, goals, snapshots, activity, cardEstimates, timers, rateAlerts, pinnedConversions] =
       await Promise.all([
         this.listAccounts(),
         this.listCategories(),
@@ -1459,6 +1541,8 @@ export class SupabaseRepo implements Repo {
         this.listActivity(),
         this.listCardEstimates(),
         this.listTimers(),
+        this.listRateAlerts(),
+        this.listPinnedConversions(),
       ]);
     return {
       app: "renovator",
@@ -1478,6 +1562,8 @@ export class SupabaseRepo implements Repo {
       activity,
       cardEstimates,
       timers,
+      rateAlerts,
+      pinnedConversions,
     };
   }
 
@@ -1522,6 +1608,11 @@ export class SupabaseRepo implements Repo {
     if (backup.timers?.length) {
       const { error } = await this.db.from("timers").select("id").limit(0);
       throwIfTimers(error);
+    }
+    // and rate alerts and pinned conversions (0025)
+    if (backup.rateAlerts?.length || backup.pinnedConversions?.length) {
+      const { error } = await this.db.from("rate_alerts").select("id").limit(0);
+      throwIfMissing(error, "0025_rate_gadgets.sql");
     }
     await this.deleteAllData();
     const u = this.userId;
@@ -1612,6 +1703,13 @@ export class SupabaseRepo implements Repo {
     })));
     await insert("timers", (backup.timers ?? []).map((t) => ({
       id: t.id, user_id: u, name: t.name, kind: t.kind, target_at: t.targetAt, created_at: t.createdAt,
+    })));
+    await insert("rate_alerts", (backup.rateAlerts ?? []).map((a) => ({
+      id: a.id, user_id: u, from_unit: a.fromUnit, to_unit: a.toUnit, direction: a.direction, threshold: a.threshold,
+      triggered_at: a.triggeredAt, triggered_rate: a.triggeredRate, acknowledged_at: a.acknowledgedAt, created_at: a.createdAt,
+    })));
+    await insert("pinned_conversions", (backup.pinnedConversions ?? []).map((p) => ({
+      id: p.id, user_id: u, from_unit: p.fromUnit, to_unit: p.toUnit, amount: p.amount, created_at: p.createdAt,
     })));
     // history last, and best effort: a database without migration 0018 restores everything else
     if (backup.activity?.length) {

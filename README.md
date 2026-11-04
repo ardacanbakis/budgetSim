@@ -6,8 +6,9 @@ gold), live rates, planned→completed payment tracking, credit cards and their
 **taksit** purchases, cross-currency transfers with real-rate capture, **VICTVS
 session** income tracking with paste-from-email bulk import, recurring templates,
 house/car **loan simulation & tracking**, a 12–24 month cashflow **projector**, and a
-**Gadgets** page: countdowns and counts since a date, and a converter across every
-currency and gold type the rates cover.
+**Gadgets** page: countdowns and counts since a date, a converter across every
+currency and gold type the rates cover (with pinned conversions), rate alerts,
+exchange-rate history, and a TÜİK inflation calculator.
 
 Successor to [budgetSim](https://github.com/ardacanbakis/budgetSim) and
 [finSim](https://github.com/ardacanbakis/finSim). The defining difference:
@@ -29,6 +30,8 @@ transactions, so every device shows identical numbers.
     beşli), then GenelPara, then [CollectAPI](https://collectapi.com) (key)
   - BTC: [CoinGecko](https://coingecko.com)
   - loan rates: TCMB EVDS (free key) and CollectAPI (key), both optional
+  - rate history (Gadgets): Frankfurter's time series for USD/EUR/TRY, CoinGecko's
+    market chart for BTC, served through `/api/rate-history`
 
 ## Getting started
 
@@ -46,7 +49,7 @@ where to get each key.
 ### Supabase setup (one time)
 
 1. Create a project at supabase.com.
-2. Run every file in `supabase/migrations/` (**0001 → 0024**, in order) in the
+2. Run every file in `supabase/migrations/` (**0001 → 0025**, in order) in the
    SQL editor. **All migrations are idempotent** — if a run fails halfway or
    you're unsure what already ran, just run the file again; `already exists`
    can't happen. A database that's behind shows "The database is behind this

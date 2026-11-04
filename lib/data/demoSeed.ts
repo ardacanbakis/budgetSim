@@ -9,6 +9,8 @@ import {
   CardEstimate,
   Category,
   DateTimer,
+  PinnedConversion,
+  RateAlert,
   Goal,
   Loan,
   NetWorthSnapshot,
@@ -43,6 +45,9 @@ export interface DemoStore {
   cardEstimates?: CardEstimate[];
   /** the Gadgets page's timers (absent in older sandboxes) */
   timers?: DateTimer[];
+  /** rate alerts and pinned conversions (absent in older sandboxes) */
+  rateAlerts?: RateAlert[];
+  pinnedConversions?: PinnedConversion[];
 }
 
 const uuid = () =>
@@ -311,5 +316,20 @@ export function buildDemoSeed(): DemoStore {
     },
     snapshots,
     timers,
+    // one alert still waiting, one pinned conversion, so the Gadgets page shows both
+    rateAlerts: [
+      {
+        id: uuid(),
+        fromUnit: "USD",
+        toUnit: "TRY",
+        direction: "above",
+        threshold: 45,
+        triggeredAt: null,
+        triggeredRate: null,
+        acknowledgedAt: null,
+        createdAt: nowIso,
+      },
+    ],
+    pinnedConversions: [{ id: uuid(), fromUnit: "EUR", toUnit: "TRY", amount: 100, createdAt: nowIso }],
   };
 }

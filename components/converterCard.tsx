@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, Field, Input, Select, Skeleton } from "@/components/ui";
+import { Button, Card, CardHeader, Field, Input, Select, Skeleton } from "@/components/ui";
 import { Icon } from "@/components/pocket/icons";
-import { useRates } from "@/lib/data/queries";
+import { useRepo } from "@/lib/data/provider";
+import { KEYS, useAppMutation, usePinnedConversions, useRates } from "@/lib/data/queries";
 import {
   availableUnits,
   ConverterUnit,
@@ -12,24 +13,29 @@ import {
   DEFAULT_TO,
   formatRate,
   formatUnitAmount,
-  goldTypeOf,
   isConverterUnit,
 } from "@/lib/domain/converter";
 import { isCurrency } from "@/lib/domain/currencies";
 import { parseTypedAmount } from "@/lib/domain/money";
 import { isStaleTable } from "@/lib/rates/fallback";
 import { useI18n } from "@/lib/i18n";
+import { useUnitLabels } from "@/lib/ui/useUnitLabels";
 
 /**
  * Any amount of one unit in another, on the same rate table every account is
  * valued with (/api/rates): the five currencies, and each kind of gold the
  * feed priced today (lib/domain/converter.ts). Starts at dollars to lira;
  * the button between the sides switches them. Below it, the same amount in
- * every other unit, each a click away from being the "to" side.
+ * every other unit, each a click away from being the "to" side. Conversions
+ * used often can be pinned: they sit over the form, live, a click from
+ * loading back into it.
  */
 export function ConverterCard({ className }: { className?: string }) {
   const { t, locale } = useI18n();
   const rates = useRates();
+  const repo = useRepo();
+  const pins = usePinnedConversions();
+  const { short, long } = useUnitLabels();
   const [text, setText] = useState("100");
   const [from, setFrom] = useState<ConverterUnit>(DEFAULT_FROM);
   const [to, setTo] = useState<ConverterUnit>(DEFAULT_TO);
@@ -39,14 +45,14 @@ export function ConverterCard({ className }: { className?: string }) {
   const amount = text.trim() === "" ? 0 : parseTypedAmount(text, 8);
   const valid = Number.isFinite(amount);
 
-  /** "USD", "Çeyrek", "Gold (gram)": what a unit is called next to a figure */
-  const short = (unit: ConverterUnit) => {
-    const type = goldTypeOf(unit);
-    if (type) return t(`gold.type_${type}`);
-    return unit === "XAU_G" ? t("currency.XAU_G") : unit;
-  };
-  /** the select's longer name */
-  const long = (unit: ConverterUnit) => (isCurrency(unit) && unit !== "XAU_G" ? `${unit} · ${t(`currency.${unit}`)}` : short(unit));
+  const pin = useAppMutation(
+    () => repo.createPinnedConversion({ fromUnit: from, toUnit: to, amount }),
+    [KEYS.pinnedConversions]
+  );
+  const unpin = useAppMutation((id: string) => repo.deletePinnedConversion(id), [KEYS.pinnedConversions]);
+  const alreadyPinned = (pins.data ?? []).some((p) => p.fromUnit === from && p.toUnit === to && p.amount === amount);
+  // a pin of a unit today's feed doesn't price (a coin it skipped) waits until it does
+  const pinned = (pins.data ?? []).filter((p) => isConverterUnit(p.fromUnit) && isConverterUnit(p.toUnit));
 
   const swap = () => {
     setFrom(to);
@@ -90,13 +96,68 @@ export function ConverterCard({ className }: { className?: string }) {
 
   return (
     <Card className={className}>
-      <CardHeader title={t("gadgets.converter")} />
+      <CardHeader
+        title={t("gadgets.converter")}
+        action={
+          <Button
+            variant="ghost"
+            disabled={!table || !valid || !(amount > 0) || from === to || alreadyPinned || pin.isPending}
+            onClick={() => pin.mutate(undefined as never)}
+          >
+            ☆ {t("gadgets.pin")}
+          </Button>
+        }
+      />
       <div className="space-y-4 p-[var(--ui-card-pad-x)]">
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("gadgets.converterHint")}</p>
         {!table ? (
           <Skeleton rows={4} />
         ) : (
           <>
+            {pinned.length ? (
+              <ul aria-label={t("gadgets.pinned")} className="flex flex-wrap gap-2">
+                {pinned.map((p) => {
+                  const f = p.fromUnit as ConverterUnit;
+                  const u = p.toUnit as ConverterUnit;
+                  const value = convertUnits(p.amount, f, u, table);
+                  const label = `${formatUnitAmount(p.amount, f, locale)} ${short(f)} → ${short(u)}`;
+                  return (
+                    <li
+                      key={p.id}
+                      data-pin
+                      className="flex items-stretch overflow-hidden rounded-lg border border-[var(--edge)] text-xs"
+                    >
+                      <button
+                        type="button"
+                        aria-label={t("gadgets.openPin", { label })}
+                        onClick={() => {
+                          setFrom(f);
+                          setTo(u);
+                          setText(String(p.amount));
+                        }}
+                        className="px-2.5 py-1.5 text-left hover:bg-[var(--edge-soft)]"
+                      >
+                        <span className="block text-zinc-500 dark:text-zinc-400">
+                          {formatUnitAmount(p.amount, f, locale)} {short(f)}
+                        </span>
+                        <span className="tnum block font-semibold text-zinc-900 dark:text-zinc-100">
+                          {value == null ? "—" : formatUnitAmount(value, u, locale)} {short(u)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t("gadgets.unpin", { label })}
+                        title={t("gadgets.unpin", { label })}
+                        onClick={() => unpin.mutate(p.id)}
+                        className="border-l border-[var(--edge-soft)] px-2 text-zinc-400 hover:bg-[var(--edge-soft)] hover:text-zinc-700 dark:hover:text-zinc-200"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr]">
               <div className="space-y-2">
                 <Field label={t("gadgets.amount")} error={valid ? undefined : t("gadgets.notAnAmount")}>

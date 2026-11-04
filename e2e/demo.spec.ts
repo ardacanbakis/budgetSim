@@ -1057,7 +1057,7 @@ test("part3: wide tables stack into cards on a phone", async ({ page }) => {
 test("part3: no page scrolls sideways on an iPhone 16 Pro", async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await enterDemo(page);
-  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=income", "/transactions?tab=bills", "/accounts?view=debts", "/reports", "/reports?tab=cashflow", "/reports?tab=spending", "/reports?tab=networth", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/settings"]) {
+  for (const path of ["/", "/accounts", "/transactions", "/cards", "/victvs", "/transactions?tab=income", "/transactions?tab=bills", "/accounts?view=debts", "/reports", "/reports?tab=cashflow", "/reports?tab=spending", "/reports?tab=networth", "/planner", "/planner?tab=evim", "/planner?tab=loan", "/gadgets", "/settings"]) {
     await page.goto(path);
     await page.waitForTimeout(600);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

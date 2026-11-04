@@ -27,6 +27,9 @@ async function enterDemo(page: Page, width = 1280, height = 900) {
   await expect(page.getByText(/Net worth|Toplam varlık/).first()).toBeVisible({ timeout: 15_000 });
 }
 
+/** one card of the page: timers, history, converter, alerts or inflation */
+const gadget = (page: Page, name: string) => page.locator(`[data-gadget="${name}"]`);
+
 const tile = (page: Page, name: string) => page.locator("[data-timer]").filter({ hasText: name });
 
 test("timers: a countdown is added, turned into a count since, and deleted", async ({ page }) => {
@@ -115,27 +118,27 @@ test("converter: dollars to lira by default, sides switch, and any unit is a cli
   await enterDemo(page);
   await page.goto("/gadgets");
   const result = page.locator("[data-converter-result]");
-  await expect(page.getByRole("combobox", { name: "From", exact: true })).toHaveValue("USD");
-  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("TRY");
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "From", exact: true })).toHaveValue("USD");
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "To", exact: true })).toHaveValue("TRY");
   await expect(result).toHaveText("4,180.00");
   await expect(page.locator("[data-converter-rate]")).toHaveText("1 USD = 41.8 TRY");
 
   // typed the Turkish way
-  await page.getByLabel("Amount").fill("1.250,50");
+  await gadget(page, "converter").getByLabel("Amount", { exact: true }).fill("1.250,50");
   await expect(result).toHaveText("52,270.90");
 
-  await page.getByRole("button", { name: "Switch sides" }).click();
-  await expect(page.getByRole("combobox", { name: "From", exact: true })).toHaveValue("TRY");
-  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("USD");
+  await gadget(page, "converter").getByRole("button", { name: "Switch sides" }).click();
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "From", exact: true })).toHaveValue("TRY");
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "To", exact: true })).toHaveValue("USD");
   await expect(result).toHaveText("29.92");
 
   // the list shows the amount in every other unit; a row becomes the "to" side
-  await page.getByRole("button", { name: /^EUR · Euro/ }).click();
-  await expect(page.getByRole("combobox", { name: "To", exact: true })).toHaveValue("EUR");
+  await gadget(page, "converter").getByRole("button", { name: /^EUR · Euro/ }).click();
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "To", exact: true })).toHaveValue("EUR");
   await expect(result).toHaveText("27.45");
 
-  await page.getByLabel("Amount").fill("abc");
-  await expect(page.getByText("Not an amount this can read.")).toBeVisible();
+  await gadget(page, "converter").getByLabel("Amount", { exact: true }).fill("abc");
+  await expect(gadget(page, "converter").getByText("Not an amount this can read.")).toBeVisible();
   await expect(result).toHaveText("—");
 });
 
@@ -144,11 +147,11 @@ test("converter: coins the gold feed priced are offered, at their own price", as
   await pinRates(page, { goldTry: { gram: 3281.4, ceyrek: 5270 } });
   await enterDemo(page);
   await page.goto("/gadgets");
-  await page.getByLabel("Amount").fill("2");
-  await page.getByRole("combobox", { name: "From", exact: true }).selectOption("gold:ceyrek");
+  await gadget(page, "converter").getByLabel("Amount", { exact: true }).fill("2");
+  await gadget(page, "converter").getByRole("combobox", { name: "From", exact: true }).selectOption("gold:ceyrek");
   await expect(page.locator("[data-converter-result]")).toHaveText("10,540.00");
   // a coin the feed didn't price isn't offered
-  await expect(page.getByRole("combobox", { name: "From", exact: true }).locator('option[value="gold:tam"]')).toHaveCount(0);
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "From", exact: true }).locator('option[value="gold:tam"]')).toHaveCount(0);
 });
 
 test("Pocket: Gadgets is under More", async ({ page }) => {
@@ -161,4 +164,190 @@ test("Pocket: Gadgets is under More", async ({ page }) => {
   await expect(page).toHaveURL(/\/gadgets$/);
   await expect(tile(page, "New Year")).toBeVisible();
   await expect(page.locator("[data-converter-result]")).toHaveText("4,180.00");
+});
+
+/** The pinned table, but from "live" sources: the app holds alerts (and auto-complete) back on fallback rates. */
+const LIVE = { sources: { USD: "identity", TRY: "frankfurter", EUR: "frankfurter", BTC: "coingecko", XAU_G: "truncgil" } };
+
+test("pinned conversions: the demo's is live and loads into the converter; new ones pin and unpin", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const pins = page.locator("[data-pin]");
+  // 100 EUR at 1.09 USD, 41.8 TRY a dollar
+  await expect(pins.filter({ hasText: "100.00 EUR" })).toContainText("4,556.20 TRY");
+  await page.getByRole("button", { name: "Open 100.00 EUR → TRY in the converter" }).click();
+  await expect(gadget(page, "converter").getByRole("combobox", { name: "From", exact: true })).toHaveValue("EUR");
+  await expect(gadget(page, "converter").getByLabel("Amount", { exact: true })).toHaveValue("100");
+  await expect(page.locator("[data-converter-result]")).toHaveText("4,556.20");
+  // already pinned
+  await expect(page.getByRole("button", { name: /Pin this conversion/ })).toBeDisabled();
+
+  await gadget(page, "converter").getByLabel("Amount", { exact: true }).fill("50");
+  await gadget(page, "converter").getByRole("combobox", { name: "From", exact: true }).selectOption("USD");
+  await page.getByRole("button", { name: /Pin this conversion/ }).click();
+  await expect(pins.filter({ hasText: "50.00 USD" })).toContainText("2,090.00 TRY");
+  await expect(page.getByRole("button", { name: /Pin this conversion/ })).toBeDisabled();
+  await page.reload();
+  await expect(pins.filter({ hasText: "50.00 USD" })).toBeVisible();
+  await page.getByRole("button", { name: "Unpin 50.00 USD → TRY" }).click();
+  await expect(pins.filter({ hasText: "50.00 USD" })).toHaveCount(0);
+});
+
+test("rate alerts: one that's met fires once, shows a banner, and can be re-armed", async ({ page }) => {
+  await pinRates(page, LIVE);
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const alerts = page.locator("[data-alert]");
+  // the demo's is still waiting: 41.8 against 45
+  const waiting = alerts.filter({ hasText: "1 USD above 45 TRY" });
+  await expect(waiting).toContainText("Waiting");
+  await expect(waiting).toContainText("Now 41.8 · 7.66% to go");
+  await expect(page.locator("[data-alert-banner]")).toHaveCount(0);
+
+  const form = page.locator("[data-alert-form]");
+  await form.getByRole("button", { name: "Add alert" }).click();
+  await expect(form.getByText("Enter a rate above 0.")).toBeVisible();
+  await form.getByLabel(/^Rate/).fill("40");
+  await form.getByRole("button", { name: "Add alert" }).click();
+
+  const hit = alerts.filter({ hasText: "1 USD above 40 TRY" });
+  await expect(hit).toContainText("Hit");
+  await expect(hit).toContainText(/Hit .* at 41\.8/);
+  const banner = page.locator("[data-alert-banner]");
+  await expect(banner).toContainText("USD → TRY went above 40: now 41.8");
+  // the banner follows you around the app
+  await page.goto("/accounts");
+  await expect(banner).toBeVisible();
+  await banner.getByRole("button", { name: "Dismiss" }).click();
+  await expect(banner).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("[data-alert-banner]")).toHaveCount(0);
+
+  // re-armed, it fires again on rates that still meet it
+  await page.goto("/gadgets");
+  await hit.getByRole("button", { name: "Re-arm" }).click();
+  await expect(page.locator("[data-alert-banner]")).toBeVisible();
+  await page.getByRole("button", { name: "Delete alert: 1 USD above 40 TRY" }).click();
+  await expect(hit).toHaveCount(0);
+  await expect(page.locator("[data-alert-banner]")).toHaveCount(0);
+});
+
+test("rate alerts never fire on the fallback rates", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const form = page.locator("[data-alert-form]");
+  await form.getByLabel(/^Rate/).fill("40");
+  await form.getByRole("button", { name: "Add alert" }).click();
+  await expect(page.locator("[data-alert]").filter({ hasText: "1 USD above 40 TRY" })).toContainText("Waiting");
+  await expect(page.locator("[data-alert-banner]")).toHaveCount(0);
+});
+
+test("rate history: a pair over a range, and an amount on a past date against today", async ({ page }) => {
+  const asked: string[] = [];
+  await page.route("**/api/rate-history**", (route) => {
+    const url = new URL(route.request().url());
+    asked.push(url.search);
+    if (url.searchParams.get("on")) {
+      return route.fulfill({ json: { date: "2025-03-14", usdPer: { USD: 1, TRY: 1 / 36.6, EUR: 1.09 } } });
+    }
+    return route.fulfill({
+      json: {
+        fetchedAt: new Date().toISOString(),
+        series: {
+          TRY: [
+            ["2026-08-03", 1 / 40],
+            ["2026-09-01", 1 / 39],
+            ["2026-10-01", 1 / 41.8],
+          ],
+          EUR: [
+            ["2026-08-03", 1.1],
+            ["2026-10-01", 1.09],
+          ],
+        },
+      },
+    });
+  });
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  await expect(page.locator("[data-history-last]")).toHaveText("41.8 TRY");
+  await expect(page.locator("[data-history-change]")).toContainText("+4.5% over the range");
+  await expect(page.getByText(/^Low 39 ·/)).toBeVisible();
+  expect(asked).toContain("?days=90");
+
+  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "1Y" }).click();
+  await expect.poll(() => asked).toContain("?days=365");
+
+  // bitcoin's source answered nothing
+  await gadget(page, "history").getByRole("combobox", { name: "From", exact: true }).selectOption("BTC");
+  await expect(page.getByText("No history for this pair right now")).toBeVisible();
+  await gadget(page, "history").getByRole("combobox", { name: "From", exact: true }).selectOption("USD");
+
+  // $1,000 on a Sunday: the ECB's Friday rate
+  await gadget(page, "history").getByLabel("Date", { exact: true }).fill("16/03/2025");
+  const onDate = page.locator("[data-on-date]");
+  await expect(onDate).toContainText("= 36,600.00 TRY");
+  await expect(onDate).toContainText("Today = 41,800.00 TRY");
+  await expect(onDate).toContainText("+14.21% since");
+  await expect(onDate).toContainText("Rates of");
+  expect(asked).toContain("?on=2025-03-16");
+});
+
+test("inflation: an amount from a year before the index's last month, and a month past its end", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/gadgets");
+  const result = page.locator("[data-inflation]");
+  // TÜİK index: June 2025 2942.6, June 2026 3790
+  await expect(result).toContainText("₺12,879.77");
+  await expect(result).toContainText("Prices +28.8% between the two");
+  await expect(page.getByText("Latest month in the index: June 2026.")).toBeVisible();
+
+  await page.getByLabel("Is worth, in").fill("2026-11");
+  await expect(page.getByText(/The index runs January 2024 to June 2026/)).toBeVisible();
+  await expect(result).toContainText("₺12,879.77");
+});
+
+test("sidebar: Settings sits beside Log out, and the name can lead to the Dashboard instead", async ({ page }) => {
+  await enterDemo(page);
+  const aside = page.locator("aside[data-sidebar]");
+  await expect(aside.locator('nav a[href="/settings"]')).toHaveCount(0);
+  await expect(aside.locator('[data-sidebar-footer] a[href="/settings"]')).toBeVisible();
+  await expect(aside.locator("[data-sidebar-footer]")).toContainText("Log out");
+  // the name goes to the welcome page, as it always has
+  await expect(aside.getByRole("link", { name: "BudgetSim" })).toHaveAttribute("href", "/welcome");
+
+  await aside.locator('[data-sidebar-footer] a[href="/settings"]').click();
+  await expect(page).toHaveURL(/\/settings/);
+  await page.goto("/settings?tab=preferences");
+  const brand = page.locator("[data-brand-nav]");
+  const hide = brand.getByRole("checkbox", { name: /Hide Dashboard/ });
+  await expect(hide).toBeDisabled();
+  await brand.getByRole("button", { name: "Dashboard" }).click();
+  await expect(aside.getByRole("link", { name: "BudgetSim" })).toHaveAttribute("href", "/");
+  await hide.check();
+  await expect(aside.locator('nav a[href="/"]')).toHaveCount(0);
+
+  // the name is the way there now; the number keys start at the next page
+  await page.reload();
+  await expect(aside.locator('nav a[href="/"]')).toHaveCount(0);
+  await aside.getByRole("link", { name: "BudgetSim" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.keyboard.press("1");
+  await expect(page).toHaveURL(/\/accounts$/);
+
+  // back to the welcome page brings the Dashboard back with it
+  await page.goto("/settings?tab=preferences");
+  await brand.getByRole("button", { name: "Welcome page" }).click();
+  await expect(aside.locator('nav a[href="/"]')).toHaveCount(1);
+});
+
+test("phone: the name goes to the Dashboard, which leaves the bar, by default", async ({ page }) => {
+  await enterDemo(page, 390, 844);
+  const bar = page.locator("nav.fixed.inset-x-0.bottom-0");
+  await expect(bar.locator('a[href="/"]')).toHaveCount(0);
+  await page.goto("/accounts");
+  await page.locator("header").getByRole("link", { name: "BudgetSim" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  // Settings is still in More on a phone
+  await bar.getByRole("button", { name: /more/i }).click();
+  await expect(page.locator('a[href="/settings"]').last()).toBeVisible();
 });

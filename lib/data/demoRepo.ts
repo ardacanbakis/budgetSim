@@ -16,6 +16,7 @@ import {
   NewLoan,
   NewPurchase,
   NewTemplate,
+  NewRateAlert,
   NewTimer,
   NewTransaction,
   NewTransfer,
@@ -35,6 +36,8 @@ import {
   CardEstimate,
   Category,
   DateTimer,
+  PinnedConversion,
+  RateAlert,
   Goal,
   Loan,
   NetWorthSnapshot,
@@ -690,6 +693,51 @@ export class DemoRepo implements Repo {
     this.save();
   }
 
+  async listRateAlerts(): Promise<RateAlert[]> {
+    return copy(this.store.rateAlerts ?? []);
+  }
+
+  async createRateAlert(input: NewRateAlert): Promise<RateAlert> {
+    const alert: RateAlert = {
+      id: uuid(),
+      ...input,
+      triggeredAt: null,
+      triggeredRate: null,
+      acknowledgedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    this.store.rateAlerts = [...(this.store.rateAlerts ?? []), alert];
+    this.save();
+    return copy(alert);
+  }
+
+  async updateRateAlert(id: string, patch: Partial<Omit<RateAlert, "id" | "createdAt">>): Promise<void> {
+    const alert = (this.store.rateAlerts ?? []).find((a) => a.id === id);
+    if (alert) Object.assign(alert, patch);
+    this.save();
+  }
+
+  async deleteRateAlert(id: string): Promise<void> {
+    this.store.rateAlerts = (this.store.rateAlerts ?? []).filter((a) => a.id !== id);
+    this.save();
+  }
+
+  async listPinnedConversions(): Promise<PinnedConversion[]> {
+    return copy(this.store.pinnedConversions ?? []);
+  }
+
+  async createPinnedConversion(input: Omit<PinnedConversion, "id" | "createdAt">): Promise<PinnedConversion> {
+    const pin: PinnedConversion = { id: uuid(), ...input, createdAt: new Date().toISOString() };
+    this.store.pinnedConversions = [...(this.store.pinnedConversions ?? []), pin];
+    this.save();
+    return copy(pin);
+  }
+
+  async deletePinnedConversion(id: string): Promise<void> {
+    this.store.pinnedConversions = (this.store.pinnedConversions ?? []).filter((p) => p.id !== id);
+    this.save();
+  }
+
   async listSnapshots(): Promise<NetWorthSnapshot[]> {
     return copy(this.store.snapshots);
   }
@@ -984,6 +1032,8 @@ export class DemoRepo implements Repo {
       activity: this.store.activity ?? [],
       cardEstimates: this.store.cardEstimates ?? [],
       timers: this.store.timers ?? [],
+      rateAlerts: this.store.rateAlerts ?? [],
+      pinnedConversions: this.store.pinnedConversions ?? [],
     };
   }
 
@@ -1005,6 +1055,8 @@ export class DemoRepo implements Repo {
       activity: [...(backup.activity ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
       cardEstimates: backup.cardEstimates ?? [],
       timers: backup.timers ?? [],
+      rateAlerts: backup.rateAlerts ?? [],
+      pinnedConversions: backup.pinnedConversions ?? [],
     };
     this.save();
   }

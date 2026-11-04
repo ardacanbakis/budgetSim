@@ -316,6 +316,35 @@ export interface DateTimer {
   createdAt: string;
 }
 
+/**
+ * A rate alert on the Gadgets page (migration 0025; lib/domain/rateAlerts.ts):
+ * fires once, the first time a live rate meets it.
+ */
+export interface RateAlert {
+  id: string;
+  /** a converter unit: a currency code, or "gold:<type>" */
+  fromUnit: string;
+  toUnit: string;
+  direction: import("@/lib/domain/rateAlerts").AlertDirection;
+  /** how many `toUnit` one `fromUnit` buys */
+  threshold: number;
+  /** when a live rate first met it; null while armed */
+  triggeredAt: string | null;
+  triggeredRate: number | null;
+  /** when its notice was dismissed */
+  acknowledgedAt: string | null;
+  createdAt: string;
+}
+
+/** A conversion kept at hand over the Gadgets page's converter (migration 0025). */
+export interface PinnedConversion {
+  id: string;
+  fromUnit: string;
+  toUnit: string;
+  amount: number;
+  createdAt: string;
+}
+
 export interface NetWorthSnapshot {
   id: string;
   /** yyyy-mm-dd; unique per month per user */

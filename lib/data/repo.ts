@@ -10,6 +10,8 @@ import {
   CardEstimate,
   Category,
   DateTimer,
+  PinnedConversion,
+  RateAlert,
   Frequency,
   Goal,
   Loan,
@@ -180,6 +182,7 @@ export interface NewLoan {
 }
 
 export type NewTimer = Pick<DateTimer, "name" | "kind" | "targetAt">;
+export type NewRateAlert = Pick<RateAlert, "fromUnit" | "toUnit" | "direction" | "threshold">;
 
 /** What can change on a debt once it exists; the schedule's shape stays. */
 export interface LoanPatch {
@@ -322,6 +325,16 @@ export interface Repo {
   updateTimer(id: string, patch: Partial<NewTimer>): Promise<void>;
   deleteTimer(id: string): Promise<void>;
 
+  /** rate alerts and pinned conversions (migration 0025; none without it) */
+  listRateAlerts(): Promise<RateAlert[]>;
+  createRateAlert(input: NewRateAlert): Promise<RateAlert>;
+  /** also how one fires (triggeredAt + triggeredRate), is dismissed (acknowledgedAt) and is re-armed (all three null) */
+  updateRateAlert(id: string, patch: Partial<Omit<RateAlert, "id" | "createdAt">>): Promise<void>;
+  deleteRateAlert(id: string): Promise<void>;
+  listPinnedConversions(): Promise<PinnedConversion[]>;
+  createPinnedConversion(input: Omit<PinnedConversion, "id" | "createdAt">): Promise<PinnedConversion>;
+  deletePinnedConversion(id: string): Promise<void>;
+
   listPurchases(): Promise<Purchase[]>;
   /** creates the purchase; when reflected, generates its transactions (past rows completed with the snapshot) */
   createPurchase(input: NewPurchase, fxSnapshot: FxSnapshot | null): Promise<Purchase>;
@@ -376,6 +389,9 @@ export interface BackupFile {
   cardEstimates?: CardEstimate[];
   /** the Gadgets page's timers; absent in backups made before them */
   timers?: DateTimer[];
+  /** rate alerts and pinned conversions; absent in backups made before them */
+  rateAlerts?: RateAlert[];
+  pinnedConversions?: PinnedConversion[];
 }
 
 export function isBackupFile(data: unknown): data is BackupFile {
