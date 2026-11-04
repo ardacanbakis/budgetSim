@@ -87,6 +87,37 @@ test("borrowed from a person: the money lands, a payment counts, and a date plan
   await expect(pane.locator("[data-entity-changes]")).toContainText("Repay on");
 });
 
+test("borrowed earlier and already spent: no money row, only the repayment planned ahead", async ({ page }) => {
+  await enterDemo(page);
+  const form = await newDebt(page);
+  await form.getByLabel("Person", { exact: true }).fill("Selin");
+  await form.getByLabel("Amount", { exact: true }).fill("4000");
+  const earlier = new Date();
+  earlier.setMonth(earlier.getMonth() - 3, 10);
+  await form.getByLabel("Borrowed on").fill(typed(iso(earlier)));
+  await form.getByLabel("Borrowed on").press("Tab");
+  // a past date: the money is already in the balances (or spent), so nothing lands
+  await expect(form.getByLabel("Money landed in")).toHaveValue("");
+  await expect(form).toContainText("only the repayments move your balance");
+  const later = new Date();
+  later.setMonth(later.getMonth() + 2, 15);
+  await form.getByRole("radio", { name: "One payment on a date" }).check();
+  await form.getByLabel("Repay on").fill(typed(iso(later)));
+  await form.getByLabel("Repay on").press("Tab");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  const pane = page.locator("[data-loan-pane]");
+  await expect(pane).toContainText("Selin");
+  await expect(pane.locator("[data-debt-remaining]")).toHaveText("−₺4,000.00");
+  await expect
+    .poll(async () => {
+      const s = await store(page);
+      const loan = s.loans.find((l) => l.name === "Selin");
+      return s.transactions.filter((t) => t.loanId === loan?.id).map((t) => [t.direction, t.amount, t.status, t.dueDate]);
+    })
+    .toEqual([["expense", 4000, "planned", iso(later)]]);
+});
+
 test("lent to a person: owed to you, in its own list, and the summary says so", async ({ page }) => {
   await enterDemo(page);
   const form = await newDebt(page);
