@@ -280,6 +280,8 @@ test.describe("Pocket home", () => {
       "!debt",
       "!commitments",
       "!victvsOutlook",
+      "!monthTop",
+      "!monthStatements",
     ]);
     expect((await store(page)).settings.dashboardLayout).toBeNull();
 

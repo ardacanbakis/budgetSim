@@ -90,6 +90,12 @@ export const CARD_SPECS = [
   spec("recent", { defaultOn: OFF, route: "/transactions", span: "sm:col-span-2" }),
   spec("changes", { defaultOn: OFF, route: "/settings?tab=history", span: "sm:col-span-2 xl:col-span-1" }),
   spec("victvs-outlook", { defaultOn: OFF, nav: "/victvs", route: "/victvs", span: "sm:col-span-2 xl:col-span-1" }),
+  // the month browsers: a month's biggest incomes and expenses, and its card
+  // statements, a month back or ahead at a time. Asked for, so on from the
+  // start; a layout saved before them gets them at the end of its order
+  // the whole row on Classic's grid, so its two lists sit side by side
+  spec("month-top", { defaultOn: ON, route: "/reports", span: "sm:col-span-2 xl:col-span-4" }),
+  spec("month-statements", { defaultOn: ON, route: "/cards", span: "sm:col-span-2" }),
 ] as const;
 
 export type CardId = (typeof CARD_SPECS)[number]["id"];

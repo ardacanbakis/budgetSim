@@ -34,6 +34,8 @@ const CLASSIC_TEN = [
   "goals",
   "avg-spend",
 ];
+// the month browsers, on from the start in both styles
+const MONTH_BROWSERS = ["month-top", "month-statements"];
 
 describe("normalizeLayout", () => {
   it("gives the defaults for a layout nobody has saved", () => {
@@ -43,16 +45,19 @@ describe("normalizeLayout", () => {
     expect(layout.shown).toEqual([]);
     expect(layout.accounts).toEqual(DEFAULT_ACCOUNTS);
     expect(layout.upcomingDays).toBe(DEFAULT_UPCOMING_DAYS);
-    expect(visibleCards(layout, "classic", ALL_PAGES)).toEqual(CLASSIC_TEN);
+    expect(visibleCards(layout, "classic", ALL_PAGES)).toEqual([...CLASSIC_TEN, ...MONTH_BROWSERS]);
+    expect(visibleCards(layout, "v2", ALL_PAGES)).toEqual(expect.arrayContaining(MONTH_BROWSERS));
   });
 
   it("renders a layout saved before the catalogue grew exactly as it did", () => {
     const legacy = { order: [...CLASSIC_TEN].reverse(), hidden: ["goals"] };
     const layout = normalizeLayout(legacy);
-    expect(visibleCards(layout, "classic", ALL_PAGES)).toEqual(
-      [...CLASSIC_TEN].reverse().filter((id) => id !== "goals")
-    );
-    // a card the old layout never heard of is appended, and stays off
+    // the month browsers, on by default, append after what it had
+    expect(visibleCards(layout, "classic", ALL_PAGES)).toEqual([
+      ...[...CLASSIC_TEN].reverse().filter((id) => id !== "goals"),
+      ...MONTH_BROWSERS,
+    ]);
+    // a card the old layout never heard of is appended, and an optional one stays off
     expect(layout.order.slice(0, 10)).toEqual([...CLASSIC_TEN].reverse());
     expect(layout.order).toContain("gold-lens");
     expect(isCardVisible(layout, "gold-lens", "classic", ALL_PAGES)).toBe(false);
@@ -159,7 +164,7 @@ describe("moveCard", () => {
     const next = moveCard(fresh, shown, "cc-debt", -1);
     expect(next.order.slice(0, 3)).toEqual(["net-worth", "cc-debt", "safe-to-spend"]);
     expect(moveCard(fresh, shown, "net-worth", -1)).toBe(fresh);
-    expect(moveCard(fresh, shown, "avg-spend", 1)).toBe(fresh);
+    expect(moveCard(fresh, shown, "month-statements", 1)).toBe(fresh);
   });
 
   it("drops a card onto another's place", () => {
