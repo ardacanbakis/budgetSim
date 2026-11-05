@@ -9,7 +9,7 @@ import { Card, CardHeader, Spinner } from "@/components/ui";
 import { useVictvsForecast, VictvsForecastView } from "@/components/victvsForecast";
 import { ChangeLine } from "@/components/history";
 import { useApp } from "@/lib/data/provider";
-import { useActivity, useLoans, usePurchases, useRates, useSnapshots, useTemplates } from "@/lib/data/queries";
+import { useActivity, useLoans, usePurchases, useRates, useSnapshots, useTemplates, useVictvsPayouts } from "@/lib/data/queries";
 import { Account } from "@/lib/data/types";
 import { chargeAmount } from "@/lib/domain/cards";
 import { computeDebtOverview } from "@/lib/domain/debt";
@@ -18,7 +18,9 @@ import { cardStandings } from "@/lib/domain/purchases";
 import { templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
 import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
-import { CardId } from "@/lib/ui/dashboardLayout";
+import { CardId, setMonthVictvs } from "@/lib/ui/dashboardLayout";
+import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
+import { typicalPayoutDay } from "@/lib/domain/timeline";
 import { debtHref, MonthItem, monthItems, monthStatements, statementRows, thisMonthSummary, topItems, trendPoints } from "@/lib/ui/dashboardCards";
 import { monthlyCommitments } from "@/lib/ui/pocket/commitments";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
@@ -301,10 +303,28 @@ function MonthStepper({ month, offset, setOffset }: ReturnType<typeof useMonthSt
   );
 }
 
+/** How far ahead Month in & out takes the VICTVS forecast: as far as recurring items are laid out. */
+const VICTVS_MONTHS = 13;
+
 function MonthTopBody({ d }: { d: DashboardData }) {
   const { t } = useI18n();
   const { displayCurrency } = useApp();
   const nav = useMonthStep(d.today);
+  // the VICTVS forecast as income: optional, synced with the layout, and
+  // only offered while the VICTVS page is in the menus
+  const { layout, navHrefs, update } = useDashboardLayout();
+  const victvsOffered = navHrefs.includes("/victvs");
+  const withVictvs = victvsOffered && (layout?.monthVictvs ?? false);
+  const forecast = useVictvsForecast(withVictvs ? VICTVS_MONTHS : 0);
+  const payouts = useVictvsPayouts();
+  const victvsLabel = t("dashboard.victvsForecast");
+  const victvs = useMemo(
+    () =>
+      withVictvs && forecast
+        ? { cash: forecast.cash, payoutDay: typicalPayoutDay((payouts.data ?? []).map((p) => p.paymentDate)), label: victvsLabel }
+        : null,
+    [withVictvs, forecast, payouts.data, victvsLabel]
+  );
   const items = useMemo(
     () =>
       monthItems({
@@ -316,8 +336,9 @@ function MonthTopBody({ d }: { d: DashboardData }) {
         display: displayCurrency,
         includeLegacy: d.includeLegacy,
         month: nav.month,
+        victvs,
       }),
-    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency, nav.month]
+    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency, nav.month, victvs]
   );
   const { incomeDone, incomeAhead, expenseDone, expenseAhead } = items.totals;
   const income = incomeDone + incomeAhead;
@@ -353,9 +374,29 @@ function MonthTopBody({ d }: { d: DashboardData }) {
           <p className={muted}>{t("dashboard.cashBasis")}</p>
         </>
       )}
+      {victvsOffered && layout ? (
+        // a click here is the card's own, not Classic's whole-card link
+        <label className="flex w-fit items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" onClick={stop}>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={withVictvs}
+            onChange={(e) => update((l) => setMonthVictvs(l, e.target.checked))}
+            className="h-4 w-4 accent-teal-600"
+            data-month-victvs
+          />
+          {t("dashboard.includeVictvs")}
+        </label>
+      ) : null}
     </div>
   );
 }
+
+const ITEM_TAG = {
+  planned: "dashboard.monthPlanned",
+  expected: "dashboard.monthExpected",
+  forecast: "dashboard.monthForecast",
+} as const;
 
 /** One side of the month: its ten biggest lines, and what the rest come to. */
 function TopList({ title, items, kind }: { title: string; items: MonthItem[]; kind: "income" | "expense" }) {
@@ -382,7 +423,7 @@ function TopList({ title, items, kind }: { title: string; items: MonthItem[]; ki
             <span className="min-w-0 flex-1 truncate" title={i.label}>
               {i.label}
               {i.status !== "done" ? (
-                <span className="ml-1.5 text-[11px] text-zinc-400">{t(i.status === "expected" ? "dashboard.monthExpected" : "dashboard.monthPlanned")}</span>
+                <span className="ml-1.5 text-[11px] text-zinc-400">{t(ITEM_TAG[i.status])}</span>
               ) : null}
             </span>
             <span className="shrink-0 font-medium">

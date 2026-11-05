@@ -13,6 +13,7 @@ import {
   setAccountLimit,
   setCardVisible,
   setHideEmpty,
+  setMonthVictvs,
   setUpcomingDays,
   visibleCards,
 } from "../dashboardLayout";
@@ -96,6 +97,15 @@ describe("normalizeLayout", () => {
     expect(layout.upcomingDays).toBe(30);
     expect(normalizeLayout({ order: [], hidden: [], accounts: { hidden: [], hideEmpty: false, limit: null } }).accounts.limit).toBeNull();
     expect(normalizeLayout({ order: [], hidden: [], upcomingDays: 14 }).upcomingDays).toBe(14);
+  });
+
+  it("leaves the VICTVS forecast out of Month in & out until it's turned on", () => {
+    expect(normalizeLayout(null).monthVictvs).toBe(false);
+    expect(normalizeLayout({ order: [], hidden: [], monthVictvs: "yes" as never }).monthVictvs).toBe(false);
+    const on = setMonthVictvs(normalizeLayout(null), true);
+    expect(on.monthVictvs).toBe(true);
+    expect(normalizeLayout(on).monthVictvs).toBe(true);
+    expect(setMonthVictvs(on, false).monthVictvs).toBe(false);
   });
 
   it("prunes hidden accounts that no longer exist, in memory only", () => {

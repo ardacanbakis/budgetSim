@@ -186,6 +186,43 @@ describe("monthItems", () => {
     expect(sep.expense).toEqual([]);
     expect(monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month: "2026-10" })).toEqual(items);
   });
+
+  describe("with the VICTVS forecast", () => {
+    const cash = [
+      { month: "2026-10", expected: 300, low: 200, high: 400, earned: 300 },
+      { month: "2026-11", expected: 1500, low: 1000, high: 2000, earned: 0 },
+      { month: "2026-12", expected: 0, low: 0, high: 0, earned: 0 },
+    ];
+    const victvs = { cash, payoutDay: 12, label: "VICTVS" };
+    const at = (month: string, v: typeof victvs | null = victvs) =>
+      monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month, victvs: v });
+
+    it("adds the month's expected payout as income still to come, on the day payouts land", () => {
+      const nov = at("2026-11");
+      expect(nov.income).toEqual([
+        {
+          key: "victvs:2026-11", date: "2026-11-12", label: "VICTVS", accountName: "VICTVS",
+          direction: "income", amount: 1500, currency: "USD", value: 60000, status: "forecast",
+        },
+      ]);
+      expect(nov.totals.incomeAhead).toBe(60000);
+    });
+
+    it("never dates it before today, and counts it among what's still to come", () => {
+      const oct = at("2026-10");
+      expect(oct.income.map((i) => [i.label, i.date, i.status])).toEqual([
+        ["WBL 2026", "2026-10-05", "done"],
+        ["VICTVS", "2026-10-20", "forecast"],
+      ]);
+      expect(oct.totals).toEqual({ ...items.totals, incomeAhead: 12000 });
+    });
+
+    it("leaves out a month expecting nothing, a month already over, and everything when it's off", () => {
+      expect(at("2026-12").income).toEqual([]);
+      expect(at("2026-09", { ...victvs, cash: [{ month: "2026-09", expected: 500, low: 500, high: 500, earned: 0 }] }).income).toEqual([]);
+      expect(at("2026-11", null).income).toEqual([]);
+    });
+  });
 });
 
 describe("topItems", () => {
