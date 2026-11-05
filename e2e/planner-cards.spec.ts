@@ -17,6 +17,7 @@ test.beforeEach(async ({ page }) => {
 const FORECAST_CARDS = [
   "chart",
   "projections",
+  "month",
   "milestones",
   "dev",
   "lost",
@@ -187,14 +188,19 @@ test("custom canvas: a layout saved before the presets loads onto them", async (
   expect(sales[2]).toBe(2); // 3 columns → 2
   expect(sales[3]).toBe(6); // 7 rows → 6
   expect(await boxOf("dev")).toEqual([3, 7, 1, 1]); // pushed clear of the taller projections
-  // budgets had no box: it goes below everything placed
-  const placed = await page.locator("[data-card]").evaluateAll((els) =>
-    els.filter((el) => el.getAttribute("data-card") !== "budgets").map((el) => el.getAttribute("data-box")!.split(",").map(Number))
+  // budgets had no box, nor did Month in & out (newer than the layout):
+  // they go below everything placed
+  const unplaced = ["budgets", "month"];
+  const placed = await page.locator("[data-card]").evaluateAll(
+    (els, skip) => els.filter((el) => !skip.includes(el.getAttribute("data-card")!)).map((el) => el.getAttribute("data-box")!.split(",").map(Number)),
+    unplaced
   );
   const floor = Math.max(...placed.map(([, y, , h]) => y + h));
-  const budgets = await boxOf("budgets");
-  expect(budgets[1]).toBeGreaterThanOrEqual(floor);
-  expect(budgets.slice(2)).toEqual([2, 4]); // its preset, L
+  for (const id of unplaced) {
+    const b = await boxOf(id);
+    expect(b[1], id).toBeGreaterThanOrEqual(floor);
+    expect(b.slice(2), id).toEqual([2, 4]); // its preset, L
+  }
 
   // each frame fills its cell exactly
   for (const id of ["chart", "projections", "sales", "budgets"]) {
@@ -298,4 +304,18 @@ test.describe("Pocket", () => {
     expect(chart.height).toBeLessThan(chart.width);
     await page.screenshot({ path: "e2e/screenshots/planner-cards-pocket.png", fullPage: true });
   });
+});
+
+test("Month in & out sits on the Forecast tab too, and steps through the months there", async ({ page }) => {
+  await enterDemo(page);
+  await openPlan(page);
+  const month = page.locator('[data-plan-card="month"]');
+  await expect(month.getByRole("heading", { name: "Month in & out" })).toBeVisible();
+  const step = month.locator("[data-month-step]");
+  const now = await step.getAttribute("data-month-step");
+  await month.getByRole("button", { name: "Next month" }).click();
+  await expect(step).not.toHaveAttribute("data-month-step", now!);
+  await expect(page).toHaveURL(/\/planner$/);
+  await month.getByRole("button", { name: "Back to this month" }).click();
+  await expect(step).toHaveAttribute("data-month-step", now!);
 });

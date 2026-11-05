@@ -121,9 +121,12 @@ function SettingsScreen() {
       // nothing to remember it in
     }
   }, [fromUrl]);
-  // once Preferences is showing, the card is there to scroll to
+  // once Preferences is showing, the card is there to scroll to; a frame
+  // later, so a menu sheet that asked for it has let go of the page's scroll
   useEffect(() => {
-    if (showPhone) document.getElementById(PHONE_LAYOUT_ANCHOR)?.scrollIntoView({ block: "start" });
+    if (!showPhone) return;
+    const frame = requestAnimationFrame(() => document.getElementById(PHONE_LAYOUT_ANCHOR)?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
   }, [showPhone]);
 
   const createCategory = useAppMutation(

@@ -4,9 +4,21 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import {
+  CollisionDetection,
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  pointerWithin,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, SortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PendingConversions } from "@/components/convertedIncome";
 import { AvgSpendCard } from "@/components/avgSpendCard";
@@ -48,6 +60,21 @@ const PocketHome = dynamic(() => import("@/components/pocket/home").then((m) => 
 
 export default pocketable(DashboardPage, PocketHome);
 
+// the tiles stay put while one is dragged, and the place it would take
+// lights up: cards of different widths sliding round each other read as a
+// jumble, a drop target doesn't
+const stayPut: SortingStrategy = () => null;
+
+// the place under the pointer, or in a gap the nearest one to it; the
+// keyboard, with no pointer, the nearest to the tile it moves
+const underPointer: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  if (within.length > 0) return within;
+  const p = args.pointerCoordinates;
+  if (!p) return closestCenter(args);
+  return closestCenter({ ...args, collisionRect: { top: p.y, left: p.x, bottom: p.y, right: p.x, width: 0, height: 0 } });
+};
+
 const tooltipStyle = {
   backgroundColor: "var(--viz-tooltip-bg)",
   border: "1px solid var(--viz-grid)",
@@ -67,7 +94,16 @@ function DashboardPage() {
   // Settings (lib/ui/dashboardLayout.ts)
   const { layout, navHrefs, update } = useDashboardLayout();
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // the card being dragged, for the copy that follows the pointer
+  const [dragging, setDragging] = useState<CardId | null>(null);
+
+  // a mouse picks a tile up after a few pixels; a finger after a short hold,
+  // so a swipe still scrolls the page; the keyboard from a tile's grip
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // both dashboards run on the same derivation; only the arrangement differs
   const derived = useDashboardData(displayCurrency);
@@ -94,7 +130,13 @@ function DashboardPage() {
   // screen; the cards that aren't showing keep their places in the order.
   const shownIn = (l: NormalizedLayout) => visibleCards(l, "classic", navHrefs);
 
+  const onDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    setDragging(isCardId(id) ? id : null);
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
+    setDragging(null);
     const { active, over } = event;
     const id = String(active.id);
     const target = over ? String(over.id) : null;
@@ -102,7 +144,13 @@ function DashboardPage() {
     update((l) => moveCard(l, shownIn(l), id, target));
   };
 
-  const move = (id: CardId, delta: -1 | 1) => update((l) => moveCard(l, shownIn(l), id, delta));
+  // a step, or straight to either end of the cards on screen
+  const move = (id: CardId, to: "top" | -1 | 1 | "bottom") =>
+    update((l) => {
+      const shown = shownIn(l);
+      const target = to === "top" ? shown[0] : to === "bottom" ? shown[shown.length - 1] : to;
+      return target == null ? l : moveCard(l, shown, id, target);
+    });
   const hide = (id: CardId) => update((l) => setCardVisible(l, id, false));
   const unhide = (id: CardId) => update((l) => setCardVisible(l, id, true));
 
@@ -250,8 +298,14 @@ function DashboardPage() {
         </Button>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={visible} strategy={rectSortingStrategy}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={underPointer}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => setDragging(null)}
+      >
+        <SortableContext items={visible} strategy={stayPut}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {visible.map((id, index) => (
               <SortableCard
@@ -264,14 +318,19 @@ function DashboardPage() {
                 isFirst={index === 0}
                 isLast={index === visible.length - 1}
                 onHide={() => hide(id)}
-                onMoveUp={() => move(id, -1)}
-                onMoveDown={() => move(id, 1)}
+                onMove={(to) => move(id, to)}
               >
                 {cardContent[id]}
               </SortableCard>
             ))}
           </div>
         </SortableContext>
+        {/* what follows the pointer: the tile, lifted, rather than the tile moving in the grid */}
+        <DragOverlay>
+          {dragging ? (
+            <EditTile label={t(cardSpec(dragging).labelKey)} isFirst isLast lifted onHide={() => undefined} onMove={() => undefined} />
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       {/* every card that's off, by the user or by default, can come back from here */}
@@ -297,6 +356,18 @@ function DashboardPage() {
   );
 }
 
+/**
+ * One card on Classic's grid. Outside edit mode it's the card itself, and a
+ * big click target for its page (inner buttons and links stop their clicks).
+ *
+ * In edit mode it shrinks to a short tile with the card's name at the width
+ * it takes, so the whole layout fits on a screen: a card can be picked up
+ * anywhere on its tile (a mouse after a few pixels, a finger after a short
+ * hold, so a page still scrolls under a swipe; the grip with the keyboard)
+ * and dropped on any other place without a long drag past the cards'
+ * content. The buttons do the same in steps: to the top, up, down, to the
+ * bottom, and hide.
+ */
 function SortableCard({
   id,
   label,
@@ -306,8 +377,7 @@ function SortableCard({
   isFirst,
   isLast,
   onHide,
-  onMoveUp,
-  onMoveDown,
+  onMove,
   children,
 }: {
   id: string;
@@ -318,63 +388,126 @@ function SortableCard({
   isFirst: boolean;
   isLast: boolean;
   onHide: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  onMove: (to: "top" | -1 | 1 | "bottom") => void;
   children: React.ReactNode;
 }) {
-  const { t } = useI18n();
   const router = useRouter();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, isDragging, isOver } = useSortable({
     id,
     disabled: !editMode,
   });
 
-  // outside edit mode the whole card is a big click target for its page;
-  // inner buttons/links stopPropagation so they keep their own behavior
-  const navigable = !editMode && href;
+  if (editMode) {
+    // the mouse and touch sensors start from anywhere on the tile; the
+    // keyboard only from the grip, so Enter on a button stays that button's
+    const { onKeyDown, ...pointer } = (listeners ?? {}) as Record<string, (e: unknown) => void>;
+    return (
+      <div
+        ref={setNodeRef}
+        data-card={id}
+        data-editing
+        data-drop-target={isOver && !isDragging ? "" : undefined}
+        className={`${spanClass} ${isDragging ? "opacity-40" : ""}`}
+        {...pointer}
+      >
+        <EditTile
+          label={label}
+          grip={{ ...attributes, onKeyDown }}
+          isFirst={isFirst}
+          isLast={isLast}
+          onHide={onHide}
+          onMove={onMove}
+          target={isOver && !isDragging}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
       ref={setNodeRef}
       data-card={id}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative ${spanClass} ${isDragging ? "z-50 opacity-80" : ""} ${
-        navigable ? "cursor-pointer transition-transform hover:-translate-y-0.5" : ""
-      }`}
-      onClick={navigable ? () => router.push(href!) : undefined}
+      className={`group relative ${spanClass} ${href ? "cursor-pointer transition-transform hover:-translate-y-0.5" : ""}`}
+      onClick={href ? () => router.push(href) : undefined}
       onKeyDown={
-        navigable
+        href
           ? (e) => {
               // Enter on a button inside the card is that button's
-              if (e.key === "Enter" && e.target === e.currentTarget) router.push(href!);
+              if (e.key === "Enter" && e.target === e.currentTarget) router.push(href);
             }
           : undefined
       }
-      role={navigable ? "link" : undefined}
-      tabIndex={navigable ? 0 : undefined}
+      role={href ? "link" : undefined}
+      tabIndex={href ? 0 : undefined}
     >
-      {editMode ? (
-        <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-          <button
-            {...attributes}
-            {...listeners}
-            className="cursor-grab px-1 text-zinc-400 hover:text-zinc-700 active:cursor-grabbing dark:hover:text-zinc-200"
-            aria-label={label}
-          >
-            ⠿
-          </button>
-          <button onClick={onMoveUp} disabled={isFirst} className="px-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200" aria-label={t("layout.moveUp")}>
-            ↑
-          </button>
-          <button onClick={onMoveDown} disabled={isLast} className="px-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200" aria-label={t("layout.moveDown")}>
-            ↓
-          </button>
-          <button onClick={onHide} className="px-1 text-zinc-400 hover:text-red-600" aria-label={t("layout.hide")}>
-            ✕
-          </button>
-        </div>
-      ) : null}
       {children}
+    </div>
+  );
+}
+
+/** A card in edit mode: its name, the grip, and the buttons that move or hide it. */
+function EditTile({
+  label,
+  grip,
+  isFirst,
+  isLast,
+  onHide,
+  onMove,
+  lifted = false,
+  target = false,
+}: {
+  label: string;
+  grip?: React.HTMLAttributes<HTMLElement>;
+  isFirst: boolean;
+  isLast: boolean;
+  onHide: () => void;
+  onMove: (to: "top" | -1 | 1 | "bottom") => void;
+  /** the copy that follows the pointer while dragging */
+  lifted?: boolean;
+  /** the place the dragged card would take if dropped now */
+  target?: boolean;
+}) {
+  const { t } = useI18n();
+  const btn =
+    "flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-[var(--edge-soft)] hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:text-zinc-100";
+  return (
+    <div
+      className={`flex h-24 cursor-grab touch-manipulation select-none flex-col justify-between rounded-[var(--ui-card-radius)] border-2 border-dashed bg-[var(--surface)] p-2 active:cursor-grabbing ${
+        lifted
+          ? "border-teal-500 shadow-xl ring-2 ring-teal-500/30"
+          : target
+            ? "border-solid border-teal-500 bg-teal-50 dark:bg-teal-950/40"
+            : "border-[var(--edge)] hover:border-teal-500"
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          {...grip}
+          aria-label={label}
+          className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center rounded text-lg leading-none text-zinc-400 hover:text-zinc-700 active:cursor-grabbing dark:hover:text-zinc-200"
+        >
+          ⠿
+        </button>
+        <span className="min-w-0 truncate text-sm font-semibold">{label}</span>
+      </div>
+      <div className="flex items-center justify-end gap-0.5">
+        <button type="button" onClick={() => onMove("top")} disabled={isFirst} className={btn} aria-label={t("layout.moveTop")} title={t("layout.moveTop")}>
+          ⤒
+        </button>
+        <button type="button" onClick={() => onMove(-1)} disabled={isFirst} className={btn} aria-label={t("layout.moveUp")} title={t("layout.moveUp")}>
+          ↑
+        </button>
+        <button type="button" onClick={() => onMove(1)} disabled={isLast} className={btn} aria-label={t("layout.moveDown")} title={t("layout.moveDown")}>
+          ↓
+        </button>
+        <button type="button" onClick={() => onMove("bottom")} disabled={isLast} className={btn} aria-label={t("layout.moveBottom")} title={t("layout.moveBottom")}>
+          ⤓
+        </button>
+        <button type="button" onClick={onHide} className={`${btn} hover:text-red-600`} aria-label={t("layout.hide")} title={t("layout.hide")}>
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

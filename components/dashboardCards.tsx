@@ -25,7 +25,7 @@ import { debtHref, MonthItem, monthItems, monthStatements, statementRows, thisMo
 import { monthlyCommitments } from "@/lib/ui/pocket/commitments";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
 import { AMOUNT_SLOT, recentRows, RECENT_DAYS } from "@/lib/ui/pocket/homeSections";
-import { DashboardData } from "@/lib/useDashboardData";
+import { DashboardData, useDashboardData } from "@/lib/useDashboardData";
 import { useFormatDate } from "@/lib/useFormatDate";
 
 /**
@@ -305,6 +305,18 @@ function MonthStepper({ month, offset, setOffset }: ReturnType<typeof useMonthSt
 
 /** How far ahead Month in & out takes the VICTVS forecast: as far as recurring items are laid out. */
 const VICTVS_MONTHS = 13;
+
+/**
+ * Month in & out away from the dashboards (Plan → Forecast): the same body,
+ * on the dashboards' own derivation, with the same month stepper and the
+ * same synced VICTVS switch.
+ */
+export function MonthInOut() {
+  const { displayCurrency } = useApp();
+  const d = useDashboardData(displayCurrency);
+  if (!d) return <Spinner />;
+  return <MonthTopBody d={d} />;
+}
 
 function MonthTopBody({ d }: { d: DashboardData }) {
   const { t } = useI18n();
