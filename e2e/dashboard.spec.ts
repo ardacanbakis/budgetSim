@@ -570,3 +570,65 @@ test.describe("Month in & out with the VICTVS forecast", () => {
     await expect(card(page, "month-top").locator('[data-month-item="forecast"]')).toHaveCount(0);
   });
 });
+
+test.describe("Edit layout tiles", () => {
+  test("shrink every card to a tile, so one can go from the bottom to the top in one move", async ({ page }) => {
+    await enterDemo(page);
+    await page.getByRole("button", { name: /Edit layout/ }).click();
+    const tiles = page.locator("[data-card][data-editing]");
+    await expect(tiles.first()).toBeVisible();
+    const order = () => page.locator("[data-card]").evaluateAll((els) => els.map((el) => el.getAttribute("data-card")!));
+    const last = (await order()).at(-1)!;
+
+    // the button: straight to the top
+    await card(page, last).getByRole("button", { name: "Move to the top" }).click();
+    await expect.poll(async () => (await order())[0]).toBe(last);
+    await expect(card(page, last).getByRole("button", { name: "Move to the top" })).toBeDisabled();
+    await expect.poll(async () => (await storedLayout(page))?.order[0]).toBe(last);
+
+    // a drag: from anywhere on the bottom tile onto the second place
+    const from = (await order()).at(-1)!;
+    const second = (await order())[1];
+    const src = (await card(page, from).boundingBox())!;
+    const dst = (await card(page, second).boundingBox())!;
+    await page.mouse.move(src.x + 60, src.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(src.x + 70, src.y + 10, { steps: 3 });
+    await page.mouse.move(dst.x + dst.width / 2, dst.y + dst.height / 2, { steps: 15 });
+    await expect(card(page, second)).toHaveAttribute("data-drop-target", "");
+    await page.mouse.up();
+    await expect.poll(async () => (await order()).slice(0, 3)).toEqual([last, from, second]);
+
+    // Done brings the cards back
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.locator("[data-card][data-editing]")).toHaveCount(0);
+  });
+});
+
+test.describe("Rate ticker", () => {
+  test("fills the width in an endless loop, and can be pulled either way", async ({ page }) => {
+    await enterDemo(page);
+    const tape = page.locator("[data-ticker]");
+    await expect(tape).toBeVisible();
+    const view = (await tape.boundingBox())!;
+    // the track reaches past the right edge, whatever the offset
+    const track = page.locator("[data-ticker-track]");
+    await expect.poll(async () => {
+      const b = (await track.boundingBox())!;
+      return b.x + b.width >= view.x + view.width;
+    }).toBe(true);
+    // only the first set is read out
+    await expect(page.getByRole("marquee").locator("[data-ticker-track] > div:not([aria-hidden])")).toHaveCount(1);
+
+    const offset = () => track.evaluate((el) => Number(/translate3d\((-?[\d.]+)px/.exec(el.style.transform)?.[1] ?? 0));
+    await page.mouse.move(view.x + 300, view.y + view.height / 2);
+    await page.mouse.down();
+    const start = await offset();
+    await page.mouse.move(view.x + 360, view.y + view.height / 2, { steps: 6 });
+    const pulled = await offset();
+    await page.mouse.up();
+    // pulled 60px to the right (unless the loop wrapped round in between)
+    const moved = pulled - start;
+    expect(Math.abs(moved - 60) < 2 || moved < -100).toBe(true);
+  });
+});

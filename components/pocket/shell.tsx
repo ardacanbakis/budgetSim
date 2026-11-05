@@ -32,6 +32,7 @@ import { Icon, navIcon } from "./icons";
 import { NoteCard } from "./kit";
 import { PocketActionSheet, PocketSheet } from "./sheet";
 import { PullToRefresh } from "./pull";
+import { RateTicker } from "@/components/rateTicker";
 
 /** Pages with work that wants a larger screen; Pocket says so once. */
 const DESK_NOTE = new Set(["/planner"]);
@@ -41,8 +42,9 @@ type SheetName = "more" | "currency" | "menu" | "demo" | "pickCard" | "pickAccou
 /**
  * Pocket's shell, on a phone with the setting on: a 44px header that
  * condenses but never hides, the page, and a five-slot tab bar with + in the
- * middle. No rate ticker, no card banner strip, no floating button — that's
- * about 130px of every screen given back. Everything Standard's chrome did is
+ * middle. No card banner strip, no floating button, and the rate ticker only
+ * when it's turned on (it scrolls away with the page) — that's about 130px
+ * of every screen given back. Everything Standard's chrome did is
  * still reachable: rates and the display currency from the currency pill,
  * every page from More, every kind of entry from the + (long-press for the
  * menu), the quick jump from the search button.
@@ -347,6 +349,8 @@ export function PocketShell({ sync, children }: { sync: ReactNode; children: Rea
             </button>
           </div>
         </header>
+        {/* the rate tape, when it's turned on in Settings: under the header, scrolling away with the page */}
+        {settings.data?.showRateTicker ? <RateTicker /> : null}
 
         <main ref={mainRef} className="px-4 pt-1 pb-[calc(var(--pocket-bottom,56px)+var(--pocket-float,0px)+1.5rem)]">
           {DESK_NOTE.has(pathname) && !noteDismissed ? (
