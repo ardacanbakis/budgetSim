@@ -3,7 +3,7 @@ import { Account, NetWorthSnapshot, Transaction } from "@/lib/data/types";
 import { buildCardBook } from "@/lib/domain/cards";
 import { UsdPerMap } from "@/lib/domain/fx";
 import { cardStandings, findDueCardPayments } from "@/lib/domain/purchases";
-import { debtHref, monthItems, statementRows, thisMonthSummary, trendPoints } from "../dashboardCards";
+import { debtHref, MonthItem, monthItems, monthStatements, statementRows, thisMonthSummary, topItems, trendPoints } from "../dashboardCards";
 
 const usdPer: UsdPerMap = { USD: 1, TRY: 1 / 40, EUR: 1 / 0.9, BTC: 60000, XAU_G: 100 };
 const today = "2026-10-16";
@@ -174,5 +174,100 @@ describe("monthItems", () => {
 
   it("splits the totals into done and still to come", () => {
     expect(items.totals).toEqual({ incomeDone: 83600, incomeAhead: 0, expenseDone: 70476.14, expenseAhead: 13046.8 });
+  });
+
+  it("takes another month when asked, today's when not", () => {
+    const nov = monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month: "2026-11" });
+    expect(nov.income).toEqual([]);
+    expect(nov.expense.map((i) => [i.date, i.label, i.status])).toEqual([["2026-11-04", "Renault-Suzi Orfin", "planned"]]);
+    const sep = monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month: "2026-09" });
+    // charges are what a payment covers, never an expense of their own; and
+    // a past month expects no statement (what's unpaid folds into this one)
+    expect(sep.expense).toEqual([]);
+    expect(monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month: "2026-10" })).toEqual(items);
+  });
+});
+
+describe("topItems", () => {
+  const item = (key: string, value: number | null, date = "2026-10-01"): MonthItem => ({
+    key, date, label: key, accountName: "a", direction: "expense", amount: value ?? 1, currency: "TRY", value, status: "done",
+  });
+
+  it("keeps the biggest by display value, then sums the rest", () => {
+    const items = Array.from({ length: 13 }, (_, i) => item(`i${i}`, (i + 1) * 10));
+    const { top, rest } = topItems(items, 10);
+    expect(top.map((i) => i.key)).toEqual(["i12", "i11", "i10", "i9", "i8", "i7", "i6", "i5", "i4", "i3"]);
+    expect(rest).toEqual({ count: 3, value: 60 });
+  });
+
+  it("puts a line without a rate last, and reads ties by date", () => {
+    const { top, rest } = topItems([item("none", null), item("late", 5, "2026-10-20"), item("early", 5, "2026-10-02")], 10);
+    expect(top.map((i) => i.key)).toEqual(["early", "late", "none"]);
+    expect(rest).toEqual({ count: 0, value: 0 });
+  });
+});
+
+describe("monthStatements", () => {
+  const base: Account = {
+    id: "bank", name: "EnPara TRY", currency: "TRY", kind: "fiat", openingBalance: 0, archived: false,
+    paymentAccountId: null, paymentDay: null, creditLimit: null, createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const akbank: Account = { ...base, id: "akbank", name: "CC Akbank", kind: "credit_card", paymentAccountId: "bank", paymentDay: 16 };
+  const enpara: Account = { ...base, id: "enpara", name: "CC EnPara", kind: "credit_card", paymentAccountId: "bank", paymentDay: 10 };
+  const accounts = [base, akbank, enpara];
+  let n = 0;
+  const row = (accountId: string, dueDate: string, amount: number, o: Partial<Transaction> = {}): Transaction => ({
+    id: `s${++n}`, accountId, direction: "expense", categoryId: null, amount, status: "completed", dueDate, completedAt: null,
+    description: "", fxSnapshot: null, transferGroupId: null, transferMarketRate: null, recurringTemplateId: null,
+    loanId: null, victvsPayoutId: null, purchaseId: null, legacy: false, createdAt: "2026-01-01T00:00:00.000Z", ...o,
+  });
+  const pay = (card: string, date: string, amount: number, status: Transaction["status"] = "completed") => [
+    row("bank", date, amount, { status, transferGroupId: `${card}-${date}` }),
+    row(card, date, amount, { direction: "income", status, transferGroupId: `${card}-${date}` }),
+  ];
+  const transactions = [
+    // September: both paid
+    row("akbank", "2026-08-20", 12000),
+    ...pay("akbank", "2026-09-16", 12000),
+    row("enpara", "2026-08-25", 3000),
+    ...pay("enpara", "2026-09-10", 3000),
+    // October: Akbank's paid, EnPara's due with nothing recorded
+    row("akbank", "2026-09-20", 8000),
+    ...pay("akbank", "2026-10-16", 8000),
+    row("enpara", "2026-09-28", 4000),
+    // November: Akbank's payment set down, not made; EnPara's from what's been charged since
+    row("akbank", "2026-10-18", 2500),
+    ...pay("akbank", "2026-11-16", 2500, "planned"),
+    row("enpara", "2026-10-05", 1500),
+  ];
+  const book = buildCardBook(accounts, transactions);
+  const at = (month: string) => monthStatements({ accounts, book, today: "2026-10-20", month, usdPer, display: "USD" });
+
+  it("adds up a past month's payments", () => {
+    const sep = at("2026-09");
+    expect(sep.rows.map((r) => [r.account.id, r.date, r.amount, r.status])).toEqual([
+      ["enpara", "2026-09-10", 3000, "paid"],
+      ["akbank", "2026-09-16", 12000, "paid"],
+    ]);
+    expect(sep.totals).toEqual({ all: 375, paid: 375, toPay: 0 });
+  });
+
+  it("mixes what's paid with what's expected this month", () => {
+    const oct = at("2026-10");
+    expect(oct.rows.map((r) => [r.account.id, r.amount, r.status])).toEqual([
+      ["enpara", 4000, "expected"],
+      ["akbank", 8000, "paid"],
+    ]);
+    expect(oct.totals).toEqual({ all: 300, paid: 200, toPay: 100 });
+  });
+
+  it("looks ahead: a payment set down is planned, a card with none expects its charges", () => {
+    const nov = at("2026-11");
+    expect(nov.rows.map((r) => [r.account.id, r.amount, r.status])).toEqual([
+      ["enpara", 1500, "expected"],
+      ["akbank", 2500, "planned"],
+    ]);
+    expect(nov.totals.toPay).toBe(100);
+    expect(at("2027-03").rows).toEqual([]);
   });
 });

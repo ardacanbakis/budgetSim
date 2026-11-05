@@ -13,12 +13,13 @@ import { useActivity, useLoans, usePurchases, useRates, useSnapshots, useTemplat
 import { Account } from "@/lib/data/types";
 import { chargeAmount } from "@/lib/domain/cards";
 import { computeDebtOverview } from "@/lib/domain/debt";
+import { addMonthKey } from "@/lib/domain/planner";
 import { cardStandings } from "@/lib/domain/purchases";
 import { templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
 import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
 import { CardId } from "@/lib/ui/dashboardLayout";
-import { debtHref, MonthItem, monthItems, statementRows, thisMonthSummary, trendPoints } from "@/lib/ui/dashboardCards";
+import { debtHref, MonthItem, monthItems, monthStatements, statementRows, thisMonthSummary, topItems, trendPoints } from "@/lib/ui/dashboardCards";
 import { monthlyCommitments } from "@/lib/ui/pocket/commitments";
 import { formatRow, formatSigned } from "@/lib/ui/pocket/format";
 import { AMOUNT_SLOT, recentRows, RECENT_DAYS } from "@/lib/ui/pocket/homeSections";
@@ -28,7 +29,10 @@ import { useFormatDate } from "@/lib/useFormatDate";
 /**
  * The dashboards' optional cards, off until turned on in Settings →
  * Dashboard: This month, Card statements, 12-month trend, Debts, Fixed
- * costs, Recent activity and the VICTVS outlook. One body each, drawn in a
+ * costs, Recent activity and the VICTVS outlook; and the two month
+ * browsers, on from the start: Month in & out (a month's ten biggest
+ * incomes and expenses) and Statements by month, each stepping a month
+ * back or ahead at a time. One body each, drawn in a
  * Card on Classic and version 2 (frame "card") and as a Section on Pocket's
  * Home (frame "section"). The arithmetic is lib/ui/dashboardCards.ts and the
  * domain's own; every figure is a Money, so Pocket's Hide amounts blurs it.
@@ -41,7 +45,16 @@ import { useFormatDate } from "@/lib/useFormatDate";
 
 export type OptionalCardId = Extract<
   CardId,
-  "this-month" | "card-statements" | "trend" | "debt" | "commitments" | "recent" | "changes" | "victvs-outlook"
+  | "this-month"
+  | "card-statements"
+  | "trend"
+  | "debt"
+  | "commitments"
+  | "recent"
+  | "changes"
+  | "victvs-outlook"
+  | "month-top"
+  | "month-statements"
 >;
 
 export const OPTIONAL_CARDS: readonly OptionalCardId[] = [
@@ -53,6 +66,8 @@ export const OPTIONAL_CARDS: readonly OptionalCardId[] = [
   "recent",
   "changes",
   "victvs-outlook",
+  "month-top",
+  "month-statements",
 ];
 
 const stop = (e: React.MouseEvent) => e.stopPropagation();
@@ -90,6 +105,10 @@ export function OptionalCard({
         return <ChangesBody />;
       case "victvs-outlook":
         return <VictvsOutlookBody />;
+      case "month-top":
+        return <MonthTopBody d={d} />;
+      case "month-statements":
+        return <MonthStatementsBody d={d} />;
     }
   })();
   if (frame === "section") {
@@ -235,6 +254,200 @@ function MonthList({ title, items, kind }: { title: string; items: MonthItem[]; 
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------- month browsers */
+
+/** The month a browser shows, as an offset from today's, and the bar that steps it. */
+function useMonthStep(today: string) {
+  const [offset, setOffset] = useState(0);
+  const month = addMonthKey(today.slice(0, 7), offset);
+  return { month, offset, setOffset };
+}
+
+function MonthStepper({ month, offset, setOffset }: ReturnType<typeof useMonthStep>) {
+  const { t, locale } = useI18n();
+  const label = new Date(`${month}-01T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+  const step = (delta: number) => (e: React.MouseEvent) => {
+    stop(e);
+    setOffset(delta === 0 ? 0 : offset + delta);
+  };
+  const arrow =
+    "flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 hover:bg-[var(--edge-soft)] hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100";
+  return (
+    <div className="flex items-center justify-between gap-2" data-month-step={month}>
+      <button type="button" onClick={step(-1)} aria-label={t("dashboard.prevMonth")} className={arrow}>
+        ‹
+      </button>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="truncate text-sm font-semibold capitalize" aria-live="polite">
+          {label}
+        </span>
+        {offset !== 0 ? (
+          <button type="button" onClick={step(0)} className={linkClass}>
+            {t("dashboard.backToThisMonth")}
+          </button>
+        ) : null}
+      </div>
+      <button type="button" onClick={step(1)} aria-label={t("dashboard.nextMonth")} className={arrow}>
+        ›
+      </button>
+    </div>
+  );
+}
+
+function MonthTopBody({ d }: { d: DashboardData }) {
+  const { t } = useI18n();
+  const { displayCurrency } = useApp();
+  const nav = useMonthStep(d.today);
+  const items = useMemo(
+    () =>
+      monthItems({
+        transactions: d.transactions,
+        accounts: d.accounts,
+        book: d.book,
+        today: d.today,
+        usdPer: d.usdPer,
+        display: displayCurrency,
+        includeLegacy: d.includeLegacy,
+        month: nav.month,
+      }),
+    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency, nav.month]
+  );
+  const { incomeDone, incomeAhead, expenseDone, expenseAhead } = items.totals;
+  const income = incomeDone + incomeAhead;
+  const expense = expenseDone + expenseAhead;
+  const net = income - expense;
+  const empty = items.income.length === 0 && items.expense.length === 0;
+  return (
+    <div className="@container space-y-3">
+      <MonthStepper {...nav} />
+      {empty ? (
+        <p className={muted}>{t("dashboard.nothingInMonth")}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2 text-center" data-month-totals>
+            <div>
+              <div className={muted}>{t("dashboard.income")}</div>
+              <Money amount={income} currency={displayCurrency} sign="in" tone={income > 0.005 ? "pos" : undefined} className="text-sm font-semibold" />
+            </div>
+            <div>
+              <div className={muted}>{t("dashboard.expense")}</div>
+              <Money amount={expense} currency={displayCurrency} sign="out" className="text-sm font-semibold" />
+            </div>
+            <div>
+              <div className={muted}>{t("dashboard.monthNet")}</div>
+              <Money amount={net} currency={displayCurrency} tone={net < 0 ? "neg" : "pos"} className="text-sm font-semibold" />
+            </div>
+          </div>
+          {/* side by side once the card is wide enough for a label to read, else one under the other */}
+          <div className="grid gap-3 @2xl:grid-cols-2 @2xl:gap-6">
+            <TopList title={t("dashboard.income")} items={items.income} kind="income" />
+            <TopList title={t("dashboard.expense")} items={items.expense} kind="expense" />
+          </div>
+          <p className={muted}>{t("dashboard.cashBasis")}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One side of the month: its ten biggest lines, and what the rest come to. */
+function TopList({ title, items, kind }: { title: string; items: MonthItem[]; kind: "income" | "expense" }) {
+  const { t, locale } = useI18n();
+  const { displayCurrency } = useApp();
+  const { top, rest } = useMemo(() => topItems(items, 10), [items]);
+  const day = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-GB", { day: "numeric", month: "short" });
+  return (
+    <div data-top-list={kind} className="min-w-0">
+      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+        {title}
+        {items.length > 0 ? (
+          <span className="tabular-nums normal-case">
+            {" "}
+            · {rest.count > 0 ? t("dashboard.topOf", { shown: top.length, count: items.length }) : items.length}
+          </span>
+        ) : null}
+      </p>
+      {items.length === 0 ? <p className={muted}>—</p> : null}
+      <ul className="divide-y divide-[var(--edge-soft)]">
+        {top.map((i) => (
+          <li key={i.key} className={`flex items-baseline gap-2 py-1 text-sm ${i.status === "done" ? "" : "text-zinc-500 dark:text-zinc-400"}`} data-month-item={i.status}>
+            <span className="w-12 shrink-0 text-[11px] tabular-nums text-zinc-400">{day(i.date)}</span>
+            <span className="min-w-0 flex-1 truncate" title={i.label}>
+              {i.label}
+              {i.status !== "done" ? (
+                <span className="ml-1.5 text-[11px] text-zinc-400">{t(i.status === "expected" ? "dashboard.monthExpected" : "dashboard.monthPlanned")}</span>
+              ) : null}
+            </span>
+            <span className="shrink-0 font-medium">
+              <Money amount={i.amount} currency={i.currency} sign={kind === "income" ? "in" : "out"} tone={kind === "income" && i.status === "done" ? "pos" : undefined} />
+            </span>
+          </li>
+        ))}
+      </ul>
+      {rest.count > 0 ? (
+        <p className={`${muted} mt-0.5 flex justify-between gap-2`}>
+          <span>{t("dashboard.restN", { count: rest.count })}</span>
+          <Money amount={rest.value} currency={displayCurrency} sign={kind === "income" ? "in" : "out"} />
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MonthStatementsBody({ d }: { d: DashboardData }) {
+  const { t, locale } = useI18n();
+  const { displayCurrency } = useApp();
+  const nav = useMonthStep(d.today);
+  const { rows, totals } = useMemo(
+    () => monthStatements({ accounts: d.accounts, book: d.book, today: d.today, month: nav.month, usdPer: d.usdPer, display: displayCurrency }),
+    [d.accounts, d.book, d.today, d.usdPer, displayCurrency, nav.month]
+  );
+  const day = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-GB", { day: "numeric", month: "short" });
+  const tag = { paid: "dashboard.statementPaid", planned: "dashboard.monthPlanned", expected: "dashboard.monthExpected" } as const;
+  return (
+    <div className="space-y-3">
+      <MonthStepper {...nav} />
+      {rows.length === 0 ? (
+        <p className={muted}>{t("dashboard.noStatementsMonth")}</p>
+      ) : (
+        <>
+          <div data-statements-total>
+            <div className={muted}>{t("dashboard.statementsTotal")}</div>
+            <Money amount={totals.all} currency={displayCurrency} sign="out" className="text-2xl font-bold" />
+            {totals.paid > 0.005 && totals.toPay > 0.005 ? (
+              <p className={`${muted} tabular-nums`}>
+                {t("dashboard.statementsPaid")} <Money amount={totals.paid} currency={displayCurrency} sign="none" /> ·{" "}
+                {t("dashboard.statementsToPay")} <Money amount={totals.toPay} currency={displayCurrency} sign="none" />
+              </p>
+            ) : null}
+          </div>
+          <ul className="divide-y divide-[var(--edge-soft)]">
+            {rows.map((r) => (
+              <li
+                key={r.account.id}
+                data-month-statement={r.status}
+                className={`flex items-baseline gap-2 py-1 text-sm ${r.status === "paid" ? "" : "text-zinc-500 dark:text-zinc-400"}`}
+              >
+                <span className="w-12 shrink-0 text-[11px] tabular-nums text-zinc-400">{r.date ? day(r.date) : ""}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {r.account.name}
+                  <span className="ml-1.5 text-[11px] text-zinc-400">{t(tag[r.status])}</span>
+                </span>
+                <span className="shrink-0 font-medium">
+                  <Money amount={r.amount} currency={r.account.currency} sign="out" />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

@@ -231,6 +231,8 @@ export function PocketHome() {
       case "statements":
       case "trend":
       case "commitments":
+      case "monthTop":
+      case "monthStatements":
         return derived ? <OptionalCard id={SECTION_CARD[id]} d={derived} frame="section" /> : null;
     }
   };

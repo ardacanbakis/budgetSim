@@ -1,5 +1,5 @@
 import { Account, NetWorthSnapshot, Transaction } from "@/lib/data/types";
-import { CardBook, cardSchedule, isIncome, isSpending, paymentDateIn } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, cardStatements, isIncome, isSpending, paymentDateIn } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, DueCardPayment } from "@/lib/domain/purchases";
@@ -17,9 +17,15 @@ import { loanHref } from "./portfolioUrl";
  *   dashboard's flow (cash basis: a card counts when it's paid), the share
  *   of income kept, the same against the mean of the earlier months, and
  *   the month's spending pace against that mean (lib/ui/pocket/pace.ts).
- * - monthItems(…): every income and expense of this month, one line each,
- *   done or still to come, on the same cash basis, plus a card's statement
- *   due this month that no payment is recorded for yet ("expected").
+ * - monthItems(…): every income and expense of a month (today's unless
+ *   another is given), one line each, done or still to come, on the same
+ *   cash basis, plus a card's statement due that month that no payment is
+ *   recorded for yet ("expected").
+ * - topItems(items, limit): the biggest of those lines, by what they're
+ *   worth in the display currency, and what the rest add up to.
+ * - monthStatements(…): every card's statement for one month, past or
+ *   ahead: the payments recorded for it ("paid", or "planned" while not
+ *   made), else what the card expects it to be; and their total.
  * - trendPoints(snapshots, …): one point a month from the net-worth
  *   snapshots, the last 12 months, plus "now" from the live figure; both
  *   are what you hold less what the cards owe, so the line doesn't jump.
@@ -110,9 +116,12 @@ export function monthItems(params: {
   usdPer: UsdPerMap;
   display: Currency;
   includeLegacy?: boolean;
+  /** yyyy-mm; today's month when left out */
+  month?: string;
 }): MonthItems {
   const { transactions, accounts, book, today, usdPer, display, includeLegacy = true } = params;
-  const month = today.slice(0, 7);
+  const thisMonth = today.slice(0, 7);
+  const month = params.month ?? thisMonth;
   const byId = new Map(accounts.map((a) => [a.id, a] as const));
   const out: MonthItems = { income: [], expense: [], totals: { incomeDone: 0, incomeAhead: 0, expenseDone: 0, expenseAhead: 0 } };
   const add = (item: MonthItem) => {
@@ -145,16 +154,19 @@ export function monthItems(params: {
     });
   }
 
-  // a statement due this month that no payment says anything about yet
+  // a statement due this month (or one ahead) that no payment says anything
+  // about yet; one left unpaid in an earlier month is still owed, so it
+  // folds into this month's (cardSchedule) rather than staying behind
   for (const card of accounts) {
+    if (month < thisMonth) break;
     if (card.kind !== "credit_card" || card.archived) continue;
     if (book.payments(card.id).some((p) => p.date.slice(0, 7) === month)) continue;
-    const due = cardSchedule(book, card.id, month).find((s) => s.month === month);
+    const due = cardSchedule(book, card.id, thisMonth).find((s) => s.month === month);
     if (!due || due.total <= 0.005) continue;
     const payer = card.paymentAccountId ? byId.get(card.paymentAccountId) : undefined;
     add({
       key: `stmt:${card.id}`,
-      date: paymentDateIn(month, card.paymentDay) ?? today,
+      date: paymentDateIn(month, card.paymentDay) ?? (month === thisMonth ? today : `${month}-01`),
       label: card.name,
       accountName: payer?.name ?? card.name,
       direction: "expense",
@@ -170,6 +182,78 @@ export function monthItems(params: {
   out.expense.sort(byDate);
   for (const k of Object.keys(out.totals) as (keyof MonthItems["totals"])[]) out.totals[k] = Math.round(out.totals[k] * 100) / 100;
   return out;
+}
+
+export interface TopItems {
+  top: MonthItem[];
+  /** the lines left out, and what they add up to in the display currency */
+  rest: { count: number; value: number };
+}
+
+/**
+ * The `limit` biggest lines by what they're worth in the display currency;
+ * a line without a rate goes last. Ties read by date.
+ */
+export function topItems(items: readonly MonthItem[], limit = 10): TopItems {
+  const sorted = [...items].sort((a, b) => (b.value ?? -Infinity) - (a.value ?? -Infinity) || a.date.localeCompare(b.date));
+  const rest = sorted.slice(limit);
+  return {
+    top: sorted.slice(0, limit),
+    rest: { count: rest.length, value: Math.round(rest.reduce((sum, i) => sum + (i.value ?? 0), 0) * 100) / 100 },
+  };
+}
+
+export interface MonthStatement {
+  account: Account;
+  /** the payment's date, else the card's payment day that month */
+  date: string | null;
+  /** in the card's currency */
+  amount: number;
+  /** in the display currency: a paid statement at the rates it was paid at, else today's; null without a rate */
+  value: number | null;
+  /** paid: every payment recorded for it made · planned: recorded, not all made · expected: nothing recorded yet */
+  status: "paid" | "planned" | "expected";
+}
+
+export interface MonthStatements {
+  rows: MonthStatement[];
+  /** display currency */
+  totals: { all: number; paid: number; toPay: number };
+}
+
+/**
+ * Every card's statement for `month` (yyyy-mm), from cardStatements: what
+ * the payments recorded for it add up to, else (this month or one ahead)
+ * what it'll be, charges tracked or the expectation, whichever is more. An
+ * archived card shows only for what was recorded on it. Soonest due first.
+ */
+export function monthStatements(params: {
+  accounts: readonly Account[];
+  book: CardBook;
+  today: string;
+  month: string;
+  usdPer: UsdPerMap;
+  display: Currency;
+}): MonthStatements {
+  const { accounts, book, today, month, usdPer, display } = params;
+  const rows: MonthStatement[] = [];
+  const totals = { all: 0, paid: 0, toPay: 0 };
+  for (const card of accounts) {
+    if (card.kind !== "credit_card") continue;
+    const s = cardStatements(book, card, today).find((x) => x.month === month);
+    if (!s || s.amount <= 0.005) continue;
+    if (card.archived && s.payments.length === 0) continue;
+    const status = s.status === "paid" ? "paid" : s.status === "recorded" ? "planned" : "expected";
+    // what's paid reads at the rates it was paid at, so a closed month doesn't drift
+    const rates = status === "paid" ? (s.payments[0].paying.fxSnapshot?.usdPer ?? usdPer) : usdPer;
+    const value = convert(s.amount, card.currency, display, rates);
+    rows.push({ account: card, date: s.date, amount: s.amount, value, status });
+    totals.all += value ?? 0;
+    totals[status === "paid" ? "paid" : "toPay"] += value ?? 0;
+  }
+  rows.sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.account.name.localeCompare(b.account.name));
+  for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] = Math.round(totals[k] * 100) / 100;
+  return { rows, totals };
 }
 
 export interface TrendPoint {

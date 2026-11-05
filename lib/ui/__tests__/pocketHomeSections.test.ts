@@ -77,7 +77,7 @@ const ids = (entries: SectionEntry[]) => encodeSections(entries);
 
 describe("home sections", () => {
   it("defaults to Coming up, Accounts, Budgets, Recent; flow, goals and gold hidden", () => {
-    const optional = ["thisMonth", "statements", "trend", "debt", "commitments", "victvsOutlook"];
+    const optional = ["thisMonth", "statements", "trend", "debt", "commitments", "victvsOutlook", "monthTop", "monthStatements"];
     expect(SECTION_IDS).toEqual(["comingUp", "accounts", "budgets", "recent", "flow", "goals", "gold", ...optional]);
     expect(ids(resetSections())).toEqual([
       "comingUp",
@@ -117,10 +117,10 @@ describe("home sections", () => {
     expect(ids(moveSection(start, "budgets", -1)).slice(0, 4)).toEqual(["comingUp", "budgets", "accounts", "recent"]);
     expect(ids(moveSection(start, "comingUp", 1)).slice(0, 2)).toEqual(["accounts", "comingUp"]);
     expect(canMove(start, "comingUp", -1)).toBe(false);
-    expect(canMove(start, "victvsOutlook", 1)).toBe(false);
-    expect(canMove(start, "victvsOutlook", -1)).toBe(true);
+    expect(canMove(start, "monthStatements", 1)).toBe(false);
+    expect(canMove(start, "monthStatements", -1)).toBe(true);
     expect(moveSection(start, "comingUp", -1)).toEqual(start);
-    expect(moveSection(start, "victvsOutlook", 1)).toEqual(start);
+    expect(moveSection(start, "monthStatements", 1)).toEqual(start);
     // the input is never changed
     expect(start).toEqual(resetSections());
   });

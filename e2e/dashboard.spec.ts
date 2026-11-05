@@ -511,3 +511,33 @@ test.describe("Optional cards", () => {
     await expect(card(page, "victvs")).toHaveCount(0);
   });
 });
+
+test.describe("Month browsers", () => {
+  const monthKey = (offset: number) => {
+    const d = new Date();
+    const m = new Date(d.getFullYear(), d.getMonth() + offset, 1);
+    return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  test("are on from the start, and step a month back or ahead without leaving the dashboard", async ({ page }) => {
+    await enterDemo(page);
+    for (const id of ["month-top", "month-statements"]) {
+      const c = card(page, id);
+      await expect(c).toBeVisible();
+      const step = c.locator("[data-month-step]");
+      await expect(step).toHaveAttribute("data-month-step", monthKey(0));
+      await c.getByRole("button", { name: "Next month" }).click();
+      await expect(step).toHaveAttribute("data-month-step", monthKey(1));
+      // the arrows are the card's own: Classic's whole-card link stays put
+      await expect(page).toHaveURL(/\/$/);
+      await c.getByRole("button", { name: "Previous month" }).click();
+      await c.getByRole("button", { name: "Previous month" }).click();
+      await expect(step).toHaveAttribute("data-month-step", monthKey(-1));
+      await c.getByRole("button", { name: "Back to this month" }).click();
+      await expect(step).toHaveAttribute("data-month-step", monthKey(0));
+      await expect(c.getByRole("button", { name: "Back to this month" })).toHaveCount(0);
+    }
+    // nothing is written just by stepping
+    expect(await storedLayout(page)).toBeNull();
+  });
+});

@@ -66,6 +66,8 @@ export const SECTION_IDS = [
   "debt",
   "commitments",
   "victvsOutlook",
+  "monthTop",
+  "monthStatements",
 ] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
@@ -81,6 +83,8 @@ export const SECTION_CARD = {
   debt: "debt",
   commitments: "commitments",
   victvsOutlook: "victvs-outlook",
+  monthTop: "month-top",
+  monthStatements: "month-statements",
 } as const satisfies Partial<Record<SectionId, CardId>>;
 
 /** The device key Home's order and hidden sections live under. */
@@ -97,6 +101,8 @@ const HIDDEN_BY_DEFAULT: ReadonlySet<SectionId> = new Set([
   "debt",
   "commitments",
   "victvsOutlook",
+  "monthTop",
+  "monthStatements",
 ]);
 
 export interface SectionEntry {
