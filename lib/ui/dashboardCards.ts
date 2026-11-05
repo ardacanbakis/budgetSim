@@ -4,6 +4,7 @@ import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, DueCardPayment } from "@/lib/domain/purchases";
 import { Pace, pace } from "./pocket/pace";
+import { VictvsCashMonth } from "@/lib/domain/victvsForecast";
 import { statementFigure, StatementFigure } from "./pocket/attention";
 import { loanHref } from "./portfolioUrl";
 
@@ -20,7 +21,8 @@ import { loanHref } from "./portfolioUrl";
  * - monthItems(…): every income and expense of a month (today's unless
  *   another is given), one line each, done or still to come, on the same
  *   cash basis, plus a card's statement due that month that no payment is
- *   recorded for yet ("expected").
+ *   recorded for yet ("expected"); with `victvs`, the VICTVS forecast's
+ *   payout for that month too ("forecast"), this month or one ahead.
  * - topItems(items, limit): the biggest of those lines, by what they're
  *   worth in the display currency, and what the rest add up to.
  * - monthStatements(…): every card's statement for one month, past or
@@ -88,8 +90,12 @@ export interface MonthItem {
   currency: Currency;
   /** in the display currency: the rates it was completed at, else today's; null without a rate */
   value: number | null;
-  /** done: completed · planned: a row still to come · expected: a card statement with no payment recorded yet */
-  status: "done" | "planned" | "expected";
+  /**
+   * done: completed · planned: a row still to come · expected: a card
+   * statement with no payment recorded yet · forecast: VICTVS income the
+   * forecast expects, not yet booked
+   */
+  status: "done" | "planned" | "expected" | "forecast";
 }
 
 export interface MonthItems {
@@ -118,6 +124,12 @@ export function monthItems(params: {
   includeLegacy?: boolean;
   /** yyyy-mm; today's month when left out */
   month?: string;
+  /**
+   * the VICTVS forecast's payouts (forecastVictvs().cash, in USD), counted
+   * as income; payoutDay is the day of the month they usually land
+   * (typicalPayoutDay). Leave out to count only what's booked.
+   */
+  victvs?: { cash: readonly VictvsCashMonth[]; payoutDay: number; label: string } | null;
 }): MonthItems {
   const { transactions, accounts, book, today, usdPer, display, includeLegacy = true } = params;
   const thisMonth = today.slice(0, 7);
@@ -174,6 +186,26 @@ export function monthItems(params: {
       currency: card.currency,
       value: convert(due.total, card.currency, display, usdPer),
       status: "expected",
+    });
+  }
+
+  // what the VICTVS forecast expects to land this month: what's left of the
+  // work still to come, and sessions worked and not yet paid. A payout, once
+  // recorded, is a completed income above and its sessions are paid, so the
+  // two never count the same money
+  const victvs = params.victvs ? params.victvs.cash.find((c) => c.month === month) : undefined;
+  if (params.victvs && victvs && month >= thisMonth && victvs.expected > 0.005) {
+    const onDay = paymentDateIn(month, params.victvs.payoutDay) ?? `${month}-15`;
+    add({
+      key: `victvs:${month}`,
+      date: onDay < today ? today : onDay,
+      label: params.victvs.label,
+      accountName: params.victvs.label,
+      direction: "income",
+      amount: victvs.expected,
+      currency: "USD",
+      value: convert(victvs.expected, "USD", display, usdPer),
+      status: "forecast",
     });
   }
 

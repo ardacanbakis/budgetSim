@@ -369,6 +369,8 @@ export interface DashboardLayout {
   accounts?: DashboardAccounts;
   /** how far Upcoming looks ahead, in days */
   upcomingDays?: 7 | 14 | 30;
+  /** Month in & out counts the VICTVS forecast's payouts as income; off unless turned on */
+  monthVictvs?: boolean;
 }
 
 /** Which accounts the dashboards list. Hiding one tidies the lists; every total still counts it. */

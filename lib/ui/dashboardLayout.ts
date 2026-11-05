@@ -25,6 +25,8 @@ import { DashboardAccounts, DashboardLayout } from "@/lib/data/types";
  *   on Classic) keeps both of those without anything being written.
  * - accounts: which accounts the dashboards list (DEFAULT_ACCOUNTS).
  * - upcomingDays: how far Upcoming looks ahead (DEFAULT_UPCOMING_DAYS).
+ * - monthVictvs: whether Month in & out counts the VICTVS forecast's
+ *   payouts as income (off unless turned on; setMonthVictvs).
  *
  * normalizeLayout(saved, accountIds?) reads a stored layout, or null, into
  * one with every field present and valid: unknown and repeated card ids
@@ -124,6 +126,7 @@ export interface NormalizedLayout extends DashboardLayout {
   shown: CardId[];
   accounts: DashboardAccounts;
   upcomingDays: UpcomingDays;
+  monthVictvs: boolean;
 }
 
 /** Known card ids from a stored list, each once, in the order given. */
@@ -161,7 +164,8 @@ export function normalizeLayout(saved: DashboardLayout | null | undefined, accou
   const hidden = knownIds(raw.hidden);
   const shown = knownIds(raw.shown).filter((id) => !hidden.includes(id));
   const upcomingDays = UPCOMING_DAYS.find((d) => d === raw.upcomingDays) ?? DEFAULT_UPCOMING_DAYS;
-  return { ...raw, order, hidden, shown, accounts: normalizeAccounts(raw.accounts, accountIds), upcomingDays };
+  const monthVictvs = raw.monthVictvs === true;
+  return { ...raw, order, hidden, shown, accounts: normalizeAccounts(raw.accounts, accountIds), upcomingDays, monthVictvs };
 }
 
 /** Whether a card's page is in the menus (a card without one always is). */
@@ -259,4 +263,9 @@ export function resetAccounts(layout: NormalizedLayout): NormalizedLayout {
 
 export function setUpcomingDays(layout: NormalizedLayout, upcomingDays: UpcomingDays): NormalizedLayout {
   return { ...layout, upcomingDays };
+}
+
+/** Month in & out with or without the VICTVS forecast's payouts as income. */
+export function setMonthVictvs(layout: NormalizedLayout, monthVictvs: boolean): NormalizedLayout {
+  return { ...layout, monthVictvs };
 }

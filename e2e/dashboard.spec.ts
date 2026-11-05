@@ -20,6 +20,7 @@ interface StoredLayout {
   shown?: string[];
   accounts?: { hidden: string[]; hideEmpty: boolean; limit: number | null };
   upcomingDays?: number;
+  monthVictvs?: boolean;
 }
 
 async function enterDemo(page: Page) {
@@ -539,5 +540,33 @@ test.describe("Month browsers", () => {
     }
     // nothing is written just by stepping
     expect(await storedLayout(page)).toBeNull();
+  });
+});
+
+test.describe("Month in & out with the VICTVS forecast", () => {
+  test("counts the forecast as income only once it's turned on, and keeps the choice", async ({ page }) => {
+    await enterDemo(page);
+    const c = card(page, "month-top");
+    const toggle = c.getByRole("switch", { name: "Include the VICTVS forecast as income" });
+    await expect(toggle).not.toBeChecked();
+    await expect(c.locator('[data-month-item="forecast"]')).toHaveCount(0);
+    // the demo's sessions forecast a payout in one of the next few months
+    const findForecast = async () => {
+      for (let i = 0; i < 4; i++) {
+        if ((await c.locator('[data-month-item="forecast"]').count()) > 0) return true;
+        await c.getByRole("button", { name: "Next month" }).click();
+      }
+      return false;
+    };
+    await toggle.check();
+    // the switch is the card's own: Classic's whole-card link stays put
+    await expect(page).toHaveURL(/\/$/);
+    expect(await findForecast()).toBe(true);
+    await expect(c.locator('[data-top-list="income"]')).toContainText("VICTVS");
+    await expect.poll(async () => (await storedLayout(page))?.monthVictvs).toBe(true);
+    await page.reload();
+    await expect(card(page, "month-top").getByRole("switch", { name: "Include the VICTVS forecast as income" })).toBeChecked();
+    await card(page, "month-top").getByRole("switch", { name: "Include the VICTVS forecast as income" }).uncheck();
+    await expect(card(page, "month-top").locator('[data-month-item="forecast"]')).toHaveCount(0);
   });
 });

@@ -132,6 +132,9 @@ export const en = {
   statementsToPay: "To pay",
   statementPaid: "paid",
   noStatementsMonth: "No card statement in this month.",
+  victvsForecast: "VICTVS",
+  monthForecast: "forecast",
+  includeVictvs: "Include the VICTVS forecast as income",
 };
 
 export const tr: typeof en = {
@@ -251,4 +254,7 @@ export const tr: typeof en = {
   statementsToPay: "Ödenecek",
   statementPaid: "ödendi",
   noStatementsMonth: "Bu ayda kart ekstresi yok.",
+  victvsForecast: "VICTVS",
+  monthForecast: "tahmin",
+  includeVictvs: "VICTVS tahminini gelire kat",
 };
