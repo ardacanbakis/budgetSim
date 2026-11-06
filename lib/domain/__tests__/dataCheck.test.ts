@@ -128,6 +128,45 @@ describe("checkData, on the shapes found in a real backup", () => {
     expect(issues.filter((i) => i.kind === "borrowedAsIncome").map((i) => i.txs[0].id)).toEqual([advance.id, debt.id]);
   });
 
+  // the shape behind "I changed the card's pay-from but the payment is still
+  // on the old account": settings don't reach back into the ledger
+  describe("a card payment drawn from an account that isn't the card's payer", () => {
+    const payment = (from: string, status: Transaction["status"], group = "g1") => [
+      tx(from, "2026-11-16", 25299.04, { status, transferGroupId: group, description: "CC Akbank statement" }),
+      tx("akbank", "2026-11-16", 25299.04, { status, transferGroupId: group, direction: "income", description: "CC Akbank statement" }),
+    ];
+    const semos = account("semosIs", { name: "Semoş İŞ" });
+    const all = [...accounts, semos];
+
+    it("flags one still to be made, and offers to move it to the payer", () => {
+      const [paying, landing] = payment("semosIs", "planned");
+      const found = checkData({ accounts: all, transactions: [paying, landing], today: TODAY }).filter(
+        (i) => i.kind === "paymentFromWrongAccount"
+      );
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe("fix");
+      expect(found[0].account?.id).toBe("akbank");
+      expect(found[0].other?.id).toBe("enparaTry");
+      expect(found[0].fix).toEqual({ kind: "moveLeg", txId: paying.id, accountId: "enparaTry" });
+    });
+
+    it("leaves a payment already made alone: the money really did come from there", () => {
+      const legs = payment("semosIs", "completed");
+      expect(checkData({ accounts: all, transactions: legs, today: TODAY }).filter((i) => i.kind === "paymentFromWrongAccount")).toEqual(
+        []
+      );
+    });
+
+    it("says nothing when the payment already comes from the payer, or the card has none", () => {
+      const right = payment("enparaTry", "planned");
+      const noPayer = payment("enparaTry", "planned", "g2").map((l) =>
+        l.accountId === "akbank" ? { ...l, accountId: "garanti" } : l
+      );
+      const issues = checkData({ accounts: all, transactions: [...right, ...noPayer], today: TODAY });
+      expect(issues.filter((i) => i.kind === "paymentFromWrongAccount")).toEqual([]);
+    });
+  });
+
   it("puts what makes the numbers wrong first, and says nothing about a clean ledger", () => {
     const ahead = tx("enparaTry", "2026-12-15", 10);
     const ikea = tx("garanti", "2026-10-15", 3188.88, { purchaseId: "ikea", status: "planned" });

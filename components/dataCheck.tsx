@@ -114,6 +114,9 @@ export function DataCheckCard() {
         case "setPayer":
           await repo.updateAccount(fix.cardId, { paymentAccountId: fix.payerId });
           return;
+        case "moveLeg":
+          await repo.updateTransaction(fix.txId, { accountId: fix.accountId });
+          return;
       }
     },
     [KEYS.transactions, KEYS.accounts]
@@ -140,7 +143,9 @@ export function DataCheckCard() {
         ? t("datacheck.fixComplete", { count: fix.txIds.length })
         : fix.kind === "reopen"
           ? t("datacheck.fixReopen")
-          : t("datacheck.fixPayer");
+          : fix.kind === "moveLeg"
+            ? t("datacheck.fixMoveLeg")
+            : t("datacheck.fixPayer");
 
   const rows = (["fix", "tidy"] as const).map((severity) => ({
     severity,

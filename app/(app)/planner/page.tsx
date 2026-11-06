@@ -51,6 +51,7 @@ import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { PlanCard } from "@/components/plannerCard";
 import { MonthInOut } from "@/components/dashboardCards";
+import { ForecastFlow } from "@/components/forecastFlow";
 import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
@@ -111,6 +112,7 @@ const CARD_ORDER: Array<[string, CardSize]> = [
   ["budgets", "L"],
   // last, so the rows of two above keep their partners
   ["month", "L"],
+  ["flow", "L"],
 ];
 const SIZE = Object.fromEntries(CARD_ORDER) as Record<string, CardSize>;
 
@@ -1223,6 +1225,21 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
           {/* the dashboard's Month in & out: a month's biggest incomes and expenses, a month back or ahead at a time */}
           <PlanCard id="month" size={SIZE.month} title={t("dashboard.card_month-top")}>
             <MonthInOut />
+          </PlanCard>
+        </>
+      ),
+    },
+    {
+      id: "flow",
+      title: t("flow.title"),
+      size: SIZE.flow,
+      node: (
+        <>
+          {/* day-level: which account pays what, on the day it leaves. The
+              forecast table says what a month ends on; this says whether the
+              16th can be covered (components/forecastFlow.tsx) */}
+          <PlanCard id="flow" size={SIZE.flow} title={t("flow.title")}>
+            <ForecastFlow />
           </PlanCard>
         </>
       ),

@@ -1,5 +1,5 @@
 import { Account, NetWorthSnapshot, Transaction } from "@/lib/data/types";
-import { CardBook, cardSchedule, cardStatements, isIncome, isSpending, paymentDateIn } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, cardStatements, isDebtPrincipal, isIncome, isSpending, paymentDateIn } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, DueCardPayment } from "@/lib/domain/purchases";
@@ -96,6 +96,12 @@ export interface MonthItem {
    * forecast expects, not yet booked
    */
   status: "done" | "planned" | "expected" | "forecast";
+  /**
+   * money borrowed, counted as income only because `includeBorrowed` asked:
+   * it isn't earned, and it leaves again when the debt is repaid. Marked so
+   * the line can say so.
+   */
+  borrowed?: true;
 }
 
 export interface MonthItems {
@@ -130,8 +136,16 @@ export function monthItems(params: {
    * (typicalPayoutDay). Leave out to count only what's booked.
    */
   victvs?: { cash: readonly VictvsCashMonth[]; payoutDay: number; label: string } | null;
+  /**
+   * count money borrowed that month as income (lib/domain/cards.ts
+   * isDebtPrincipal): what you drew on a loan or a cash advance, and money
+   * coming back on something you lent. Off by default — borrowing isn't
+   * earning — but a month whose bills were met out of a loan reads as a
+   * hole in the month's cash without it.
+   */
+  includeBorrowed?: boolean;
 }): MonthItems {
-  const { transactions, accounts, book, today, usdPer, display, includeLegacy = true } = params;
+  const { transactions, accounts, book, today, usdPer, display, includeLegacy = true, includeBorrowed = false } = params;
   const thisMonth = today.slice(0, 7);
   const month = params.month ?? thisMonth;
   const byId = new Map(accounts.map((a) => [a.id, a] as const));
@@ -147,7 +161,11 @@ export function monthItems(params: {
   for (const t of transactions) {
     if (t.dueDate.slice(0, 7) !== month || (t.legacy && !includeLegacy)) continue;
     const income = isIncome(t, book);
-    if (!income && !isSpending(t, book)) continue;
+    // borrowed money is neither income nor spending on the cash basis; it
+    // counts as income here only when asked for
+    const borrowed =
+      includeBorrowed && !income && t.direction === "income" && book.roleOf(t) === "regular" && isDebtPrincipal(t);
+    if (!income && !borrowed && !isSpending(t, book)) continue;
     const account = byId.get(t.accountId);
     if (!account) continue;
     const done = t.status === "completed";
@@ -158,11 +176,12 @@ export function monthItems(params: {
       date: t.dueDate,
       label: t.description || account.name,
       accountName: account.name,
-      direction: income ? "income" : "expense",
+      direction: income || borrowed ? "income" : "expense",
       amount: t.amount,
       currency: account.currency,
       value: convert(t.amount, account.currency, display, rates),
       status: done ? "done" : "planned",
+      ...(borrowed ? { borrowed: true as const } : null),
     });
   }
 
