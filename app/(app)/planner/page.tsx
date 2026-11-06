@@ -53,6 +53,8 @@ import { PlanCard } from "@/components/plannerCard";
 import { MonthInOut } from "@/components/dashboardCards";
 import { ForecastFlow } from "@/components/forecastFlow";
 import { RealTermsCard } from "@/components/realTermsCard";
+import { PocketPlan } from "@/components/pocket/plan";
+import { pocketable } from "@/components/pocket/pocketable";
 import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
@@ -132,7 +134,7 @@ function monthLabelOf(month: string, locale: string): string {
 const PLAN_TABS = ["forecast", "evim", "loan"] as const;
 type PlanTab = (typeof PLAN_TABS)[number];
 
-export default function PlanPage() {
+function PlanPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
   return (
     <Suspense fallback={<Spinner />}>
@@ -140,6 +142,13 @@ export default function PlanPage() {
     </Suspense>
   );
 }
+
+/**
+ * On a phone with the Pocket layout on, the three cards you read away from
+ * a desk; the canvas of scenarios stays where it belongs
+ * (components/pocket/plan.tsx).
+ */
+export default pocketable(PlanPage, PocketPlan);
 
 /**
  * Plan: the forecast, Evim sistemi and the loan simulator, as tabs. The open

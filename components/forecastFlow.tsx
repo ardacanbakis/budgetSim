@@ -45,6 +45,14 @@ type HorizonMonths = (typeof HORIZON_MONTHS)[number];
 
 const isExpected = (e: TimelineEvent) => e.kind === "expected";
 
+/**
+ * Rows the runway shows before asking. A year of bills is a few hundred
+ * movements, and on a phone every one of them stacks into six lines — so
+ * the table has to stop somewhere and offer the rest rather than run on for
+ * twenty thousand pixels.
+ */
+const FIRST_ROWS = 25;
+
 export function ForecastFlow() {
   const { t } = useI18n();
   const { displayCurrency } = useApp();
@@ -162,6 +170,7 @@ function RunwayTable({
   const { t, locale } = useI18n();
   const fmtDate = useFormatDate();
   const [only, setOnly] = useState<string>("");
+  const [showAll, setShowAll] = useState(false);
   const runway = useMemo(
     () =>
       paymentRunway({
@@ -176,6 +185,8 @@ function RunwayTable({
     [timeline.events, timeline.series, accounts, timeline.today, to, counts, only]
   );
   const cash = [...timeline.series.values()].map((s) => s.account);
+  const shown = showAll ? runway.rows : runway.rows.slice(0, FIRST_ROWS);
+  const hidden = runway.rows.length - shown.length;
 
   if (runway.rows.length === 0) return <EmptyState>{t("flow.empty")}</EmptyState>;
 
@@ -218,24 +229,37 @@ function RunwayTable({
           of it in the others, so the column that matters least gives way
           first rather than the balance the row exists for */}
       <div className="@container overflow-x-auto">
-        <table className="stack-sm w-full text-sm" data-flow-runway>
+        {/* a table rather than stacked rows on a phone: six stacked lines a
+            movement turns a year of bills into a scroll nobody reads, where
+            four narrow columns stay legible at 390px */}
+        <table className="w-full text-sm" data-flow-runway>
           <thead>
             <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
-              <th className="px-2 py-2 font-medium">{t("common.date")}</th>
-              <th className="px-2 py-2 font-medium">{t("flow.due")}</th>
-              <th className="px-2 py-2 font-medium">{t("flow.from")}</th>
-              <th className="px-2 py-2 text-right font-medium">{t("common.amount")}</th>
+              <th className="px-1 py-2 font-medium sm:px-2">{t("common.date")}</th>
+              <th className="px-1 py-2 font-medium sm:px-2">{t("flow.due")}</th>
+              <th className="hidden px-2 py-2 font-medium @lg:table-cell">{t("flow.from")}</th>
+              <th className="px-1 py-2 text-right font-medium sm:px-2">{t("common.amount")}</th>
               <th className="hidden px-2 py-2 text-right font-medium @2xl:table-cell">{t("flow.before")}</th>
-              <th className="px-2 py-2 text-right font-medium">{t("flow.after")}</th>
+              <th className="px-1 py-2 text-right font-medium sm:px-2">{t("flow.after")}</th>
             </tr>
           </thead>
           <tbody>
-            {runway.rows.map((row) => (
+            {shown.map((row) => (
               <Row key={row.key} row={row} />
             ))}
           </tbody>
         </table>
       </div>
+      {hidden > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          data-flow-show-all
+          className="w-full rounded-lg border border-[var(--edge)] px-2 py-2 text-xs text-zinc-600 hover:bg-[var(--edge-soft)] dark:text-zinc-300"
+        >
+          {t("flow.showMore", { count: hidden })}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -246,28 +270,25 @@ function Row({ row }: { row: RunwayRow }) {
   const money = (n: number) => formatAmount(n, row.account.currency, locale);
   return (
     <tr className={`border-b border-[var(--edge-soft)] ${row.short ? "bg-red-50/60 dark:bg-red-950/20" : ""}`} data-flow-row={row.date}>
-      <td className="whitespace-nowrap px-2 py-1.5 tnum text-zinc-500" data-label={t("common.date")}>
-        {fmtDate(row.date)}
+      <td className="whitespace-nowrap px-1 py-1.5 text-xs tnum text-zinc-500 sm:px-2 sm:text-sm">{fmtDate(row.date)}</td>
+      <td className="px-1 py-1.5 sm:px-2">
+        <span className="block text-xs leading-tight sm:text-sm">
+          {row.label}
+          {row.kind === "statement" ? <span className="ml-1 text-[11px] text-zinc-400">{t("flow.statement")}</span> : null}
+          {row.approx ? <span className="ml-1 text-[11px] text-zinc-400">≈</span> : null}
+        </span>
+        {/* the account has no column of its own until there's room for one */}
+        <span className="block text-[11px] text-zinc-400 @lg:hidden">{row.account.name}</span>
       </td>
-      <td className="px-2 py-1.5" data-label={t("flow.due")}>
-        {row.label}
-        {row.kind === "statement" ? <span className="ml-1.5 text-[11px] text-zinc-400">{t("flow.statement")}</span> : null}
-        {row.approx ? <span className="ml-1.5 text-[11px] text-zinc-400">≈</span> : null}
-      </td>
-      <td className="px-2 py-1.5 text-xs text-zinc-500" data-label={t("flow.from")}>
-        {row.account.name}
-      </td>
-      <td
-        className={`px-2 py-1.5 text-right tnum ${row.delta < 0 ? "" : "text-emerald-600"}`}
-        data-label={t("common.amount")}
-      >
+      <td className="hidden px-2 py-1.5 text-xs text-zinc-500 @lg:table-cell">{row.account.name}</td>
+      <td className={`whitespace-nowrap px-1 py-1.5 text-right text-xs tnum sm:px-2 sm:text-sm ${row.delta < 0 ? "" : "text-emerald-600"}`}>
         {row.delta < 0 ? "−" : "+"}
         {money(Math.abs(row.delta))}
       </td>
-      <td className="hidden px-2 py-1.5 text-right tnum text-zinc-400 @2xl:table-cell" data-label={t("flow.before")}>
-        {money(row.before)}
-      </td>
-      <td className={`px-2 py-1.5 text-right font-medium tnum ${row.short ? "text-red-600" : ""}`} data-label={t("flow.after")}>
+      <td className="hidden px-2 py-1.5 text-right tnum text-zinc-400 @2xl:table-cell">{money(row.before)}</td>
+      <td
+        className={`whitespace-nowrap px-1 py-1.5 text-right text-xs font-medium tnum sm:px-2 sm:text-sm ${row.short ? "text-red-600" : ""}`}
+      >
         {money(row.after)}
       </td>
     </tr>
@@ -350,10 +371,10 @@ function MonthsTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="stack-sm w-full text-sm" data-flow-months>
+      <table className="w-full text-sm" data-flow-months>
         <thead>
           <tr className="border-b border-[var(--edge)] text-left text-xs text-zinc-500">
-            <th className="px-2 py-2 font-medium">{t("flow.month")}</th>
+            <th className="px-1 py-2 font-medium sm:px-2">{t("flow.month")}</th>
             <th className="px-2 py-2 text-right font-medium">{t("dashboard.income")}</th>
             <th className="px-2 py-2 text-right font-medium">{t("dashboard.expense")}</th>
             <th className="px-2 py-2 text-right font-medium">{t("dashboard.monthNet")}</th>
@@ -363,21 +384,20 @@ function MonthsTable({
         <tbody>
           {rows.map((m) => (
             <tr key={m.month} className="border-b border-[var(--edge-soft)]" data-flow-month={m.month}>
-              <th scope="row" className="px-2 py-1.5 text-left font-medium capitalize" data-label={t("flow.month")}>
+              <th scope="row" className="px-1 py-1.5 text-left text-xs font-medium capitalize sm:px-2 sm:text-sm">
                 {label(m.month)}
               </th>
-              <td className="px-2 py-1.5 text-right tnum text-emerald-600" data-label={t("dashboard.income")}>
+              <td className="whitespace-nowrap px-1 py-1.5 text-right text-xs tnum text-emerald-600 sm:px-2 sm:text-sm">
                 {m.income > 0.005 ? `+${money(m.income)}` : "—"}
               </td>
-              <td className="px-2 py-1.5 text-right tnum" data-label={t("dashboard.expense")}>
+              <td className="whitespace-nowrap px-1 py-1.5 text-right text-xs tnum sm:px-2 sm:text-sm">
                 {m.expense > 0.005 ? `−${money(m.expense)}` : "—"}
               </td>
-              <td className={`px-2 py-1.5 text-right tnum ${m.net < 0 ? "text-red-600" : ""}`} data-label={t("dashboard.monthNet")}>
+              <td className={`whitespace-nowrap px-1 py-1.5 text-right text-xs tnum sm:px-2 sm:text-sm ${m.net < 0 ? "text-red-600" : ""}`}>
                 {money(m.net)}
               </td>
               <td
-                className={`px-2 py-1.5 text-right font-medium tnum ${m.endBalance < 0 ? "text-red-600" : ""}`}
-                data-label={t("flow.end")}
+                className={`whitespace-nowrap px-1 py-1.5 text-right text-xs font-medium tnum sm:px-2 sm:text-sm ${m.endBalance < 0 ? "text-red-600" : ""}`}
               >
                 {money(m.endBalance)}
               </td>

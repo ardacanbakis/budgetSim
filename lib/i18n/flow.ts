@@ -27,6 +27,8 @@ export const en = {
   covered: "Covered all the way",
   low: "{account}: down to {amount} on {date}",
   chartLow: "Lowest {amount} on {date}",
+  showMore: "Show {count} more",
+  pocketRest: "Scenarios, the devaluation assumption and the funding order are on a larger screen. Also here:",
 };
 
 export const tr: typeof en = {
@@ -53,4 +55,6 @@ export const tr: typeof en = {
   covered: "Sonuna kadar yeterli",
   low: "{account}: {date} günü {amount} seviyesine iner",
   chartLow: "En düşük {amount}, {date}",
+  showMore: "{count} tane daha göster",
+  pocketRest: "Senaryolar, devalüasyon varsayımı ve fonlama sırası daha büyük bir ekranda. Burada ayrıca:",
 };
