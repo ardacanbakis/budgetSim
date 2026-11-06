@@ -7,6 +7,12 @@
  *   density — how tight every row and card is, everywhere at once
  *   shape   — what a particular list *is* (rows, a grid of cards, a table)
  *
+ * A screen's shape is remembered as the one last used. On top of that a
+ * shape can be pinned as the screen's default (defaultShapeKey), and then it
+ * wins: the screen always opens on it, whatever was poked at last. That is
+ * what "set as default" means to someone who uses a screen one way and
+ * borrows another view now and then.
+ *
  * Density works by scaling the same --ui-* tokens the interface styles already
  * use, so it composes with them instead of fighting them: Terminal at
  * "spacious" is still recognisably Terminal, just roomier. That is why this is
@@ -25,7 +31,15 @@ export function isDensity(v: string): v is Density {
 export const SURFACES = ["accounts", "transactions", "cards", "victvs", "recurring"] as const;
 export type SurfaceId = (typeof SURFACES)[number];
 
-export const SHAPES = ["rows", "grid", "table"] as const;
+/**
+ * The shapes a list can take. The first three are forms of the same list; the
+ * last three are lenses the Cards screen alone offers, each answering a
+ * question the list cannot:
+ *   matrix   — every card against the months ahead, one cell a statement
+ *   calendar — a month with each statement on the day it falls due
+ *   payoff   — the cards ordered by what clears soonest
+ */
+export const SHAPES = ["rows", "grid", "table", "matrix", "calendar", "payoff"] as const;
 export type Shape = (typeof SHAPES)[number];
 
 export interface SurfaceSpec {
@@ -44,7 +58,7 @@ export interface SurfaceSpec {
 export const SURFACE_SPECS: Record<SurfaceId, SurfaceSpec> = {
   accounts: { id: "accounts", shapes: ["rows", "grid", "table"], columns: true },
   transactions: { id: "transactions", shapes: ["rows", "table"], columns: false },
-  cards: { id: "cards", shapes: ["rows", "grid", "table"], columns: true },
+  cards: { id: "cards", shapes: ["rows", "grid", "table", "matrix", "calendar", "payoff"], columns: true },
   victvs: { id: "victvs", shapes: ["table", "rows"], columns: false },
   recurring: { id: "recurring", shapes: ["rows", "table"], columns: false },
 };
@@ -60,6 +74,8 @@ export function isShapeFor(id: SurfaceId, v: string): v is Shape {
 export const DENSITY_KEY = "renovator-density";
 export const shapeKey = (id: SurfaceId) => `renovator-shape-${id}`;
 export const columnsKey = (id: SurfaceId) => `renovator-cols-${id}`;
+/** The shape pinned as this screen's default, if any: it beats the last used. */
+export const defaultShapeKey = (id: SurfaceId) => `renovator-default-shape-${id}`;
 
 /**
  * Density is applied as an attribute on <html> so it reaches everything at

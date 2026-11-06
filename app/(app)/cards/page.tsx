@@ -31,6 +31,7 @@ import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { pocketable } from "@/components/pocket/pocketable";
 import { CardDetailsModal, PurchaseDetailsModal } from "@/components/cardDetails";
+import { CardsLens } from "@/components/cardViews";
 
 const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) => m.PocketCards), {
   ssr: false,
@@ -40,6 +41,12 @@ const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) =
 export default pocketable(PurchasesPage, PocketCards);
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
+/**
+ * The shapes that are forms of the card list. The other three (matrix,
+ * calendar, payoff) are views of their own: they draw every card at once, so
+ * a column count and the per-card sections mean nothing to them.
+ */
+const LIST_SHAPES: readonly string[] = ["rows", "grid", "table"];
 const TABS = ["cards", "purchases"] as const;
 
 function PurchasesPage() {
@@ -267,12 +274,15 @@ function PurchasesPage() {
             onShape={view.setShape}
             columns={view.columns}
             onColumns={view.setColumns}
+            isDefault={view.isDefault}
+            onSetDefault={view.setDefault}
+            onClearDefault={view.clearDefault}
           />
           {tab.value === "purchases" ? (
             <ColumnsToggle columns={purchaseColumns.columns} onChange={purchaseColumns.setColumns} />
-          ) : (
+          ) : LIST_SHAPES.includes(view.shape) ? (
             <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
-          )}
+          ) : null}
           <Button variant="primary" onClick={() => setModalOpen(true)}>
             + {t("purchases.newPurchase")}
           </Button>
@@ -320,9 +330,24 @@ function PurchasesPage() {
 
       {tab.value === "cards" && view.shape === "table" ? cardsTable : null}
 
+      {/* the three views of every card at once; each derives from the same
+          CardBook the list does (lib/ui/cardViews.ts) */}
+      {tab.value === "cards" && !LIST_SHAPES.includes(view.shape) && rates.data ? (
+        <CardsLens
+          shape={view.shape}
+          accounts={accountList}
+          book={book}
+          today={today}
+          usdPer={rates.data.usdPer}
+          display={displayCurrency}
+          onOpen={setDetailsCard}
+          onPay={setPaying}
+        />
+      ) : null}
+
       <div
         className={
-          tab.value !== "cards" || view.shape === "table"
+          tab.value !== "cards" || !LIST_SHAPES.includes(view.shape) || view.shape === "table"
             ? "hidden"
             : view.shape === "grid"
               ? columnClass(view.columns)
