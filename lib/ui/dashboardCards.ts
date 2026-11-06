@@ -192,7 +192,7 @@ export function monthItems(params: {
     if (month < thisMonth) break;
     if (card.kind !== "credit_card" || card.archived) continue;
     if (book.payments(card.id).some((p) => p.date.slice(0, 7) === month)) continue;
-    const due = cardSchedule(book, card.id, thisMonth).find((s) => s.month === month);
+    const due = cardSchedule(book, card.id, thisMonth, { toMonth: month }).find((s) => s.month === month);
     if (!due || due.total <= 0.005) continue;
     const payer = card.paymentAccountId ? byId.get(card.paymentAccountId) : undefined;
     add({

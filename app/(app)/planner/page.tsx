@@ -52,6 +52,7 @@ import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid
 import { PlanCard } from "@/components/plannerCard";
 import { MonthInOut } from "@/components/dashboardCards";
 import { ForecastFlow } from "@/components/forecastFlow";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
@@ -209,6 +210,8 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
   const grid = usePlannerGrid();
   const userSettings = useUserSettings();
   const victvsForecast = useVictvsForecast(Math.max(months, 12));
+  // what you put on the cards beyond their taksit, when the plan carries it
+  const cardSpend = useCardSpendSettings();
   const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, SHORT_THRESHOLD_TRY);
 
   const toggleMonth = (month: string) =>
@@ -315,6 +318,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     months,
     conversionCut: cut,
     cardEstimates: cardEstimates.data,
+    cardSpend,
   });
   // the plan re-runs the same engine with its own rate path and flows, so the
   // two lines differ only by the assumptions themselves
@@ -342,6 +346,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     months,
     conversionCut: cut,
     cardEstimates: cardEstimates.data,
+    cardSpend,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
     extraFlows: [...planExtraFlows(plan, months, firstMonth), ...victvsFlows(plan), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
@@ -370,6 +375,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
         months,
         conversionCut: cut,
         cardEstimates: cardEstimates.data,
+        cardSpend,
         ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
         extraFlows: [...planExtraFlows(compareNormalized, months, firstMonth), ...victvsFlows(compareNormalized)],
         replaceCategories: planReplacedCategories(compareNormalized),

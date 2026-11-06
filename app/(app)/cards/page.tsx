@@ -7,7 +7,9 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewPurchase } from "@/lib/data/repo";
 import { Account, Purchase } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, chargeAmount, estimateTopUps, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
+import { cardSchedule, chargeAmount, estimateTopUps, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import {
@@ -32,6 +34,7 @@ import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { pocketable } from "@/components/pocket/pocketable";
 import { CardDetailsModal, PurchaseDetailsModal } from "@/components/cardDetails";
 import { CardsLens } from "@/components/cardViews";
+import { CardSpendCard } from "@/components/cardSpendCard";
 
 const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) => m.PocketCards), {
   ssr: false,
@@ -82,9 +85,17 @@ function PurchasesPage() {
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
   const estimates = useCardEstimates();
+  const cardSpend = useCardSpendSettings();
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
-    [accounts.data, transactions.data, estimates.data]
+    () =>
+      buildPlanningBook({
+        accounts: accounts.data ?? [],
+        transactions: transactions.data ?? [],
+        estimates: estimates.data,
+        settings: cardSpend,
+        today: todayISO(),
+      }),
+    [accounts.data, transactions.data, estimates.data, cardSpend]
   );
 
   const stats = useMemo(() => {
@@ -327,6 +338,10 @@ function PurchasesPage() {
             ))}
         </div>
       ) : null}
+
+      {/* what each card costs beyond its taksit, and whether the plan
+          carries it: the same question every shape of this page raises */}
+      {tab.value === "cards" ? <CardSpendCard /> : null}
 
       {tab.value === "cards" && view.shape === "table" ? cardsTable : null}
 

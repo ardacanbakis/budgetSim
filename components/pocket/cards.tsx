@@ -10,7 +10,8 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCardEstimates, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Purchase, Transaction } from "@/lib/data/types";
-import { buildCardBook, CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
 import { Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, cardStandings, DueCardPayment, findDueCardPayments, purchaseInstallments, purchaseProgress } from "@/lib/domain/purchases";
@@ -18,6 +19,7 @@ import { addDays, parseISODate, todayISO } from "@/lib/domain/recurrence";
 import { CardDetailsModal } from "@/components/cardDetails";
 import { useI18n } from "@/lib/i18n";
 import { CARDS_TAB_KEY, useLocalChoice } from "@/lib/prefs";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { statementFigure } from "@/lib/ui/pocket/attention";
 import { daysBetween } from "@/lib/ui/pocket/dates";
 import { dayDate } from "@/lib/ui/pocket/dayGroups";
@@ -225,9 +227,17 @@ function CardsScreen() {
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
   const estimates = useCardEstimates();
+  const cardSpend = useCardSpendSettings();
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
-    [accounts.data, transactions.data, estimates.data]
+    () =>
+      buildPlanningBook({
+        accounts: accounts.data ?? [],
+        transactions: transactions.data ?? [],
+        estimates: estimates.data,
+        settings: cardSpend,
+        today: todayISO(),
+      }),
+    [accounts.data, transactions.data, estimates.data, cardSpend]
   );
 
   const action = useMemo(

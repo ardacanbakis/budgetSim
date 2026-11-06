@@ -4,7 +4,9 @@ import { useAccounts, useCardEstimates, useRates, useTransactions, useVictvsSess
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
-import { buildCardBook, CardBook, CardPaymentReminder, cardPaymentReminders, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
+import { CardBook, CardPaymentReminder, cardPaymentReminders, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { findDueCardPayments } from "@/lib/domain/purchases";
@@ -63,6 +65,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const rates = useRates();
   const estimates = useCardEstimates();
   const includeLegacy = useLocalToggle(REPORT_LEGACY_KEY, true).value;
+  const cardSpend = useCardSpendSettings();
   const today = todayISO();
 
   // owed now is what's been held; a session booked for next week isn't owed yet
@@ -72,7 +75,15 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
   const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
-  const book = buildCardBook(accounts.data, transactions.data, estimates.data);
+  // forward-looking: the statements ahead carry each card's typical spend
+  // when the setting asks for it (lib/domain/cardSpend.ts)
+  const book = buildPlanningBook({
+    accounts: accounts.data,
+    transactions: transactions.data,
+    estimates: estimates.data,
+    settings: cardSpend,
+    today,
+  });
   const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
   // what the cards are owed counts as debt now (current stat only — the
   // projector pays it out month by month, so it starts from what you hold)

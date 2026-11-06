@@ -85,7 +85,7 @@ export function statementMatrix(params: {
 
   for (const card of accounts) {
     if (card.kind !== "credit_card" || card.archived) continue;
-    const schedule = new Map(cardSchedule(book, card.id, first).map((s) => [s.month, s.total]));
+    const schedule = new Map(cardSchedule(book, card.id, first, { toMonth: columns.at(-1) }).map((s) => [s.month, s.total]));
     const cells = columns.map((month) => {
       const total = schedule.get(month) ?? 0;
       return { month, total, value: total === 0 ? 0 : convert(total, card.currency, display, usdPer) };
@@ -213,10 +213,12 @@ export function payoffRows(params: {
 
   for (const card of accounts) {
     if (card.kind !== "credit_card" || card.archived) continue;
-    const schedule = cardSchedule(book, card.id, month);
+    // how long a card takes to clear is about what you owe, so typical
+    // spend stays out of it; the next statement is a real bill, so it's in
+    const schedule = cardSchedule(book, card.id, month, { typical: false });
+    const next = cardSchedule(book, card.id, month)[0];
     const owed = book.owed(card.id, today);
     const value = convert(owed, card.currency, display, usdPer);
-    const first = schedule[0];
     const scheduled = schedule.reduce((sum, s) => sum + s.total, 0);
     rows.push({
       account: card,
@@ -224,13 +226,13 @@ export function payoffRows(params: {
       value,
       clearsIn: schedule.at(-1)?.month ?? null,
       monthsLeft: schedule.length,
-      next: first ? { month: first.month, date: paymentDateIn(first.month, card.paymentDay), total: first.total } : null,
+      next: next ? { month: next.month, date: paymentDateIn(next.month, card.paymentDay), total: next.total } : null,
       perMonth: schedule.length > 0 ? round2(scheduled / schedule.length) : 0,
       limitUsed: card.creditLimit != null && card.creditLimit > 0 ? owed / card.creditLimit : null,
       idle: Math.abs(owed) <= 0.005 && schedule.length === 0,
     });
     totals.owed += value ?? 0;
-    if (first && first.month === month) totals.nextMonth += convert(first.total, card.currency, display, usdPer) ?? 0;
+    if (next && next.month === month) totals.nextMonth += convert(next.total, card.currency, display, usdPer) ?? 0;
   }
 
   rows.sort((a, b) => {

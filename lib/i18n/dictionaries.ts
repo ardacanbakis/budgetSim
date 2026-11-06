@@ -15,6 +15,7 @@ import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
 import * as pages from "./pages";
+import * as cardSpend from "./cardSpend";
 import * as flow from "./flow";
 import * as planCards from "./planCards";
 import * as victvsForecast from "./victvsForecast";
@@ -1310,6 +1311,7 @@ export const en = {
   },
   extras: extras.en,
   pages: pages.en,
+  cardSpend: cardSpend.en,
   flow: flow.en,
   planCards: planCards.en,
   currency: {
@@ -2613,6 +2615,7 @@ export const tr: Dictionary = {
   },
   extras: extras.tr,
   pages: pages.tr,
+  cardSpend: cardSpend.tr,
   flow: flow.tr,
   planCards: planCards.tr,
   currency: {
