@@ -52,6 +52,7 @@ import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid
 import { PlanCard } from "@/components/plannerCard";
 import { MonthInOut } from "@/components/dashboardCards";
 import { ForecastFlow } from "@/components/forecastFlow";
+import { RealTermsCard } from "@/components/realTermsCard";
 import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
@@ -114,6 +115,7 @@ const CARD_ORDER: Array<[string, CardSize]> = [
   // last, so the rows of two above keep their partners
   ["month", "L"],
   ["flow", "L"],
+  ["real", "L"],
 ];
 const SIZE = Object.fromEntries(CARD_ORDER) as Record<string, CardSize>;
 
@@ -1246,6 +1248,21 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
               16th can be covered (components/forecastFlow.tsx) */}
           <PlanCard id="flow" size={SIZE.flow} title={t("flow.title")}>
             <ForecastFlow />
+          </PlanCard>
+        </>
+      ),
+    },
+    {
+      id: "real",
+      title: t("realTerms.title"),
+      size: SIZE.real,
+      node: (
+        <>
+          {/* what the tail costs in today's money: a 0% taksit in a sliding
+              currency is cheaper than its nominal total says
+              (components/realTermsCard.tsx) */}
+          <PlanCard id="real" size={SIZE.real} title={t("realTerms.title")}>
+            <RealTermsCard />
           </PlanCard>
         </>
       ),
