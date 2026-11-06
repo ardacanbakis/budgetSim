@@ -135,6 +135,10 @@ export const en = {
   victvsForecast: "VICTVS",
   monthForecast: "forecast",
   includeVictvs: "Include the VICTVS forecast as income",
+  includeBorrowed: "Include borrowed money as income",
+  includeBorrowedHint:
+    "Money you drew on a loan or a cash advance this month. It isn\u2019t earned, and it leaves again when you repay it, so it lifts the month\u2019s income and its net \u2014 but a month whose bills came out of a loan reads as a hole without it.",
+  monthBorrowed: "borrowed",
 };
 
 export const tr: typeof en = {
@@ -257,4 +261,8 @@ export const tr: typeof en = {
   victvsForecast: "VICTVS",
   monthForecast: "tahmin",
   includeVictvs: "VICTVS tahminini gelire kat",
+  includeBorrowed: "Alınan borcu gelire kat",
+  includeBorrowedHint:
+    "Bu ay kredi ya da nakit avans olarak çektiğin para. Kazanılmış değil ve geri öderken yine çıkıyor; bu yüzden ayın gelirini ve netini yükseltir \u2014 ama faturaları krediyle ödenen bir ay, bu olmadan bir boşluk gibi okunur.",
+  monthBorrowed: "borç",
 };

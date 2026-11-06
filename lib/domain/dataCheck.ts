@@ -33,7 +33,9 @@ export type DataIssueKind =
   /** a VICTVS session unpaid for a long time */
   | "oldUnpaidSession"
   /** income that reads like borrowed money */
-  | "borrowedAsIncome";
+  | "borrowedAsIncome"
+  /** a card payment still to be made, drawn from an account that isn't the card's payer */
+  | "paymentFromWrongAccount";
 
 export type DataFix =
   | { kind: "delete"; txIds: string[] }
@@ -41,7 +43,9 @@ export type DataFix =
   | { kind: "complete"; txIds: string[] }
   /** move a row back to planned */
   | { kind: "reopen"; txId: string }
-  | { kind: "setPayer"; cardId: string; payerId: string };
+  | { kind: "setPayer"; cardId: string; payerId: string }
+  /** move a row to another account (the paying leg of a card payment) */
+  | { kind: "moveLeg"; txId: string; accountId: string };
 
 export interface DataIssue {
   id: string;
@@ -250,6 +254,35 @@ export function checkData(params: {
       amount: old.reduce((s, x) => s + x.amount, 0),
       currency: "USD",
       fix: null,
+    });
+  }
+
+  // --- a card payment still to be made, drawn from the wrong account
+  //
+  // Changing a card's "pay from" can't reach back into payments already
+  // recorded: everything is read off the ledger, so the old payment keeps
+  // drawing on the old account and the plan shows the outflow there. A
+  // payment already made really did come from that account, so only one
+  // still to be made is offered a move.
+  for (const legs of groups.values()) {
+    const landing = legs.find((l) => l.direction === "income" && byId.get(l.accountId)?.kind === "credit_card");
+    const paying = legs.find((l) => l.direction === "expense" && byId.get(l.accountId)?.kind !== "credit_card");
+    if (!landing || !paying || paying.status !== "planned") continue;
+    const card = byId.get(landing.accountId);
+    const payer = card?.paymentAccountId ? byId.get(card.paymentAccountId) : undefined;
+    if (!card || card.archived || !payer || payer.archived || payer.kind === "credit_card") continue;
+    if (paying.accountId === payer.id) continue;
+    issues.push({
+      id: `paymentFromWrongAccount:${paying.id}:${payer.id}`,
+      kind: "paymentFromWrongAccount",
+      severity: "fix",
+      txs: [paying, landing],
+      account: card,
+      // the account it's drawn on now, and the one it should be
+      other: payer,
+      amount: paying.amount,
+      currency: currencyOf(paying.accountId),
+      fix: { kind: "moveLeg", txId: paying.id, accountId: payer.id },
     });
   }
 

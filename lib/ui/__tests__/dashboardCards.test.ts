@@ -187,6 +187,53 @@ describe("monthItems", () => {
     expect(monthItems({ transactions, accounts, book, today: "2026-10-20", usdPer, display: "TRY", month: "2026-10" })).toEqual(items);
   });
 
+  // the shape behind "show the 50,000 from Adnan Amca as income this month":
+  // borrowing isn't earning, so it counts only when asked for
+  describe("with borrowed money counted as income", () => {
+    const borrowed = row("bank", "2026-10-02", 50000, {
+      direction: "income",
+      status: "completed",
+      description: "Adnan Amca",
+      loanId: "adnan",
+      loanPrincipal: true,
+    });
+    const txs = [...transactions, borrowed];
+    const book2 = buildCardBook(accounts, txs);
+    const call = (includeBorrowed: boolean) =>
+      monthItems({ transactions: txs, accounts, book: book2, today: "2026-10-20", usdPer, display: "TRY", includeBorrowed });
+
+    it("leaves it out by default, as the cash basis does", () => {
+      expect(call(false).income.map((i) => i.label)).toEqual(["WBL 2026"]);
+    });
+
+    it("counts it as income when asked, marked borrowed so the figure can be read right", () => {
+      const on = call(true);
+      expect(on.income.map((i) => [i.label, i.status, i.borrowed, i.value])).toEqual([
+        ["Adnan Amca", "done", true, 50000],
+        ["WBL 2026", "done", undefined, 83600],
+      ]);
+      // and it lifts the month's income by exactly that, nothing else
+      expect(on.totals.incomeDone - call(false).totals.incomeDone).toBeCloseTo(50000, 10);
+      expect(on.expense).toEqual(call(false).expense);
+    });
+
+    it("never counts money repaid on a debt as income: that's spending", () => {
+      const repay = row("bank", "2026-10-15", 50000, { status: "completed", description: "Adnan Amca", loanId: "adnan" });
+      const withRepay = [...txs, repay];
+      const items = monthItems({
+        transactions: withRepay,
+        accounts,
+        book: buildCardBook(accounts, withRepay),
+        today: "2026-10-20",
+        usdPer,
+        display: "TRY",
+        includeBorrowed: true,
+      });
+      expect(items.income.map((i) => i.label)).toEqual(["Adnan Amca", "WBL 2026"]);
+      expect(items.expense.some((i) => i.label === "Adnan Amca")).toBe(true);
+    });
+  });
+
   describe("with the VICTVS forecast", () => {
     const cash = [
       { month: "2026-10", expected: 300, low: 200, high: 400, earned: 300 },
