@@ -1,4 +1,4 @@
-import { Account, Transaction, VictvsSession } from "@/lib/data/types";
+import { Account, CardEstimate, Loan, Transaction, VictvsSession } from "@/lib/data/types";
 import { Currency } from "./currencies";
 import { toMinor } from "./money";
 import { addDays } from "./recurrence";
@@ -35,7 +35,15 @@ export type DataIssueKind =
   /** income that reads like borrowed money */
   | "borrowedAsIncome"
   /** a card payment still to be made, drawn from an account that isn't the card's payer */
-  | "paymentFromWrongAccount";
+  | "paymentFromWrongAccount"
+  /** what a card is expected to bill was noted long ago and still drives the plan */
+  | "staleEstimate"
+  /** a debt repaid in one go with no date, so no plan ever shows it being repaid */
+  | "debtWithoutDate"
+  /** a card with no credit limit, so there's no room left to show */
+  | "cardWithoutLimit"
+  /** a payment recorded far from what that month was expected to be */
+  | "paymentOffEstimate";
 
 export type DataFix =
   | { kind: "delete"; txIds: string[] }
@@ -58,6 +66,10 @@ export interface DataIssue {
   account?: Account;
   /** the account a fix would set or that the issue points to */
   other?: Account;
+  /** the debt an issue is about (debtWithoutDate) */
+  loan?: Loan;
+  /** a date the issue turns on: when an expectation was noted */
+  date?: string;
   /** money involved, in `currency` */
   amount?: number;
   currency?: Currency;
@@ -67,14 +79,24 @@ export interface DataIssue {
 // whole words, Turkish letters included (\b only knows ASCII)
 const BORROWED = /(?<![\p{L}\p{N}])(avans|kredi|kredisi|loan|borç|borc|ödünç|odunc)(?![\p{L}\p{N}])/iu;
 const UNPAID_SESSION_DAYS = 60;
+/** Past this, an expectation is old enough that the plan is running on last month's news. */
+const STALE_ESTIMATE_DAYS = 45;
+/** A payment this far from what was expected is worth noting the real figure for. */
+const OFF_ESTIMATE_SHARE = 0.25;
+/** …but never for small change: a quarter of a small statement is nothing. */
+const OFF_ESTIMATE_MIN = 1000;
 
 export function checkData(params: {
   accounts: Account[];
   transactions: Transaction[];
   victvsSessions?: VictvsSession[];
+  /** for the debts that no plan can show; left out, that check is skipped */
+  loans?: Loan[];
+  /** what each card is expected to bill; left out, those checks are skipped */
+  cardEstimates?: CardEstimate[];
   today: string;
 }): DataIssue[] {
-  const { accounts, transactions, victvsSessions = [], today } = params;
+  const { accounts, transactions, victvsSessions = [], loans = [], cardEstimates = [], today } = params;
   const byId = new Map(accounts.map((a) => [a.id, a] as const));
   const currencyOf = (accountId: string): Currency => byId.get(accountId)?.currency ?? "TRY";
   const minor = (t: Transaction) => toMinor(t.amount, currencyOf(t.accountId));
@@ -299,6 +321,96 @@ export function checkData(params: {
       account: byId.get(t.accountId),
       amount: t.amount,
       currency: currencyOf(t.accountId),
+      fix: null,
+    });
+  }
+
+  // --- expectations the plan is still running on, noted a long time ago
+  //
+  // What a card will bill is the one thing the ledger can't see, so a stale
+  // expectation quietly drives every month ahead. Only months still to come
+  // matter: what a past month was expected to be is history now.
+  const thisMonth = today.slice(0, 7);
+  const byCard = new Map<string, CardEstimate[]>();
+  for (const e of cardEstimates) {
+    if (e.month < thisMonth) continue;
+    byCard.set(e.accountId, [...(byCard.get(e.accountId) ?? []), e]);
+  }
+  const staleBefore = addDays(today, -STALE_ESTIMATE_DAYS);
+  for (const [cardId, list] of byCard) {
+    const card = byId.get(cardId);
+    if (!card || card.archived) continue;
+    const newest = list.reduce((latest, e) => (e.notedOn > latest ? e.notedOn : latest), list[0].notedOn);
+    if (newest >= staleBefore) continue;
+    issues.push({
+      id: `staleEstimate:${cardId}:${newest}`,
+      kind: "staleEstimate",
+      severity: "tidy",
+      txs: [],
+      account: card,
+      date: newest,
+      fix: null,
+    });
+  }
+
+  // --- a debt repaid in one go with no date: nothing can ever show it going
+  for (const loan of loans) {
+    if (loan.direction !== "owe" || loan.scheduleKind !== "lumpSum" || loan.payoffDate) continue;
+    issues.push({
+      id: `debtWithoutDate:${loan.id}`,
+      kind: "debtWithoutDate",
+      severity: "tidy",
+      txs: [],
+      loan,
+      account: loan.payAccountId ? byId.get(loan.payAccountId) : undefined,
+      amount: loan.principal,
+      currency: loan.currency,
+      fix: null,
+    });
+  }
+
+  // --- a card with no limit: "room left" has nothing to measure against
+  for (const card of accounts) {
+    if (card.kind !== "credit_card" || card.archived) continue;
+    if (card.creditLimit != null && card.creditLimit > 0) continue;
+    issues.push({
+      id: `cardWithoutLimit:${card.id}`,
+      kind: "cardWithoutLimit",
+      severity: "tidy",
+      txs: [],
+      account: card,
+      fix: null,
+    });
+  }
+
+  // --- a statement that came out far from what it was expected to be: the
+  // expectation is what the months ahead are built on, so a month that
+  // missed by a quarter is worth noting the real figure for
+  const estimatesFor = (cardId: string, month: string, asOf: string) =>
+    cardEstimates
+      .filter((e) => e.accountId === cardId && e.month === month && e.notedOn <= asOf)
+      .sort((a, b) => a.notedOn.localeCompare(b.notedOn) || a.createdAt.localeCompare(b.createdAt))
+      .at(-1) ?? null;
+  for (const legs of groups.values()) {
+    const landing = legs.find((l) => l.direction === "income" && byId.get(l.accountId)?.kind === "credit_card");
+    const paying = legs.find((l) => l.direction === "expense" && byId.get(l.accountId)?.kind !== "credit_card");
+    if (!landing || !paying) continue;
+    const card = byId.get(landing.accountId);
+    if (!card || card.archived) continue;
+    const month = paying.dueDate.slice(0, 7);
+    const estimate = estimatesFor(card.id, month, paying.dueDate);
+    if (!estimate) continue;
+    const off = Math.abs(landing.amount - estimate.amount);
+    if (off < OFF_ESTIMATE_MIN || off < estimate.amount * OFF_ESTIMATE_SHARE) continue;
+    issues.push({
+      id: `paymentOffEstimate:${landing.id}:${estimate.id}`,
+      kind: "paymentOffEstimate",
+      severity: "tidy",
+      txs: [paying, landing],
+      account: card,
+      amount: off,
+      currency: currencyOf(landing.accountId),
+      date: estimate.notedOn,
       fix: null,
     });
   }

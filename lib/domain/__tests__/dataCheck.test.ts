@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Account, Transaction, VictvsSession } from "@/lib/data/types";
+import { Account, CardEstimate, Loan, Transaction, VictvsSession } from "@/lib/data/types";
 import { checkData } from "../dataCheck";
 
 const account = (id: string, overrides: Partial<Account> = {}): Account => ({
@@ -164,6 +164,103 @@ describe("checkData, on the shapes found in a real backup", () => {
       );
       const issues = checkData({ accounts: all, transactions: [...right, ...noPayer], today: TODAY });
       expect(issues.filter((i) => i.kind === "paymentFromWrongAccount")).toEqual([]);
+    });
+  });
+
+  describe("the settings a plan silently depends on", () => {
+    const estimate = (accountId: string, month: string, amount: number, notedOn: string): CardEstimate => ({
+      id: `${accountId}-${month}-${notedOn}`,
+      accountId,
+      month,
+      amount,
+      notedOn,
+      createdAt: `${notedOn}T00:00:00.000Z`,
+    });
+    const loan = (o: Partial<Loan> = {}): Loan => ({
+      id: "l1",
+      name: "Goku",
+      kind: "personal",
+      currency: "TRY",
+      principal: 30000,
+      monthlyRatePct: 0,
+      termMonths: 1,
+      startDate: "2026-10-16",
+      installment: 0,
+      scheduleKind: "lumpSum",
+      kkdfPct: 0,
+      bsmvPct: 0,
+      customInstalments: null,
+      recurringTemplateId: null,
+      direction: "owe",
+      counterparty: "Goku",
+      depositAccountId: null,
+      payAccountId: "enparaTry",
+      payoffDate: null,
+      purchaseId: null,
+      createdAt: "2026-10-16T00:00:00.000Z",
+      ...o,
+    });
+
+    it("flags expectations the months ahead still run on, noted long ago", () => {
+      const old = [estimate("akbank", "2026-11", 35000, "2026-08-01"), estimate("akbank", "2026-12", 16000, "2026-08-01")];
+      const found = checkData({ accounts, transactions: [], cardEstimates: old, today: TODAY }).filter((i) => i.kind === "staleEstimate");
+      expect(found).toHaveLength(1);
+      expect(found[0].account?.id).toBe("akbank");
+      expect(found[0].date).toBe("2026-08-01");
+    });
+
+    it("leaves a fresh expectation alone, and never minds a month already past", () => {
+      const fresh = [estimate("akbank", "2026-11", 35000, "2026-10-30")];
+      const past = [estimate("akbank", "2026-01", 35000, "2026-01-02")];
+      expect(checkData({ accounts, transactions: [], cardEstimates: fresh, today: TODAY }).some((i) => i.kind === "staleEstimate")).toBe(false);
+      expect(checkData({ accounts, transactions: [], cardEstimates: past, today: TODAY }).some((i) => i.kind === "staleEstimate")).toBe(false);
+    });
+
+    it("flags a debt repaid in one go with no date, since no plan can show it going", () => {
+      const found = checkData({ accounts, transactions: [], loans: [loan()], today: TODAY }).filter((i) => i.kind === "debtWithoutDate");
+      expect(found).toHaveLength(1);
+      expect(found[0].loan?.id).toBe("l1");
+      expect(found[0].amount).toBe(30000);
+      // one with a date, one lent rather than owed, and one on a schedule: all fine
+      const quiet = [loan({ id: "l2", payoffDate: "2027-02-28" }), loan({ id: "l3", direction: "lend" }), loan({ id: "l4", scheduleKind: "zeroInterest" })];
+      expect(checkData({ accounts, transactions: [], loans: quiet, today: TODAY }).some((i) => i.kind === "debtWithoutDate")).toBe(false);
+    });
+
+    it("flags a card with no limit, so the room-left bars can say why they're missing", () => {
+      const limited = account("akbank", { kind: "credit_card", paymentAccountId: "enparaTry", paymentDay: 16, creditLimit: 100000 });
+      const found = checkData({ accounts: [enparaTry, limited, garanti], transactions: [], today: TODAY }).filter(
+        (i) => i.kind === "cardWithoutLimit"
+      );
+      expect(found.map((i) => i.account?.id)).toEqual(["garanti"]);
+      // an archived card is nobody's problem
+      const retired = account("old", { kind: "credit_card", archived: true });
+      expect(
+        checkData({ accounts: [enparaTry, limited, retired], transactions: [], today: TODAY }).some((i) => i.kind === "cardWithoutLimit")
+      ).toBe(false);
+    });
+
+    it("flags a statement that came out far from what it was expected to be", () => {
+      const legs = [
+        tx("enparaTry", "2026-10-16", 45534.22, { status: "completed", transferGroupId: "g", description: "CC Akbank statement" }),
+        tx("akbank", "2026-10-16", 45534.22, { status: "completed", transferGroupId: "g", direction: "income" }),
+      ];
+      const est = [estimate("akbank", "2026-10", 20000, "2026-10-01")];
+      const found = checkData({ accounts, transactions: legs, cardEstimates: est, today: TODAY }).filter((i) => i.kind === "paymentOffEstimate");
+      expect(found).toHaveLength(1);
+      expect(found[0].amount).toBeCloseTo(25534.22, 2);
+
+      // within a quarter, or small in absolute terms: not worth saying
+      const close = [estimate("akbank", "2026-10", 44000, "2026-10-01")];
+      expect(
+        checkData({ accounts, transactions: legs, cardEstimates: close, today: TODAY }).some((i) => i.kind === "paymentOffEstimate")
+      ).toBe(false);
+    });
+
+    it("says nothing about any of this when it isn't given the data", () => {
+      const kinds = checkData({ accounts: [enparaTry, akbank], transactions: [], today: TODAY }).map((i) => i.kind);
+      expect(kinds).not.toContain("staleEstimate");
+      expect(kinds).not.toContain("debtWithoutDate");
+      expect(kinds).not.toContain("paymentOffEstimate");
     });
   });
 
