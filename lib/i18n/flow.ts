@@ -1,0 +1,56 @@
+/**
+ * Strings for the Plan's cash-flow card (components/forecastFlow.tsx), under
+ * flow.* — English and Turkish side by side, so a key can't exist in one and
+ * not the other.
+ */
+export const en = {
+  title: "Cash flow, day by day",
+  view: "View",
+  view_runway: "Payment runway",
+  view_chart: "Daily balances",
+  view_months: "Month by month",
+  horizon: "How far ahead",
+  currency: "Currency",
+  account: "Account",
+  allAccounts: "Every account",
+  hint: "Every planned row, loan instalment and card statement, on the day it moves money. A statement sits on its card's payment day and leaves the account set to pay it, expectations included. ≈ marks a figure converted at today's rates.",
+  empty: "Nothing moves in this stretch.",
+  due: "What's due",
+  from: "Moves",
+  before: "Before",
+  after: "After",
+  month: "Month",
+  end: "End balance",
+  statement: "statement",
+  total: "All accounts",
+  shortOn: "Short from {date}",
+  covered: "Covered all the way",
+  low: "{account}: down to {amount} on {date}",
+  chartLow: "Lowest {amount} on {date}",
+};
+
+export const tr: typeof en = {
+  title: "Gün gün nakit akışı",
+  view: "Görünüm",
+  view_runway: "Ödeme sırası",
+  view_chart: "Günlük bakiyeler",
+  view_months: "Ay ay",
+  horizon: "Ne kadar ileri",
+  currency: "Para birimi",
+  account: "Hesap",
+  allAccounts: "Tüm hesaplar",
+  hint: "Her planlı kayıt, kredi taksidi ve kart ekstresi, parayı hareket ettirdiği günde. Ekstre, kartın ödeme gününde durur ve onu ödeyecek hesaptan çıkar; beklenen tutarlar dahil. ≈ işareti, bugünün kurundan çevrilmiş bir rakamı gösterir.",
+  empty: "Bu aralıkta hareket eden bir şey yok.",
+  due: "Ödenecek",
+  from: "Hesap",
+  before: "Öncesi",
+  after: "Sonrası",
+  month: "Ay",
+  end: "Ay sonu bakiye",
+  statement: "ekstre",
+  total: "Tüm hesaplar",
+  shortOn: "{date} itibarıyla açık var",
+  covered: "Sonuna kadar yeterli",
+  low: "{account}: {date} günü {amount} seviyesine iner",
+  chartLow: "En düşük {amount}, {date}",
+};

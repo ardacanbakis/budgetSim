@@ -15,6 +15,7 @@ import * as pocketCards from "./pocket/cards";
 import * as pocketDesk from "./pocket/desk";
 import * as extras from "./extras";
 import * as pages from "./pages";
+import * as flow from "./flow";
 import * as planCards from "./planCards";
 import * as victvsForecast from "./victvsForecast";
 import * as gadgets from "./gadgets";
@@ -1295,6 +1296,7 @@ export const en = {
   },
   extras: extras.en,
   pages: pages.en,
+  flow: flow.en,
   planCards: planCards.en,
   currency: {
     TRY: "Turkish Lira",
@@ -2583,6 +2585,7 @@ export const tr: Dictionary = {
   },
   extras: extras.tr,
   pages: pages.tr,
+  flow: flow.tr,
   planCards: planCards.tr,
   currency: {
     TRY: "Türk Lirası",
