@@ -31,6 +31,7 @@ import { ViewsCard } from "@/components/settingsViews";
 import { DashboardAccountsCard, DashboardCardsCard, PocketHomeCard } from "@/components/settingsDashboard";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { DataCheckCard } from "@/components/dataCheck";
+import { PaymentRemindersCard } from "@/components/paymentReminders";
 import { HistoryCard } from "@/components/history";
 
 const SETTINGS_TABS = ["preferences", "dashboard", "categories", "victvs", "data", "check", "history", "account"] as const;
@@ -281,6 +282,7 @@ function SettingsScreen() {
 
       {tab === "data" ? (
         <>
+          <PaymentRemindersCard />
           <ExportsCard />
           <LegacyCard />
         </>

@@ -19,6 +19,7 @@ import * as cardSpend from "./cardSpend";
 import * as flow from "./flow";
 import * as planCards from "./planCards";
 import * as realTerms from "./realTerms";
+import * as reminders from "./reminders";
 import * as victvsForecast from "./victvsForecast";
 import * as gadgets from "./gadgets";
 
@@ -1316,6 +1317,7 @@ export const en = {
   flow: flow.en,
   planCards: planCards.en,
   realTerms: realTerms.en,
+  reminders: reminders.en,
   currency: {
     TRY: "Turkish Lira",
     USD: "US Dollar",
@@ -2621,6 +2623,7 @@ export const tr: Dictionary = {
   flow: flow.tr,
   planCards: planCards.tr,
   realTerms: realTerms.tr,
+  reminders: reminders.tr,
   currency: {
     TRY: "Türk Lirası",
     USD: "ABD Doları",

@@ -13,6 +13,7 @@ import { BillReminder } from "@/lib/domain/reminders";
 import { todayISO } from "@/lib/domain/recurrence";
 import { useI18n } from "@/lib/i18n";
 import { useFormatDate } from "@/lib/useFormatDate";
+import { useOpeningNudge } from "@/components/paymentReminders";
 
 // snoozed for the day: it asks again tomorrow (the payment day itself, or while it's late)
 const dismissKey = (r: CardPaymentReminder) => `cc-pay-dismissed-${r.account.id}-${r.month}-${todayISO()}`;
@@ -28,6 +29,10 @@ const isSnoozed = (key: string) => {
 };
 
 /**
+ * Also where the opening nudge fires (useOpeningNudge): this is the one
+ * component every layout draws when something is due, so the notification
+ * and the banner can never disagree about whether there is anything to say.
+ *
  * "Did you pay the card bill?" — one banner per card, shown the day before its
  * statement is due, on the day, and every day after while it's unpaid
  * (cardPaymentReminders). The amount is the whole statement, installments
@@ -43,6 +48,9 @@ export function CardPaymentReminders({ reminders, bills = [] }: { reminders: Car
   const repo = useRepo();
   const accounts = useAccounts();
   const rates = useRates();
+  // a notification on opening, for whoever asked for one (off by default)
+  const due = reminders.length + bills.length;
+  useOpeningNudge(due, t("reminders.nudge", { count: due }));
   const [dismissTick, setDismissTick] = useState(0);
   const [paying, setPaying] = useState<CardPaymentReminder | null>(null);
   const [fromId, setFromId] = useState("");
