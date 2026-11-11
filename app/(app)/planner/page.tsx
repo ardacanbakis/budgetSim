@@ -51,6 +51,11 @@ import { PlanLoansCard } from "@/components/planLoansCard";
 import { GridBlock, PlannerGrid, usePlannerGrid } from "@/components/plannerGrid";
 import { PlanCard } from "@/components/plannerCard";
 import { MonthInOut } from "@/components/dashboardCards";
+import { ForecastFlow } from "@/components/forecastFlow";
+import { RealTermsCard } from "@/components/realTermsCard";
+import { PocketPlan } from "@/components/pocket/plan";
+import { pocketable } from "@/components/pocket/pocketable";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { CardSize, readingRows, rowHeightPx } from "@/lib/ui/plannerCards";
 import { projectCashflow } from "@/lib/domain/projector";
 import { computeBalances } from "@/lib/domain/balances";
@@ -111,6 +116,8 @@ const CARD_ORDER: Array<[string, CardSize]> = [
   ["budgets", "L"],
   // last, so the rows of two above keep their partners
   ["month", "L"],
+  ["flow", "L"],
+  ["real", "L"],
 ];
 const SIZE = Object.fromEntries(CARD_ORDER) as Record<string, CardSize>;
 
@@ -127,7 +134,7 @@ function monthLabelOf(month: string, locale: string): string {
 const PLAN_TABS = ["forecast", "evim", "loan"] as const;
 type PlanTab = (typeof PLAN_TABS)[number];
 
-export default function PlanPage() {
+function PlanPage() {
   // useSearchParams needs a Suspense boundary on a prerendered page
   return (
     <Suspense fallback={<Spinner />}>
@@ -135,6 +142,13 @@ export default function PlanPage() {
     </Suspense>
   );
 }
+
+/**
+ * On a phone with the Pocket layout on, the three cards you read away from
+ * a desk; the canvas of scenarios stays where it belongs
+ * (components/pocket/plan.tsx).
+ */
+export default pocketable(PlanPage, PocketPlan);
 
 /**
  * Plan: the forecast, Evim sistemi and the loan simulator, as tabs. The open
@@ -207,6 +221,8 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
   const grid = usePlannerGrid();
   const userSettings = useUserSettings();
   const victvsForecast = useVictvsForecast(Math.max(months, 12));
+  // what you put on the cards beyond their taksit, when the plan carries it
+  const cardSpend = useCardSpendSettings();
   const shortLira = useLocalNumber(SHORT_THRESHOLD_KEY, SHORT_THRESHOLD_TRY);
 
   const toggleMonth = (month: string) =>
@@ -313,6 +329,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     months,
     conversionCut: cut,
     cardEstimates: cardEstimates.data,
+    cardSpend,
   });
   // the plan re-runs the same engine with its own rate path and flows, so the
   // two lines differ only by the assumptions themselves
@@ -340,6 +357,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
     months,
     conversionCut: cut,
     cardEstimates: cardEstimates.data,
+    cardSpend,
     ratePath: buildRatePath(rates.data.usdPer, plan.devaluation),
     extraFlows: [...planExtraFlows(plan, months, firstMonth), ...victvsFlows(plan), ...savingsFlows],
     replaceCategories: planReplacedCategories(plan),
@@ -368,6 +386,7 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
         months,
         conversionCut: cut,
         cardEstimates: cardEstimates.data,
+        cardSpend,
         ratePath: buildRatePath(rates.data.usdPer, compareNormalized.devaluation),
         extraFlows: [...planExtraFlows(compareNormalized, months, firstMonth), ...victvsFlows(compareNormalized)],
         replaceCategories: planReplacedCategories(compareNormalized),
@@ -1223,6 +1242,36 @@ function ForecastTab({ tabs }: { tabs: ReactNode }) {
           {/* the dashboard's Month in & out: a month's biggest incomes and expenses, a month back or ahead at a time */}
           <PlanCard id="month" size={SIZE.month} title={t("dashboard.card_month-top")}>
             <MonthInOut />
+          </PlanCard>
+        </>
+      ),
+    },
+    {
+      id: "flow",
+      title: t("flow.title"),
+      size: SIZE.flow,
+      node: (
+        <>
+          {/* day-level: which account pays what, on the day it leaves. The
+              forecast table says what a month ends on; this says whether the
+              16th can be covered (components/forecastFlow.tsx) */}
+          <PlanCard id="flow" size={SIZE.flow} title={t("flow.title")}>
+            <ForecastFlow />
+          </PlanCard>
+        </>
+      ),
+    },
+    {
+      id: "real",
+      title: t("realTerms.title"),
+      size: SIZE.real,
+      node: (
+        <>
+          {/* what the tail costs in today's money: a 0% taksit in a sliding
+              currency is cheaper than its nominal total says
+              (components/realTermsCard.tsx) */}
+          <PlanCard id="real" size={SIZE.real} title={t("realTerms.title")}>
+            <RealTermsCard />
           </PlanCard>
         </>
       ),

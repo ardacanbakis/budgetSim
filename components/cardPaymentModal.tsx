@@ -6,6 +6,7 @@ import { useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useRates } from "@/lib/data/queries";
 import { NewTransfer } from "@/lib/data/repo";
 import type { Account, Transaction } from "@/lib/data/types";
+import { paymentDateIn } from "@/lib/domain/cards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { convert, snapshotFromTable } from "@/lib/domain/fx";
 import { roundTo } from "@/lib/domain/money";
@@ -18,7 +19,19 @@ import { useI18n } from "@/lib/i18n";
  * the card's charges from before this month, so none of them need ticking.
  * The suggestion adds up those charges where any are logged; the statement
  * itself is the real number.
+ *
+ * The date starts on this month's payment day for the card rather than today:
+ * a statement is paid on its own day, and typing a payment in on the 6th for
+ * a card due on the 15th would otherwise date it wrong and leave the plan
+ * expecting the money nine days early. Today stands in for a card with no
+ * payment day set.
  */
+/** This month's payment day for the card; today when it hasn't got one. */
+function defaultPaymentDate(card: Account | null): string {
+  const today = todayISO();
+  return (card ? paymentDateIn(today.slice(0, 7), card.paymentDay) : null) ?? today;
+}
+
 export function CardPaymentModal({
   card,
   suggested,
@@ -45,7 +58,7 @@ export function CardPaymentModal({
   if (key !== target) {
     setKey(target);
     setAmount(suggested > 0 ? String(roundTo(suggested, card?.currency ?? "TRY")) : "");
-    setDate(todayISO());
+    setDate(defaultPaymentDate(card));
     setFromId("");
   }
 

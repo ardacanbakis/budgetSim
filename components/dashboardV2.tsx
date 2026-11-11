@@ -77,12 +77,21 @@ export function DashboardV2() {
       ? { id: "safe-to-spend", href: "/transactions", label: t("dashboard.safeToSpend"), value: money(d.safe.total), tone: d.safe.total >= 0 ? "pos" : "neg" }
       : null,
     on("cc-debt")
-      ? { id: "cc-debt", href: "/cards", label: t("purchases.ccDebtTile"), value: money(d.cardsOwed), tone: d.cardsOwed > 0 ? "neg" : undefined }
+      ? {
+          id: "cc-debt",
+          href: "/cards",
+          label: t("purchases.ccDebtTile"),
+          value: money(d.cardsOwed),
+          tone: d.cardsOwed > 0 ? "neg" : undefined,
+          // the headline is the whole tail; this month's statements are what
+          // the cards actually bill now
+          note: d.cardsThisMonth.all > 0.005 ? t("purchases.ccThisMonth", { amount: money(d.cardsThisMonth.all) }) : undefined,
+        }
       : null,
     on("victvs")
       ? { id: "victvs", href: "/victvs", label: t("dashboard.unpaidVictvs"), value: formatAmount(d.unpaidVictvs, "USD", locale) }
       : null,
-  ].filter((s) => s != null) as Array<{ id: string; href: string; label: string; value: string; tone?: "pos" | "neg" }>;
+  ].filter((s) => s != null) as Array<{ id: string; href: string; label: string; value: string; tone?: "pos" | "neg"; note?: string }>;
   // three sit side by side from sm up; on a phone the third takes a row of its own
   const statGrid = stats.length === 1 ? "grid-cols-1" : stats.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3";
 
@@ -193,6 +202,7 @@ export function DashboardV2() {
                 label={s.label}
                 value={s.value}
                 tone={s.tone}
+                note={s.note}
                 className={
                   stats.length === 3 && i === 2 ? "col-span-2 border-t border-[var(--edge-soft)] sm:col-span-1 sm:border-t-0" : undefined
                 }
@@ -266,6 +276,7 @@ function HeroStat({
   value,
   href,
   tone,
+  note,
   className,
 }: {
   id: string;
@@ -273,6 +284,8 @@ function HeroStat({
   value: string;
   href: string;
   tone?: "pos" | "neg";
+  /** a line under the figure: what the headline doesn't say on its own */
+  note?: string;
   className?: string;
 }) {
   return (
@@ -285,6 +298,7 @@ function HeroStat({
       <Figure size="md" tone={tone} className="mt-0.5 block">
         {value}
       </Figure>
+      {note ? <div className="mt-0.5 truncate text-xs text-zinc-400">{note}</div> : null}
     </Link>
   );
 }

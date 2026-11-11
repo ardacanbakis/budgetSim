@@ -313,6 +313,7 @@ export function buildDemoSeed(): DemoStore {
       showQuickAdd: null,
       showRateTicker: true,
       victvsForecast: null,
+      cardSpend: null,
     },
     snapshots,
     timers,

@@ -371,6 +371,8 @@ export interface DashboardLayout {
   upcomingDays?: 7 | 14 | 30;
   /** Month in & out counts the VICTVS forecast's payouts as income; off unless turned on */
   monthVictvs?: boolean;
+  /** Month in & out counts money borrowed that month as income; off unless turned on */
+  monthBorrowed?: boolean;
 }
 
 /** Which accounts the dashboards list. Hiding one tidies the lists; every total still counts it. */
@@ -401,6 +403,12 @@ export interface UserSettings {
   showRateTicker: boolean | null;
   /** the VICTVS forecast's figures you set yourself (migration 0017); null = none */
   victvsForecast: VictvsForecastSettings | null;
+  /**
+   * carrying each card's typical spend into the months ahead (migration
+   * 0026); null = not carried, which is also what an unset setting means
+   * (lib/domain/cardSpend.ts normalizeCardSpend)
+   */
+  cardSpend: import("@/lib/domain/cardSpend").CardSpendSettings | null;
 }
 
 /** user_settings.victvs_forecast: read through cleanVictvsOverrides (lib/domain/victvsForecast.ts) */

@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DebtModal } from "@/components/debtModal";
 import { Badge, Button, Card, CardHeader, EmptyState, Spinner } from "@/components/ui";
 import { useRepo } from "@/lib/data/provider";
-import { KEYS, useAccounts, useAppMutation, useRates, useTransactions, useVictvsSessions } from "@/lib/data/queries";
+import { KEYS, useAccounts, useAppMutation, useCardEstimates, useLoans, useRates, useTransactions, useVictvsSessions } from "@/lib/data/queries";
 import { Transaction } from "@/lib/data/types";
 import { checkData, DataFix, DataIssue, openIssues } from "@/lib/domain/dataCheck";
+import { debtHref } from "@/lib/ui/dashboardCards";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import { todayISO } from "@/lib/domain/recurrence";
@@ -54,6 +55,8 @@ export function useDataIssues(): DataIssue[] | null {
   const accounts = useAccounts();
   const transactions = useTransactions();
   const sessions = useVictvsSessions();
+  const loans = useLoans();
+  const estimates = useCardEstimates();
   const { dismissed } = useDismissedIssues();
   return useMemo(() => {
     if (!accounts.data || !transactions.data) return null;
@@ -61,10 +64,12 @@ export function useDataIssues(): DataIssue[] | null {
       accounts: accounts.data,
       transactions: transactions.data,
       victvsSessions: sessions.data ?? [],
+      loans: loans.data ?? [],
+      cardEstimates: estimates.data ?? [],
       today: todayISO(),
     });
     return openIssues(all, dismissed);
-  }, [accounts.data, transactions.data, sessions.data, dismissed]);
+  }, [accounts.data, transactions.data, sessions.data, loans.data, estimates.data, dismissed]);
 }
 
 /** A line on the dashboard when something makes the numbers wrong. */
@@ -114,6 +119,9 @@ export function DataCheckCard() {
         case "setPayer":
           await repo.updateAccount(fix.cardId, { paymentAccountId: fix.payerId });
           return;
+        case "moveLeg":
+          await repo.updateTransaction(fix.txId, { accountId: fix.accountId });
+          return;
       }
     },
     [KEYS.transactions, KEYS.accounts]
@@ -131,6 +139,8 @@ export function DataCheckCard() {
       other: i.other?.name ?? "—",
       amount: money(i.amount, i.currency),
       count: i.txs.length || i.sessions?.length || 0,
+      name: i.loan?.counterparty || i.loan?.name || "—",
+      date: i.date ? fmtDate(i.date) : "—",
     });
 
   const fixLabel = (fix: DataFix) =>
@@ -140,7 +150,9 @@ export function DataCheckCard() {
         ? t("datacheck.fixComplete", { count: fix.txIds.length })
         : fix.kind === "reopen"
           ? t("datacheck.fixReopen")
-          : t("datacheck.fixPayer");
+          : fix.kind === "moveLeg"
+            ? t("datacheck.fixMoveLeg")
+            : t("datacheck.fixPayer");
 
   const rows = (["fix", "tidy"] as const).map((severity) => ({
     severity,
@@ -200,6 +212,16 @@ export function DataCheckCard() {
                       {issue.kind === "oldUnpaidSession" ? (
                         <Link href="/victvs" className="self-center text-xs text-teal-600 hover:underline">
                           {t("datacheck.openVictvs")} →
+                        </Link>
+                      ) : null}
+                      {issue.kind === "staleEstimate" || issue.kind === "paymentOffEstimate" || issue.kind === "cardWithoutLimit" ? (
+                        <Link href="/cards" className="self-center text-xs text-teal-600 hover:underline">
+                          {t("datacheck.openCards")} →
+                        </Link>
+                      ) : null}
+                      {issue.kind === "debtWithoutDate" ? (
+                        <Link href={debtHref(issue.loan?.id)} className="self-center text-xs text-teal-600 hover:underline">
+                          {t("datacheck.openDebts")} →
                         </Link>
                       ) : null}
                       <Button variant="ghost" onClick={() => dismiss(issue.id)}>

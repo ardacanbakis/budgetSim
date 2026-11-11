@@ -4,10 +4,12 @@ import { Fragment, ReactNode, useCallback, useId, useMemo } from "react";
 import { useApp } from "@/lib/data/provider";
 import { useAccounts, useCardEstimates, useCategories, useRates, useTransactions } from "@/lib/data/queries";
 import { Account, Category, Transaction } from "@/lib/data/types";
-import { buildCardBook, CardBook } from "@/lib/domain/cards";
+import { CardBook } from "@/lib/domain/cards";
 import { Currency } from "@/lib/domain/currencies";
 import { UsdPerMap } from "@/lib/domain/fx";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
 import { todayISO } from "@/lib/domain/recurrence";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { useI18n } from "@/lib/i18n";
 import { dayLabel, relativeDue } from "@/lib/ui/pocket/dates";
 import { DayGroup, MonthGroup, monthLabel, transferCounterparts } from "@/lib/ui/pocket/dayGroups";
@@ -83,6 +85,7 @@ export function useTxLookup(): TxLookup {
   const transactions = useTransactions();
   const rates = useRates();
   const estimates = useCardEstimates();
+  const cardSpend = useCardSpendSettings();
   const today = todayISO();
   const usdPer = rates.data?.usdPer;
   const ratesReady = rates.data != null;
@@ -96,7 +99,7 @@ export function useTxLookup(): TxLookup {
     return {
       accountsById: new Map(accountList.map((a) => [a.id, a])),
       categoriesById: new Map((categories.data ?? []).map((c) => [c.id, c])),
-      book: buildCardBook(accountList, txs, estimates.data),
+      book: buildPlanningBook({ accounts: accountList, transactions: txs, estimates: estimates.data, settings: cardSpend, today }),
       counterpartOf: (tx: Transaction) =>
         tx.transferGroupId ? (tx.direction === "income" ? leaving : landing).get(tx.transferGroupId) : undefined,
       usdPer,
@@ -105,7 +108,7 @@ export function useTxLookup(): TxLookup {
       today,
       loading,
     };
-  }, [accounts.data, categories.data, transactions.data, estimates.data, usdPer, displayCurrency, ratesReady, today, loading]);
+  }, [accounts.data, categories.data, transactions.data, estimates.data, cardSpend, usdPer, displayCurrency, ratesReady, today, loading]);
 }
 
 export interface TxDescription {

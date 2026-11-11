@@ -91,7 +91,7 @@ function SurfaceRow({ id }: { id: SurfaceId }) {
             ))}
           </span>
         ) : null}
-        <span role="group" aria-label={`${t("views.shape")} — ${id}`} className="flex rounded-lg border border-[var(--edge)] p-0.5">
+        <span role="group" aria-label={`${t("views.shape")} — ${id}`} className="flex flex-wrap rounded-lg border border-[var(--edge)] p-0.5">
           {spec.shapes.map((s) => (
             <button
               key={s}
@@ -108,6 +108,21 @@ function SurfaceRow({ id }: { id: SurfaceId }) {
             </button>
           ))}
         </span>
+        {/* the pin: which view this screen opens on, whatever was used last */}
+        <button
+          type="button"
+          aria-pressed={view.isDefault}
+          aria-label={`${view.isDefault ? t("views.unsetDefault") : t("views.setDefault")} — ${id}`}
+          title={view.isDefault ? t("views.unsetDefault") : t("views.setDefaultHint")}
+          onClick={() => (view.isDefault ? view.clearDefault() : view.setDefault())}
+          className={`rounded-lg border px-2 py-1 text-xs transition-colors ${
+            view.isDefault
+              ? "border-teal-600 bg-teal-600 text-white dark:border-teal-500 dark:bg-teal-500 dark:text-zinc-950"
+              : "border-[var(--edge)] text-zinc-500 hover:bg-[var(--edge-soft)]"
+          }`}
+        >
+          <span aria-hidden>{view.isDefault ? "★" : "☆"}</span>
+        </button>
       </span>
     </li>
   );

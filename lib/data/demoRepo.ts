@@ -646,6 +646,7 @@ export class DemoRepo implements Repo {
       showQuickAdd: null,
       showRateTicker: null,
       victvsForecast: null,
+      cardSpend: null,
     };
     return copy({ ...defaults, ...(this.store.settings as Partial<UserSettings>) });
   }

@@ -30,6 +30,12 @@ import { GoldPrices, goldRatiosOf } from "./gold";
  *   app can't see yet: until that month's payment is recorded, the month
  *   pays the larger of the latest expectation and the charges tracked. What
  *   the card is owed never includes it; that's only what's been charged.
+ * - A card's typical spend (lib/domain/cardSpend.ts), when the plan is told
+ *   to carry it, is added on top of that: what you expect is what the bank
+ *   has already committed, and typical spend is the shopping that will join
+ *   it. It too is a guess about the future, so what the card is owed never
+ *   includes it either. Off until asked for, so a book built without one
+ *   behaves exactly as it always did.
  *
  * Nothing here is stored but the expectations: the rest is read off the
  * ledger, so every screen and every device agrees.
@@ -85,6 +91,8 @@ export interface CardBook {
   estimates(cardId: string): CardEstimate[];
   /** the expectation that counts for a statement month: the latest noted (on or before `asOf`, when given) */
   expected(cardId: string, month: string, asOf?: string): CardEstimate | null;
+  /** what this card is typically spent on beyond its installments, a month; 0 when the plan isn't carrying it */
+  typical(cardId: string): number;
 }
 
 /** + for a charge, − for a refund landing on the card */
@@ -109,7 +117,13 @@ function nextMonth(month: string): string {
 /** noted first, then entered first: the order an expectation's history reads in */
 const byNoted = (a: CardEstimate, b: CardEstimate) => a.notedOn.localeCompare(b.notedOn) || a.createdAt.localeCompare(b.createdAt);
 
-export function buildCardBook(accounts: Account[], transactions: Transaction[], estimates: readonly CardEstimate[] = []): CardBook {
+export function buildCardBook(
+  accounts: Account[],
+  transactions: Transaction[],
+  estimates: readonly CardEstimate[] = [],
+  /** each card's typical monthly spend beyond its installments; empty = don't carry it */
+  typicalSpend: ReadonlyMap<string, number> = new Map()
+): CardBook {
   const cards = new Set(accounts.filter((a) => a.kind === "credit_card").map((a) => a.id));
   const currencyOf = new Map(accounts.map((a) => [a.id, a.currency] as const));
   const paymentDayOf = new Map(accounts.map((a) => [a.id, a.paymentDay ?? null] as const));
@@ -209,6 +223,7 @@ export function buildCardBook(accounts: Account[], transactions: Transaction[], 
     estimates: (cardId) => estimatesOf.get(cardId) ?? [],
     expected: (cardId, month, asOf) =>
       (estimatesOf.get(cardId) ?? []).filter((e) => e.month === month && (asOf == null || e.notedOn <= asOf)).at(-1) ?? null,
+    typical: (cardId) => typicalSpend.get(cardId) ?? 0,
   };
 }
 
@@ -282,21 +297,65 @@ function trackedByMonth(book: CardBook, cardId: string, fromMonth: string): Map<
   return months;
 }
 
+export interface ScheduleOptions {
+  /**
+   * Carry the card's typical spend as far as this month (yyyy-mm), so a
+   * month with no taksit and no expectation still reads as a month you
+   * spent something in. Without it, typical spend only tops up months the
+   * card already bills: the plan never invents a month of its own.
+   */
+  toMonth?: string;
+  /**
+   * false leaves typical spend out, for the questions it would only muddy —
+   * how long a card takes to clear is about what you owe, not about what
+   * you will go on spending.
+   */
+  typical?: boolean;
+}
+
+function monthsFrom(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let m = from; m <= to && out.length < 240; m = nextMonth(m)) out.push(m);
+  return out;
+}
+
 /**
- * How much an expectation adds to a month: what it expects beyond what's
- * tracked, for each month from `fromMonth` whose payment isn't recorded yet.
- * The plan pays these on top of the tracked charges.
+ * How much a month is topped up beyond what's tracked, for each month from
+ * `fromMonth` whose payment isn't recorded yet.
+ *
+ * Two things top a month up, and they add rather than compete:
+ * - what you expect the statement to be, beyond the charges tracked. That's
+ *   what the bank has already committed and the app can't see.
+ * - the card's typical spend, when the book carries one: the shopping that
+ *   will join it. It applies to every month ahead the card already bills,
+ *   and as far as `toMonth` when one is given.
+ *
+ * `estimate` is the expectation behind the figure, null for a month topped
+ * up by typical spend alone.
  */
-export function estimateTopUps(book: CardBook, cardId: string, fromMonth: string): { month: string; amount: number; estimate: CardEstimate }[] {
+export function estimateTopUps(
+  book: CardBook,
+  cardId: string,
+  fromMonth: string,
+  options: ScheduleOptions = {}
+): { month: string; amount: number; estimate: CardEstimate | null; typical: number }[] {
   const tracked = trackedByMonth(book, cardId, fromMonth);
   const recorded = new Set(book.payments(cardId).map((p) => p.date.slice(0, 7)));
+  const typical = options.typical === false ? 0 : book.typical(cardId);
   const months = new Set(book.estimates(cardId).map((e) => e.month));
-  const out: { month: string; amount: number; estimate: CardEstimate }[] = [];
+  if (typical > 0.005) {
+    for (const month of tracked.keys()) months.add(month);
+    if (options.toMonth) for (const month of monthsFrom(fromMonth, options.toMonth)) months.add(month);
+  }
+  const out: { month: string; amount: number; estimate: CardEstimate | null; typical: number }[] = [];
   for (const month of [...months].sort()) {
     if (month < fromMonth || recorded.has(month)) continue;
-    const estimate = book.expected(cardId, month)!;
-    const amount = estimate.amount - (tracked.get(month) ?? 0);
-    if (amount > 0.005) out.push({ month, amount, estimate });
+    const estimate = book.expected(cardId, month);
+    const known = tracked.get(month) ?? 0;
+    // the month is at least what's charged, or what you expect, whichever is
+    // more; typical spend sits on top of that
+    const amount = Math.max(known, estimate?.amount ?? 0) + typical - known;
+    if (amount > 0.005) out.push({ month, amount, estimate, typical });
   }
   return out;
 }
@@ -309,9 +368,14 @@ export function estimateTopUps(book: CardBook, cardId: string, fromMonth: string
  * with an expectation and no payment recorded is the larger of the two. In
  * the card's own currency.
  */
-export function cardSchedule(book: CardBook, cardId: string, fromMonth: string): { month: string; total: number }[] {
+export function cardSchedule(
+  book: CardBook,
+  cardId: string,
+  fromMonth: string,
+  options: ScheduleOptions = {}
+): { month: string; total: number }[] {
   const months = trackedByMonth(book, cardId, fromMonth);
-  for (const { month, amount } of estimateTopUps(book, cardId, fromMonth)) months.set(month, (months.get(month) ?? 0) + amount);
+  for (const { month, amount } of estimateTopUps(book, cardId, fromMonth, options)) months.set(month, (months.get(month) ?? 0) + amount);
   return [...months.entries()]
     .filter(([, total]) => Math.abs(total) > 0.005)
     .sort(([a], [b]) => a.localeCompare(b))

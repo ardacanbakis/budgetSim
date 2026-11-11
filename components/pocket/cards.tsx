@@ -10,15 +10,21 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCardEstimates, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewAccount } from "@/lib/data/repo";
 import { Account, Purchase, Transaction } from "@/lib/data/types";
-import { buildCardBook, CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
+import { CardBook, cardSchedule, chargeAmount, paymentDateIn } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
 import { Currency } from "@/lib/domain/currencies";
 import { snapshotFromTable, UsdPerMap } from "@/lib/domain/fx";
 import { CardStanding, cardStandings, DueCardPayment, findDueCardPayments, purchaseInstallments, purchaseProgress } from "@/lib/domain/purchases";
 import { addDays, parseISODate, todayISO } from "@/lib/domain/recurrence";
 import { CardDetailsModal } from "@/components/cardDetails";
+import { CardsLens } from "@/components/cardViews";
+import { CardSpendCard } from "@/components/cardSpendCard";
 import { useI18n } from "@/lib/i18n";
 import { CARDS_TAB_KEY, useLocalChoice } from "@/lib/prefs";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { statementFigure } from "@/lib/ui/pocket/attention";
+import { useSurfaceView } from "@/lib/ui/useViews";
+import { SURFACE_SPECS } from "@/lib/ui/views";
 import { daysBetween } from "@/lib/ui/pocket/dates";
 import { dayDate } from "@/lib/ui/pocket/dayGroups";
 import { formatSigned } from "@/lib/ui/pocket/format";
@@ -68,6 +74,15 @@ const cardClass =
   "overflow-hidden rounded-[var(--ui-card-radius)] border border-[length:var(--ui-card-border)] border-[var(--edge)] bg-[var(--surface)] shadow-sm";
 const primaryButton =
   "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-[15px] font-semibold text-white active:bg-teal-700 disabled:opacity-50 dark:bg-teal-500 dark:text-zinc-950 dark:active:bg-teal-400";
+/**
+ * The views this page offers on a phone: the card list it has always had
+ * (the Cards screen calls that shape "rows"), then the three that draw every
+ * card at once. A grid or a table of twelve fields is a desktop idea, so
+ * neither is offered here, but the shape and its pin are the same ones the
+ * desktop keeps — pick a view here and it opens there.
+ */
+const LENSES = SURFACE_SPECS.cards.shapes.filter((s) => s !== "grid" && s !== "table");
+
 const secondaryButton =
   "flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-[var(--edge)] px-4 text-[15px] font-medium active:bg-[var(--edge-soft)] disabled:opacity-50";
 const headStyle = {
@@ -225,9 +240,21 @@ function CardsScreen() {
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
   const estimates = useCardEstimates();
+  const cardSpend = useCardSpendSettings();
+  const view = useSurfaceView("cards");
+  // a grid or a table saved on a desktop means nothing here, so the phone
+  // reads it as the list rather than drawing nothing at all
+  const shape = (LENSES as readonly string[]).includes(view.shape) ? view.shape : "rows";
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
-    [accounts.data, transactions.data, estimates.data]
+    () =>
+      buildPlanningBook({
+        accounts: accounts.data ?? [],
+        transactions: transactions.data ?? [],
+        estimates: estimates.data,
+        settings: cardSpend,
+        today: todayISO(),
+      }),
+    [accounts.data, transactions.data, estimates.data, cardSpend]
   );
 
   const action = useMemo(
@@ -260,6 +287,22 @@ function CardsScreen() {
   const openPurchase = purchaseId ? (purchaseList.find((p) => p.id === purchaseId) ?? null) : null;
   const usdPer = rates.data?.usdPer;
 
+  // the same shape and the same pin the Cards screen keeps on a desktop, so
+  // a view chosen here is the view that opens there (lib/ui/useViews.ts)
+  const lensButton = (id: string) => (
+    <button
+      key={id}
+      type="button"
+      aria-pressed={shape === id}
+      onClick={() => view.setShape(id as typeof view.shape)}
+      className={`min-h-[32px] shrink-0 rounded-[var(--pocket-chip-radius,9999px)] px-3 text-[13px] font-medium transition-colors ${
+        shape === id ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "bg-[var(--edge-soft)] text-zinc-500 dark:text-zinc-400"
+      }`}
+    >
+      {id === "rows" ? t("cards.tabCards") : t(`views.shape_${id}`)}
+    </button>
+  );
+
   const tabButton = (id: Tab) => (
     <button
       key={id}
@@ -288,7 +331,37 @@ function CardsScreen() {
           <TileSkeleton />
         ) : tab.value === "cards" ? (
           <>
-            {cards.length === 0 ? (
+            {/* the list, or one of the three views of every card at once */}
+            {cards.length > 0 ? (
+              <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" role="group" aria-label={t("views.shape")}>
+                {LENSES.map(lensButton)}
+                <button
+                  type="button"
+                  aria-pressed={view.isDefault && shape === view.shape}
+                  aria-label={view.isDefault ? t("views.unsetDefault") : t("views.setDefault")}
+                  onClick={() => (view.isDefault ? view.clearDefault() : view.setDefault())}
+                  className={`min-h-[32px] shrink-0 rounded-[var(--pocket-chip-radius,9999px)] px-3 text-[13px] transition-colors ${
+                    view.isDefault && shape === view.shape ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950" : "bg-[var(--edge-soft)] text-zinc-500"
+                  }`}
+                >
+                  <span aria-hidden>{view.isDefault && shape === view.shape ? "★" : "☆"}</span>
+                </button>
+              </div>
+            ) : null}
+            {cards.length > 0 && shape !== "rows" && usdPer ? (
+              <CardsLens
+                shape={shape}
+                accounts={accountList}
+                book={book}
+                today={today}
+                usdPer={usdPer}
+                display={displayCurrency}
+                onOpen={(card) => setMenuFor(card)}
+                onPay={(card) => setPaying(card)}
+              />
+            ) : null}
+            {cards.length > 0 ? <CardSpendCard /> : null}
+            {shape !== "rows" ? null : cards.length === 0 ? (
               <EmptyState
                 action={
                   <button type="button" onClick={() => setCreatingCard(true)} className={secondaryButton}>
@@ -320,7 +393,7 @@ function CardsScreen() {
                 />
               ))
             )}
-            {retired.length > 0 ? (
+            {shape === "rows" && retired.length > 0 ? (
               <Retired
                 cards={retired}
                 open={retiredOpen}

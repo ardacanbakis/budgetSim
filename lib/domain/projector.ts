@@ -3,6 +3,7 @@ import { Currency } from "./currencies";
 import { convert, pairRate, UsdPerMap } from "./fx";
 import { computeBalances, computeNetWorth } from "./balances";
 import { buildCardBook, estimateTopUps } from "./cards";
+import { CardSpendSettings, typicalSpendMap } from "./cardSpend";
 import { conversionFor } from "./convertedIncome";
 import { computeMissingOccurrences } from "./materialize";
 import { GoldRatios } from "./gold";
@@ -142,6 +143,12 @@ export function projectCashflow(params: {
   conversionCut?: (from: Currency, to: Currency) => number;
   /** what you expect cards' statements to be: a month pays the larger of that and what's tracked */
   cardEstimates?: readonly CardEstimate[];
+  /**
+   * carry each card's typical spend (lib/domain/cardSpend.ts) across the
+   * window: what you put on a card beyond its taksit, which no row can
+   * show. Left out, the projection is what it always was.
+   */
+  cardSpend?: CardSpendSettings;
 }): ProjectionResult {
   const {
     accounts,
@@ -183,7 +190,13 @@ export function projectCashflow(params: {
   // paid. A recorded payment is that flow. A charge no payment covers yet
   // leaves the card's paying account in the month it'll be paid; one that's
   // covered rides on its payment, so it isn't counted again.
-  const book = buildCardBook(accounts, transactions, cardEstimates);
+  // typical card spend reaches the whole window here: a month with no
+  // taksit is still a month you spend in (lib/domain/cardSpend.ts)
+  const plain = buildCardBook(accounts, transactions, cardEstimates);
+  const typical = params.cardSpend
+    ? typicalSpendMap({ accounts, book: plain, transactions, today: fromDate, settings: params.cardSpend })
+    : new Map<string, number>();
+  const book = typical.size === 0 ? plain : buildCardBook(accounts, transactions, cardEstimates, typical);
   const fromMonth = fromDate.slice(0, 7);
   const lastMonth = horizonEnd.slice(0, 7);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
@@ -224,7 +237,9 @@ export function projectCashflow(params: {
   // leaves the paying account that month too
   for (const card of accounts) {
     if (card.kind !== "credit_card" || card.archived) continue;
-    for (const { month, amount } of estimateTopUps(book, card.id, fromMonth)) pushCharge(month, card.id, "expense", amount, null, card.name);
+    for (const { month, amount } of estimateTopUps(book, card.id, fromMonth, { toMonth: horizonEnd.slice(0, 7) })) {
+      pushCharge(month, card.id, "expense", amount, null, card.name);
+    }
   }
 
   // Template dates with no row yet, found the way materialize finds them:

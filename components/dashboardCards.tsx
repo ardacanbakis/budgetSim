@@ -18,7 +18,7 @@ import { cardStandings } from "@/lib/domain/purchases";
 import { templateProgress } from "@/lib/domain/templateStatus";
 import { useI18n } from "@/lib/i18n";
 import { RECURRING_HREF } from "@/lib/ui/recurringUrl";
-import { CardId, setMonthVictvs } from "@/lib/ui/dashboardLayout";
+import { CardId, setMonthBorrowed, setMonthVictvs } from "@/lib/ui/dashboardLayout";
 import { useDashboardLayout } from "@/lib/ui/useDashboardLayout";
 import { typicalPayoutDay } from "@/lib/domain/timeline";
 import { debtHref, MonthItem, monthItems, monthStatements, statementRows, thisMonthSummary, topItems, trendPoints } from "@/lib/ui/dashboardCards";
@@ -327,6 +327,9 @@ function MonthTopBody({ d }: { d: DashboardData }) {
   const { layout, navHrefs, update } = useDashboardLayout();
   const victvsOffered = navHrefs.includes("/victvs");
   const withVictvs = victvsOffered && (layout?.monthVictvs ?? false);
+  // money borrowed that month as income: off by default, since borrowing
+  // isn't earning and the repayment shows up as an expense later
+  const withBorrowed = layout?.monthBorrowed ?? false;
   const forecast = useVictvsForecast(withVictvs ? VICTVS_MONTHS : 0);
   const payouts = useVictvsPayouts();
   const victvsLabel = t("dashboard.victvsForecast");
@@ -349,8 +352,9 @@ function MonthTopBody({ d }: { d: DashboardData }) {
         includeLegacy: d.includeLegacy,
         month: nav.month,
         victvs,
+        includeBorrowed: withBorrowed,
       }),
-    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency, nav.month, victvs]
+    [d.transactions, d.accounts, d.book, d.today, d.usdPer, d.includeLegacy, displayCurrency, nav.month, victvs, withBorrowed]
   );
   const { incomeDone, incomeAhead, expenseDone, expenseAhead } = items.totals;
   const income = incomeDone + incomeAhead;
@@ -386,19 +390,37 @@ function MonthTopBody({ d }: { d: DashboardData }) {
           <p className={muted}>{t("dashboard.cashBasis")}</p>
         </>
       )}
-      {victvsOffered && layout ? (
+      {layout ? (
         // a click here is the card's own, not Classic's whole-card link
-        <label className="flex w-fit items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" onClick={stop}>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={withVictvs}
-            onChange={(e) => update((l) => setMonthVictvs(l, e.target.checked))}
-            className="h-4 w-4 accent-teal-600"
-            data-month-victvs
-          />
-          {t("dashboard.includeVictvs")}
-        </label>
+        <div className="flex flex-wrap gap-x-4 gap-y-1" onClick={stop}>
+          {victvsOffered ? (
+            <label className="flex w-fit items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={withVictvs}
+                onChange={(e) => update((l) => setMonthVictvs(l, e.target.checked))}
+                className="h-4 w-4 accent-teal-600"
+                data-month-victvs
+              />
+              {t("dashboard.includeVictvs")}
+            </label>
+          ) : null}
+          <label
+            className="flex w-fit items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"
+            title={t("dashboard.includeBorrowedHint")}
+          >
+            <input
+              type="checkbox"
+              role="switch"
+              checked={withBorrowed}
+              onChange={(e) => update((l) => setMonthBorrowed(l, e.target.checked))}
+              className="h-4 w-4 accent-teal-600"
+              data-month-borrowed
+            />
+            {t("dashboard.includeBorrowed")}
+          </label>
+        </div>
       ) : null}
     </div>
   );
@@ -437,6 +459,9 @@ function TopList({ title, items, kind }: { title: string; items: MonthItem[]; ki
               {i.status !== "done" ? (
                 <span className="ml-1.5 text-[11px] text-zinc-400">{t(ITEM_TAG[i.status])}</span>
               ) : null}
+              {/* borrowed money is in the list only because the switch asked:
+                  say so, so the income figure isn't read as earnings */}
+              {i.borrowed ? <span className="ml-1.5 text-[11px] text-zinc-400">{t("dashboard.monthBorrowed")}</span> : null}
             </span>
             <span className="shrink-0 font-medium">
               <Money amount={i.amount} currency={i.currency} sign={kind === "income" ? "in" : "out"} tone={kind === "income" && i.status === "done" ? "pos" : undefined} />

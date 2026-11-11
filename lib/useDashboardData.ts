@@ -4,13 +4,16 @@ import { useAccounts, useCardEstimates, useRates, useTransactions, useVictvsSess
 import { Account, Transaction } from "@/lib/data/types";
 import { computeBalances, computeNetWorth } from "@/lib/domain/balances";
 import { safeToSpend } from "@/lib/domain/budgets";
-import { buildCardBook, CardBook, CardPaymentReminder, cardPaymentReminders, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
+import { CardBook, CardPaymentReminder, cardPaymentReminders, isIncome, isSpending, totalOwed } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { Currency } from "@/lib/domain/currencies";
 import { convert, UsdPerMap } from "@/lib/domain/fx";
 import { findDueCardPayments } from "@/lib/domain/purchases";
 import { BillReminder, billReminders } from "@/lib/domain/reminders";
 import { goldRatiosOf } from "@/lib/domain/gold";
 import { addMonthsClamped, todayISO } from "@/lib/domain/recurrence";
+import { monthStatements } from "@/lib/ui/dashboardCards";
 import { unpaidSplit } from "@/lib/ui/pocket/victvsRanges";
 import { REPORT_LEGACY_KEY, useLocalToggle } from "@/lib/prefs";
 
@@ -20,6 +23,12 @@ export interface DashboardData {
   netWorth: ReturnType<typeof computeNetWorth>;
   /** what every card is owed, display currency (see lib/domain/cards.ts) */
   cardsOwed: number;
+  /**
+   * this month's card statements, display currency: what the cards bill you
+   * now, where cardsOwed is the whole tail. Paid is what's already gone,
+   * toPay what's still to go (lib/ui/dashboardCards.ts monthStatements).
+   */
+  cardsThisMonth: { all: number; paid: number; toPay: number };
   book: CardBook;
   duePayments: ReturnType<typeof findDueCardPayments>;
   /** the day before a card's statement is due, the day itself, or past it unpaid (cardPaymentReminders) */
@@ -56,6 +65,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   const rates = useRates();
   const estimates = useCardEstimates();
   const includeLegacy = useLocalToggle(REPORT_LEGACY_KEY, true).value;
+  const cardSpend = useCardSpendSettings();
   const today = todayISO();
 
   // owed now is what's been held; a session booked for next week isn't owed yet
@@ -65,12 +75,31 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
   if (!accounts.data || !transactions.data || !rates.data) return null;
 
   const balances = computeBalances(accounts.data, transactions.data, goldRatiosOf(rates.data));
-  const book = buildCardBook(accounts.data, transactions.data, estimates.data);
+  // forward-looking: the statements ahead carry each card's typical spend
+  // when the setting asks for it (lib/domain/cardSpend.ts)
+  const book = buildPlanningBook({
+    accounts: accounts.data,
+    transactions: transactions.data,
+    estimates: estimates.data,
+    settings: cardSpend,
+    today,
+  });
   const rawNetWorth = computeNetWorth(accounts.data, balances, rates.data.usdPer, displayCurrency);
   // what the cards are owed counts as debt now (current stat only — the
   // projector pays it out month by month, so it starts from what you hold)
   const cardsOwed = totalOwed(book, accounts.data, today, rates.data.usdPer, displayCurrency);
   const netWorth = { ...rawNetWorth, total: rawNetWorth.total - cardsOwed };
+
+  // the month's statements, for the tile that asks what the cards bill now
+  // rather than what they're owed in all
+  const cardsThisMonth = monthStatements({
+    accounts: accounts.data,
+    book,
+    today,
+    month: today.slice(0, 7),
+    usdPer: rates.data.usdPer,
+    display: displayCurrency,
+  }).totals;
 
   const duePayments = findDueCardPayments(accounts.data, book, today);
   const paymentReminders = cardPaymentReminders(accounts.data, book, today);
@@ -117,6 +146,7 @@ export function useDashboardData(displayCurrency: Currency): DashboardData | nul
     balances,
     netWorth,
     cardsOwed,
+    cardsThisMonth,
     book,
     duePayments,
     paymentReminders,

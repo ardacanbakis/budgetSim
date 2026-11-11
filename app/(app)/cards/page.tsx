@@ -7,7 +7,9 @@ import { useApp, useRepo } from "@/lib/data/provider";
 import { KEYS, useAccounts, useAppMutation, useCardEstimates, useCategories, usePurchases, useRates, useTransactions } from "@/lib/data/queries";
 import { NewPurchase } from "@/lib/data/repo";
 import { Account, Purchase } from "@/lib/data/types";
-import { buildCardBook, cardSchedule, chargeAmount, estimateTopUps, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
+import { cardSchedule, chargeAmount, estimateTopUps, NextCardPayment, nextCardPayment } from "@/lib/domain/cards";
+import { buildPlanningBook } from "@/lib/domain/cardSpend";
+import { useCardSpendSettings } from "@/lib/useCardSpend";
 import { formatAmount } from "@/lib/domain/currencies";
 import { snapshotFromTable } from "@/lib/domain/fx";
 import {
@@ -31,6 +33,8 @@ import { useI18n } from "@/lib/i18n";
 import { ColumnsToggle, columnClass, useColumns } from "@/components/columns";
 import { pocketable } from "@/components/pocket/pocketable";
 import { CardDetailsModal, PurchaseDetailsModal } from "@/components/cardDetails";
+import { CardsLens } from "@/components/cardViews";
+import { CardSpendCard } from "@/components/cardSpendCard";
 
 const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) => m.PocketCards), {
   ssr: false,
@@ -40,6 +44,12 @@ const PocketCards = dynamic(() => import("@/components/pocket/cards").then((m) =
 export default pocketable(PurchasesPage, PocketCards);
 
 const PURCHASE_KEYS = [KEYS.purchases, KEYS.transactions, KEYS.accounts];
+/**
+ * The shapes that are forms of the card list. The other three (matrix,
+ * calendar, payoff) are views of their own: they draw every card at once, so
+ * a column count and the per-card sections mean nothing to them.
+ */
+const LIST_SHAPES: readonly string[] = ["rows", "grid", "table"];
 const TABS = ["cards", "purchases"] as const;
 
 function PurchasesPage() {
@@ -75,9 +85,17 @@ function PurchasesPage() {
 
   // what each card is owed and which payment covers what (lib/domain/cards.ts)
   const estimates = useCardEstimates();
+  const cardSpend = useCardSpendSettings();
   const book = useMemo(
-    () => buildCardBook(accounts.data ?? [], transactions.data ?? [], estimates.data),
-    [accounts.data, transactions.data, estimates.data]
+    () =>
+      buildPlanningBook({
+        accounts: accounts.data ?? [],
+        transactions: transactions.data ?? [],
+        estimates: estimates.data,
+        settings: cardSpend,
+        today: todayISO(),
+      }),
+    [accounts.data, transactions.data, estimates.data, cardSpend]
   );
 
   const stats = useMemo(() => {
@@ -267,12 +285,15 @@ function PurchasesPage() {
             onShape={view.setShape}
             columns={view.columns}
             onColumns={view.setColumns}
+            isDefault={view.isDefault}
+            onSetDefault={view.setDefault}
+            onClearDefault={view.clearDefault}
           />
           {tab.value === "purchases" ? (
             <ColumnsToggle columns={purchaseColumns.columns} onChange={purchaseColumns.setColumns} />
-          ) : (
+          ) : LIST_SHAPES.includes(view.shape) ? (
             <ColumnsToggle columns={columns} onChange={setColumns} max={2} />
-          )}
+          ) : null}
           <Button variant="primary" onClick={() => setModalOpen(true)}>
             + {t("purchases.newPurchase")}
           </Button>
@@ -318,11 +339,30 @@ function PurchasesPage() {
         </div>
       ) : null}
 
+      {/* what each card costs beyond its taksit, and whether the plan
+          carries it: the same question every shape of this page raises */}
+      {tab.value === "cards" ? <CardSpendCard /> : null}
+
       {tab.value === "cards" && view.shape === "table" ? cardsTable : null}
+
+      {/* the three views of every card at once; each derives from the same
+          CardBook the list does (lib/ui/cardViews.ts) */}
+      {tab.value === "cards" && !LIST_SHAPES.includes(view.shape) && rates.data ? (
+        <CardsLens
+          shape={view.shape}
+          accounts={accountList}
+          book={book}
+          today={today}
+          usdPer={rates.data.usdPer}
+          display={displayCurrency}
+          onOpen={setDetailsCard}
+          onPay={setPaying}
+        />
+      ) : null}
 
       <div
         className={
-          tab.value !== "cards" || view.shape === "table"
+          tab.value !== "cards" || !LIST_SHAPES.includes(view.shape) || view.shape === "table"
             ? "hidden"
             : view.shape === "grid"
               ? columnClass(view.columns)

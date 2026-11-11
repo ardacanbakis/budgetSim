@@ -212,7 +212,7 @@ export function statementEvents(
     }
     // what you expect beyond what's tracked: a month you've only an expectation for is a statement too
     const extra = new Map<string, number>();
-    for (const { month, amount } of estimateTopUps(book, card.id, thisMonth)) {
+    for (const { month, amount } of estimateTopUps(book, card.id, thisMonth, { toMonth })) {
       if (month > toMonth) continue;
       extra.set(month, amount);
       if (!byMonth.has(month)) byMonth.set(month, []);

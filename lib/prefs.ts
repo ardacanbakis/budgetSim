@@ -81,6 +81,55 @@ export function useLocalChoice<T extends string>(key: string, options: readonly 
 }
 
 /** Which recurring items the Recurring screen shows: by status, and by direction. */
+/**
+ * A choice remembered as the one last used, with a default that can be
+ * pinned on top of it — the same bargain lib/ui/useViews.ts strikes for a
+ * screen's shape. Picking one applies it now; pinning it means the card
+ * opens that way from then on, whatever was looked at last. Nothing is
+ * pinned until asked, so a card nobody pins behaves as useLocalChoice does.
+ */
+export function usePinnedChoice<T extends string>(key: string, options: readonly T[], fallback: T) {
+  const [value, setValue] = useState<T>(fallback);
+  const [pinned, setPinned] = useState<T | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const defaultKey = `${key}-default`;
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      const known = (v: string | null): v is T => v != null && (options as readonly string[]).includes(v);
+      const saved = window.localStorage.getItem(key);
+      const asked = window.localStorage.getItem(`${key}-default`);
+      const pin = known(asked) ? asked : null;
+      setPinned(pin);
+      if (pin) setValue(pin);
+      else if (known(saved)) setValue(saved);
+      setLoaded(true);
+    });
+  }, [key, options]);
+
+  return {
+    value,
+    loaded,
+    pinned,
+    isDefault: pinned === value,
+    setValue: (next: T) => {
+      setValue(next);
+      window.localStorage.setItem(key, next);
+    },
+    setDefault: () => {
+      setPinned(value);
+      window.localStorage.setItem(defaultKey, value);
+    },
+    clearDefault: () => {
+      setPinned(null);
+      window.localStorage.removeItem(defaultKey);
+    },
+  };
+}
+
+/** The Plan's cash-flow card: which of its three views is on screen. */
+export const FLOW_VIEW_KEY = "renovator-plan-flow-view";
+
 export const RECURRING_STATUS_FILTER_KEY = "renovator-recurring-status";
 /** the Cards page's open tab: the cards, or the big purchases on them */
 export const CARDS_TAB_KEY = "renovator-cards-tab";

@@ -193,6 +193,16 @@ function DashboardPage() {
         <div className={`mt-1 text-3xl font-bold ${derived.cardsOwed > 0 ? "text-red-600" : ""}`}>
           {formatAmount(derived.cardsOwed, displayCurrency, locale)}
         </div>
+        {/* the figure above is the whole installment tail; this is what the
+            cards bill this month — the statements you actually have to pay */}
+        {derived.cardsThisMonth.all > 0.005 ? (
+          <div className="mt-1 text-xs text-zinc-400 tabular-nums" data-cc-this-month>
+            {t("purchases.ccThisMonth", { amount: formatAmount(derived.cardsThisMonth.all, displayCurrency, locale) })}
+            {derived.cardsThisMonth.toPay > 0.005 && derived.cardsThisMonth.paid > 0.005
+              ? ` · ${t("purchases.ccStillToPay", { amount: formatAmount(derived.cardsThisMonth.toPay, displayCurrency, locale) })}`
+              : null}
+          </div>
+        ) : null}
         <Link href="/cards" className="mt-1 inline-block text-xs text-teal-600 hover:underline">
           {t("dashboard.seeAll")} →
         </Link>

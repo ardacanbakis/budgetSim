@@ -951,7 +951,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await this.db.from("user_settings").select("*").maybeSingle();
     throwIf(error);
     if (!data) {
-      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null, showRateTicker: null, victvsForecast: null };
+      return { dashboardLayout: null, theme: "system", compact: false, victvsAccountId: null, victvsDefaults: null, navOrder: null, dateFormat: null, showQuickAdd: null, showRateTicker: null, victvsForecast: null, cardSpend: null };
     }
     return {
       dashboardLayout: data.dashboard_layout,
@@ -965,6 +965,8 @@ export class SupabaseRepo implements Repo {
       showRateTicker: data.show_rate_ticker ?? null,
       // absent before migration 0017: no figures of your own
       victvsForecast: data.victvs_forecast ?? null,
+      // absent before migration 0026: typical card spend isn't carried
+      cardSpend: data.card_spend ?? null,
     };
   }
 
@@ -982,9 +984,17 @@ export class SupabaseRepo implements Repo {
     // sent only when it changes, so every other setting keeps saving on a
     // database without 0017; a forecast edit there says which file to run
     if (patch.victvsForecast !== undefined) row.victvs_forecast = patch.victvsForecast;
+    // same bargain as 0017: sent only when it changes, so every other
+    // setting keeps saving on a database without 0026
+    if (patch.cardSpend !== undefined) row.card_spend = patch.cardSpend;
     const { error } = await this.db.from("user_settings").upsert(row, { onConflict: "user_id" });
-    if (error && patch.victvsForecast !== undefined && describeError(toDbError(error)).kind === "needsMigration") {
-      throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0017_victvs_forecast.sql");
+    if (error && describeError(toDbError(error)).kind === "needsMigration") {
+      if (patch.victvsForecast !== undefined) {
+        throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0017_victvs_forecast.sql");
+      }
+      if (patch.cardSpend !== undefined) {
+        throw new DbError(error.message, error.code || null, error.details || null, error.hint || null, "0026_card_spend.sql");
+      }
     }
     throwIf(error);
   }

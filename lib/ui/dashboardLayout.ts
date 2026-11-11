@@ -27,6 +27,8 @@ import { DashboardAccounts, DashboardLayout } from "@/lib/data/types";
  * - upcomingDays: how far Upcoming looks ahead (DEFAULT_UPCOMING_DAYS).
  * - monthVictvs: whether Month in & out counts the VICTVS forecast's
  *   payouts as income (off unless turned on; setMonthVictvs).
+ * - monthBorrowed: whether Month in & out counts money borrowed that month
+ *   as income (off unless turned on; setMonthBorrowed).
  *
  * normalizeLayout(saved, accountIds?) reads a stored layout, or null, into
  * one with every field present and valid: unknown and repeated card ids
@@ -127,6 +129,7 @@ export interface NormalizedLayout extends DashboardLayout {
   accounts: DashboardAccounts;
   upcomingDays: UpcomingDays;
   monthVictvs: boolean;
+  monthBorrowed: boolean;
 }
 
 /** Known card ids from a stored list, each once, in the order given. */
@@ -165,7 +168,8 @@ export function normalizeLayout(saved: DashboardLayout | null | undefined, accou
   const shown = knownIds(raw.shown).filter((id) => !hidden.includes(id));
   const upcomingDays = UPCOMING_DAYS.find((d) => d === raw.upcomingDays) ?? DEFAULT_UPCOMING_DAYS;
   const monthVictvs = raw.monthVictvs === true;
-  return { ...raw, order, hidden, shown, accounts: normalizeAccounts(raw.accounts, accountIds), upcomingDays, monthVictvs };
+  const monthBorrowed = raw.monthBorrowed === true;
+  return { ...raw, order, hidden, shown, accounts: normalizeAccounts(raw.accounts, accountIds), upcomingDays, monthVictvs, monthBorrowed };
 }
 
 /** Whether a card's page is in the menus (a card without one always is). */
@@ -268,4 +272,16 @@ export function setUpcomingDays(layout: NormalizedLayout, upcomingDays: Upcoming
 /** Month in & out with or without the VICTVS forecast's payouts as income. */
 export function setMonthVictvs(layout: NormalizedLayout, monthVictvs: boolean): NormalizedLayout {
   return { ...layout, monthVictvs };
+}
+
+/**
+ * Month in & out with or without money borrowed that month as income.
+ *
+ * Off by default, and deliberately: borrowing isn't earning, so counting it
+ * inflates the month's income and its savings rate, and the repayment shows
+ * as an expense later — the same money twice. It's on offer because a month
+ * paid for out of a loan reads as a hole in the month's cash otherwise.
+ */
+export function setMonthBorrowed(layout: NormalizedLayout, monthBorrowed: boolean): NormalizedLayout {
+  return { ...layout, monthBorrowed };
 }
