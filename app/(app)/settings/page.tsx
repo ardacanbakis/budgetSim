@@ -31,6 +31,7 @@ import { ViewsCard } from "@/components/settingsViews";
 import { DashboardAccountsCard, DashboardCardsCard, PocketHomeCard } from "@/components/settingsDashboard";
 import { replaceQuery } from "@/lib/ui/shallowUrl";
 import { DataCheckCard } from "@/components/dataCheck";
+import { FixFileCard } from "@/components/fixFile";
 import { PaymentRemindersCard } from "@/components/paymentReminders";
 import { HistoryCard } from "@/components/history";
 
@@ -288,7 +289,12 @@ function SettingsScreen() {
         </>
       ) : null}
 
-      {tab === "check" ? <DataCheckCard /> : null}
+      {tab === "check" ? (
+        <div className="space-y-4">
+          <DataCheckCard />
+          <FixFileCard />
+        </div>
+      ) : null}
 
       {tab === "history" ? <HistoryCard /> : null}
 

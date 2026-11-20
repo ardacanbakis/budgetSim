@@ -19,7 +19,7 @@ import { useI18n } from "@/lib/i18n";
 const DISMISSED_KEY = "renovator-datacheck-dismissed";
 const DISMISS_EVENT = "renovator-datacheck-dismissed";
 
-function readDismissed(): Set<string> {
+export function readDismissed(): Set<string> {
   try {
     const raw = window.localStorage.getItem(DISMISSED_KEY);
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
