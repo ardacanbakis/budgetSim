@@ -354,8 +354,9 @@ export function checkData(params: {
   }
 
   // --- a debt repaid in one go with no date: nothing can ever show it going
+  // (one repaid through a card's installments has its dates: the card's statements)
   for (const loan of loans) {
-    if (loan.direction !== "owe" || loan.scheduleKind !== "lumpSum" || loan.payoffDate) continue;
+    if (loan.direction !== "owe" || loan.scheduleKind !== "lumpSum" || loan.payoffDate || loan.purchaseId) continue;
     issues.push({
       id: `debtWithoutDate:${loan.id}`,
       kind: "debtWithoutDate",
