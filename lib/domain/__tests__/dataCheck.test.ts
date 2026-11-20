@@ -221,8 +221,14 @@ describe("checkData, on the shapes found in a real backup", () => {
       expect(found).toHaveLength(1);
       expect(found[0].loan?.id).toBe("l1");
       expect(found[0].amount).toBe(30000);
-      // one with a date, one lent rather than owed, and one on a schedule: all fine
-      const quiet = [loan({ id: "l2", payoffDate: "2027-02-28" }), loan({ id: "l3", direction: "lent" }), loan({ id: "l4", scheduleKind: "zeroInterest" })];
+      // one with a date, one lent rather than owed, one on a schedule, and a
+      // cash advance repaid through a card's installments: all fine
+      const quiet = [
+        loan({ id: "l2", payoffDate: "2027-02-28" }),
+        loan({ id: "l3", direction: "lent" }),
+        loan({ id: "l4", scheduleKind: "zeroInterest" }),
+        loan({ id: "l5", purchaseId: "coverup" }),
+      ];
       expect(checkData({ accounts, transactions: [], loans: quiet, today: TODAY }).some((i) => i.kind === "debtWithoutDate")).toBe(false);
     });
 
