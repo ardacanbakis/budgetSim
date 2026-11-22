@@ -22,6 +22,7 @@ import * as realTerms from "./realTerms";
 import * as reminders from "./reminders";
 import * as victvsForecast from "./victvsForecast";
 import * as gadgets from "./gadgets";
+import * as fixFile from "./fixFile";
 
 export const en = {
   common: {
@@ -576,6 +577,7 @@ export const en = {
   },
   timeline: timeline.en,
   debts: debts.en,
+  fixfile: fixFile.en,
   gadgets: gadgets.en,
   income: income.en,
   converted: converted.en,
@@ -1882,6 +1884,7 @@ export const tr: Dictionary = {
   },
   timeline: timeline.tr,
   debts: debts.tr,
+  fixfile: fixFile.tr,
   gadgets: gadgets.tr,
   income: income.tr,
   converted: converted.tr,
